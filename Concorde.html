@@ -3,688 +3,763 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CONCORDE Prototype 4</title>
-  <style>
-    /* -------------------------------
-       RESET & BASE
-    ---------------------------------*/
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: "Segoe UI", Roboto, Arial, sans-serif;
-      background-color: #f7f9fc;
-      color: #333;
-      padding: 20px;
-    }
-    h1, h2, h3, h4 {
-      color: #222;
-      margin-bottom: 15px;
-    }
-    h1 { font-size: 28px; font-weight: 600; }
-    h3 { font-size: 20px; font-weight: 500; }
-    h4 { font-size: 18px; font-weight: 500; }
+  <title>CONCORDE Prototype 5</title>
+<style>
+  :root{
+    --bg:#f6f8fb;
+    --card:#ffffff;
+    --text:#222;
+    --muted:#6b7280;
+    --primary:#0b72ff;    /* bleu principal */
+    --accent:#d63384;     /* magenta accent */
+    --warm:#ff8a00;       /* orange */
+    --cool:#00b5cc;       /* cyan */
+    --glass: rgba(11,114,255,0.06);
+    --radius:12px;
+    --shadow: 0 6px 20px rgba(20,30,60,0.06);
+    --glass-2: rgba(0,0,0,0.03);
+    --max-width:1100px;
+    --gap:16px;
+    font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  }
 
-    /* -------------------------------
-       FORM ELEMENTS
-    ---------------------------------*/
-    input:not([type="checkbox"]):not([type="radio"]), select {
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 15px;
-      width: 100%;
-      max-width: 300px;
-      margin: 6px 0;
-      transition: border 0.2s ease, box-shadow 0.2s ease;
-    }
+  *{box-sizing: border-box; margin: 0; padding: 0;}
+  html, body{height: 100%;}
+  body{
+    background: linear-gradient(180deg, var(--bg), #eef3fb);
+    color: var(--text);
+    padding: 28px;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    line-height: 1.45;
+    display: flex;
+    justify-content: center;
 
-    input:focus, select:focus {
-      border-color: #007bff;
-      outline: none;
-      box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
-    }
-    label {
-      font-size: 14px;
-      color: #555;
-    }
+  }
 
-    /* -------------------------------
-       BUTTONS
-    ---------------------------------*/
-    button {
-      padding: 12px 24px;
-      font-size: 16px;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-    button:active {
-      background-color: #004a99;
-      transform: scale(0.97);
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
+  /* Container */
+  .wrap{
+    width: 100%;
+    max-width: var(--max-width);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 28px;
+    align-items: start;
+  }
 
-    /* -------------------------------
-       CARD CONTAINERS
-    ---------------------------------*/
-    #login-page, #eleve-page, #prof-page {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-      max-width: 900px;
-      margin: 20px auto;
-    }
+  /* Header card (spans columns) */
+  header{
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 18px 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.8), var(--card));
+    border-radius: calc(var(--radius) + 4px);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--glass-2);
+    position: sticky;
+    top: 18px;
+    z-index: 10;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo {
+    width: 46px; height: 46px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 10px;
+    display: flex;
+    align-items: center; justify-content: center;
+    box-shadow: 0 6px 18px rgba(11,114,255,0.14), inset 0 -6px 12px rgba(255,255,255,0.08);
+  }
+  .logo svg{width: 26px; height: 26px; fill: white;}
+  .brand h1{font-size: 18px; color: var(--text); margin-bottom: 2px;}
+  .brand p{font-size: 12px; color: var(--muted); margin-top: 0;}
+  
+  /* header actions */
+  .header-actions{margin-left:auto; display:flex; gap:12px; align-items:center}
+  .role-badge{
+    display:inline-flex;align-items:center;gap:8px;background:var(--glass);padding:8px 12px;border-radius:999px;color:var(--primary);font-weight:600;font-size:13px;
+  }
 
-    /* -------------------------------
-       TABLES
-    ---------------------------------*/
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 20px;
-      background: white;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    th, td {
-      border: 1px solid #eee;
-      padding: 12px;
-      text-align: left;
-      font-size: 14px;
-    }
-    th {
-      background: #f1f5f9;
-      font-weight: 600;
-      color: #444;
-    }
-    tr:nth-child(even) td {
-      background: #fafbfc;
-    }
+  /* Panels */
+  .card{
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--glass-2);
+  }
+  
+  /* Left column: main */
+  .main{
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
 
-    /* -------------------------------
-       SEANCES
-    ---------------------------------*/
-    #seances-wrapper {
-      border: 1px solid #ddd;
-      padding: 15px;
-      border-radius: 8px;
-      background: #fafafa;
-      margin: 20px 0;
-    }
-    .seance {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-    .seance input {
-      flex: 1;
-    }
-    .suppr {
-      cursor: pointer;
-      color: red;
-      font-weight: bold;
-    }
-    .serie-hebdo {
-      border: 1px dashed #bbb;
-      padding: 12px;
-      margin: 10px 0;
-      border-radius: 8px;
-      background: #fff;
-    }
-    .suppr-serie {
-      float: right;
-      cursor: pointer;
-      color: red;
-      font-weight: bold;
-    }
+  /* Login card compact */
+  #login-card {
+    max-width: 620px;
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 18px;
+    align-items: center;
+  }
+  #login-card .credentials{padding-right: 6px;}
+  label.small{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+  input[type="text"], input[type="password"], select, input[type="number"], input[type="datetime-local"]{
+    width: 100%;
+    padding: 10px 12px; border-radius: 8px; border: 1px solid #e6eef8;
+    background: linear-gradient(180deg, #fff, #fbfdff);
+    font-size: 14px; color: var(--text);
+    transition:box-shadow .18s ease, border-color .18s ease, transform .06s ease;
+  }
+  input:focus, select:focus{outline:none;border-color:var(--primary); box-shadow:0 6px 18px rgba(11,114,255,0.08); transform:translateY(-1px);}
 
-    .seance.hebdo-first input { border: 2px solid magenta; }
-    .seance.hebdo-follow input { border: 2px solid orange; }
-    .seance.manuel input { border: 2px solid cyan; }
+  .login-cta{
+    display:flex;flex-direction:column;gap:8px;align-items:stretch;
+  }
+  .muted-note{font-size:12px;color:var(--muted)}
 
-    /* -------------------------------
-       UTILS
-    ---------------------------------*/
-    .hidden { display: none; }
-    #login-msg { margin-top: 10px; font-size: 14px; }
+  /* Role dashboards (right column) */
+  .side{
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
 
-    /* ===================== */
-    /*  Footer               */
-    /* ===================== */
-    footer {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      background-color: #333;
-      color: white;
-      padding: 20px;
-      width: 100%;
-      text-align: center;
-      font-size: 14px;
-    }
+  /* Grid of small stats */
+  .stats{
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .stat{
+    background:linear-gradient(180deg,#fff,#fbfdff);
+    border-radius:10px;padding:10px 12px;border:1px solid var(--glass-2);flex:1;text-align:center;
+  }
+  .stat h4{font-size:13px;color:var(--muted);font-weight:600}
+  .stat p{font-size:16px;font-weight:700;color:var(--text)}
 
-    footer a {
-      color: #80c0ff;
-      text-decoration: underline;
-      cursor: pointer;
-      position: relative;
-    }
+  /* Tables */
+  table{
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 14px;
+  }
+  th, td{padding:10px;border-bottom:1px solid #f0f4fb;text-align:left}
+  th{font-size:13px;color:var(--muted);font-weight:600;background:transparent}
+  tr td:last-child{width: 160px; text-align: right;}
 
-    footer a:hover::after {
-      font-family: 'Courier New', Courier, monospace;
-      content: "Crédits : Interface conçue par [Baptiste RIGAL TI].";
-      position: absolute;
-      bottom: 120%;
-      left: 50%;
-      transform: translateX(-50%);
-      background-color: #444;
-      color: white;
-      padding: 8px 12px;
-      border-radius: 6px;
-      white-space: nowrap;
-      font-size: 13px;
-      opacity: 1;
-      pointer-events: none;
-      z-index: 1000;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    }
+  /* Forms layout for prof */
+  .form-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
 
-  </style>
+  .full{ grid-column: 1 / -1;}
+
+  /* Seances list */
+  #seances-container{min-height:80px;border:1px dashed #e6eef8;padding:12px;border-radius:8px;background:linear-gradient(180deg,#fff,#fcfdff)}
+  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid #f0f6fd;background:#fff}
+  .seance-item.small{font-size:13px;color:var(--muted)}
+  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #eef6ff}
+
+  .pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:13px;background:var(--glass);color:var(--primary);font-weight:600}
+
+  /* Buttons */
+  .btn{
+    display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; border: 0; background: var(--primary); color: #fff; font-weight: 700; cursor: pointer;
+    box-shadow: 0 8px 18px rgba(11, 114, 255, 0.12);
+    transition:transform .12s ease, box-shadow .12s ease, background .12s;
+  }
+  .btn:active{transform:translateY(2px);box-shadow:0 4px 12px rgba(11,114,255,0.08)}
+  .btn.secondary{background:transparent;color:var(--primary);border:1px solid rgba(11,114,255,0.08);box-shadow:none;font-weight:600}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px dashed #eef4ff}
+
+  .icon{width:18px;height:18px;display:inline-block;vertical-align:middle}
+
+  /* Tiny utilities */
+  .muted{color:var(--muted);font-size:13px}
+  .mb{margin-bottom:12px}
+  .hidden{display:none}
+  .right{margin-left:auto}
+
+  /* Footer (small) */
+  footer.small{
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* micro animations */
+  .fade-in { animation:fadeIn .28s ease both }
+  @keyframes fadeIn { from {opacity:0; transform: translateY(6px)} to {opacity:1; transform:none} }
+
+  /* Responsive */
+  @media (max-width:980px){
+    .wrap{grid-template-columns: 1fr; padding-bottom:80px}
+    header{position:relative}
+    #login-card{grid-template-columns:1fr; gap:12px}
+    .side{order:2}
+    .main{order:1}
+    .card{padding:14px}
+  }
+
+  /* Tooltip */
+
+</style>
 </head>
 <body>
+  <div class="wrap">
 
-  <!-- PAGE DE CONNEXION -->
-  <div id="login-page">
-    <h1>Connexion CONCORDE</h1>
-    <input type="text" id="username" placeholder="Nom d'utilisateur"><br>
-    <input type="password" id="password" placeholder="Mot de passe"><br>
-    <button onclick="login()">Se connecter</button>
-    <p id="login-msg" style="color:red;"></p>
-  </div>
-
-  <!-- DASHBOARD ELEVE -->
-  <div id="eleve-page" class="hidden">
-    <h1>Tableau de bord élève</h1>
-    <table id="table-eleve">
-      <thead>
-        <tr>
-          <th>Titre</th>
-          <th>Salle</th>
-          <th>Effectif Max</th>
-          <th>Inscrits</th>
-          <th>Séances</th>
-          <th>Inscriptions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table><br>
-    <button onclick="logout()">Déconnexion</button>
-  </div>
-
-  <!-- DASHBOARD PROFESSEUR -->
-  <div id="prof-page" class="hidden">
-    <h1>Tableau de bord professeur</h1>
-
-    <!-- Formulaire créaion activité -->
-    <h3>Créer une activité</h3>
-    <input type="text" id="titre" placeholder="Titre activité">
-    <span id="animateur"></span><br><br>
-    <input type="text" id="salle" placeholder="Salle">
-    <input type="number" id="effectif" placeholder="Effectif max">
-    <input type="checkbox" id="separable" checked> <span>Sécable</span><br><br>
-    <select id="classe-select" multiple></select><br><br>
-
-    <!-- Gestion ds séances -->
-    <div id="seances-wrapper">
-      <h4>Séances</h4>
-      <div style="display:flex; gap:20px; margin-bottom:10px;">
-        <!-- Partie Hebdo -->
-        <div>
-          <input type="datetime-local" id="first-hebdoseance" style="border: 2px solid magenta; padding: 5px;">
-          <input type="number" id="nb-seances" min="1" max="20" value="4" style="width: 60px; padding: 5px;">
-          <button onclick="ajouterSeanceHebdo()">+ Ajouter séances hebdomadaires</button>
+    <!-- HEADER -->
+    <header class="card fade-in" role="banner" aria-label="En-tête">
+      <div class="brand" aria-hidden="true">
+        <div class="logo" title="TEAMAKER">
+          <!-- leaf + cup svg combined -->
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M6 12c0-3.314 2.686-6 6-6 1.04 0 2.02.247 2.88.688l-1.54 1.91A3.997 3.997 0 0012 9a4 4 0 00-4 4v1H6v-2z" />
+            <path d="M2 17c0 2.76 2.24 5 5 5h10a5 5 0 005-5 1 1 0 00-1-1H3a1 1 0 00-1 1z" opacity=".12"/>
+          </svg>
         </div>
-        <!-- Partie manuelle -->
         <div>
-          <button onclick="ajouterSeanceManuelle()">+ Ajout Manuel</button>
+          <h1>TEAMAKER</h1>
+          <p>Gestion simple des activités & inscriptions</p>
         </div>
       </div>
-      <div id="seances-container"  style="border:1px solid #999; padding:10px; min-height:50px;"></div>
-    </div>
 
-    <span>ouverture des inscriptions </span><input type="datetime-local" id="ouverture" title="Ouverture inscriptions"><br>
-    <span>fermeture des inscriptions </span><input type="datetime-local" id="fermeture" title="Fermeture inscriptions"><br><br>
+      <div class="header-actions" role="navigation" aria-label="Actions">
+        <div id="user-badge" class="role-badge pill" style="display:none">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg>
+          <span id="user-name">Utilisateur</span>
+        </div>
+        <div style="width:8px"></div>
+        <button id="logout-btn" class="btn secondary hidden" onclick="logout()" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v12a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
+          Déconnexion
+        </button>
+      </div>
+    </header>
 
-    <select id="exclusives-select" multiple></select><br><br> 
+    <!-- LEFT: MAIN (cards & tables) -->
+    <main class="main">
 
-    <button onclick="creerActivite()">Créer</button>
+      <!-- LOGIN CARD -->
+      <section id="login-card" class="card fade-in" aria-labelledby="login-title">
+        <div class="credentials">
+          <h3 id="login-title">Connexion</h3>
+          <p class="muted-note mb">Connecte-toi pour accéder à ton espace (prof / élève).</p>
 
-    <h3>Liste des activités (Professeur)</h3>
-    <table id="table-prof">
-      <thead>
-        <tr>
-          <th>Titre</th>
-          <th>Salle</th>
-          <th>Effectif</th>
-          <th>Inscrits</th>
-          <th>Classes</th>
-          <th>Sécable</th>
-          <th>Ouverte</th>
-          <th>Fermeture</th>
-          <th>Séances</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table> <br><br>
-    <button onclick="logout()">Déconnexion</button>
+          <label class="small" for="username">Nom d'utilisateur</label>
+          <input id="username" type="text" placeholder="" autocomplete="username">
+
+          <label class="small" for="password">Mot de passe</label>
+          <input id="password" type="password" placeholder="" autocomplete="current-password">
+
+          <p id="login-msg" class="muted danger" aria-live="polite"></p>
+        </div>
+
+        <div class="login-cta">
+          <button class="btn" onclick="login()" aria-label="Se connecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM21 3h-8v2h8v14h-8v2h8a2 2 0 002-2V5a2 2 0 00-2-2z" fill="currentColor"/></svg>
+            Se connecter
+          </button>
+        </div>
+      </section>
+
+      <!-- STUDENT DASHBOARD -->
+      <section id="eleve-page" class="card hidden fade-in" aria-labelledby="eleve-title">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="pill" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg> Élève</div>
+          <div>
+            <h3 id="eleve-title">Tableau de bord — Élève</h3>
+            <p class="muted">Consulte les activités disponibles pour ta classe et inscris-toi.</p>
+          </div>
+        </div>
+
+        <div class="mb" style="display:flex;gap:12px;margin-top:12px;">
+          <div class="stat"><h4>Activités</h4><p id="stat-act">0</p></div>
+          <div class="stat"><h4>Inscriptions</h4><p id="stat-insc">0</p></div>
+        </div>
+
+        <table id="table-eleve" aria-describedby="eleve-desc">
+          <caption id="eleve-desc" class="muted small">Liste des activités ouvertes à ta classe</caption>
+          <thead>
+            <tr><th>Titre</th><th>Salle</th><th>Max</th><th>Inscrits</th><th>Séances</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- PROFESSOR DASHBOARD (main working area) -->
+      <section id="prof-page" class="card hidden fade-in" aria-labelledby="prof-title">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="pill" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg> Professeur</div>
+          <div>
+            <h3 id="prof-title">Tableau de bord — Professeur</h3>
+            <p class="muted">Crée des activités, gére les inscriptions et exporte si nécessaire.</p>
+          </div>
+        </div>
+
+        <!-- CREATION D'ACTIVITE -->
+        <div class="mb" style="margin-top:12px;">
+          <h4 style="margin-bottom:8px">Créer / modifier une activité</h4>
+          <div class="form-grid">
+            <div>
+              <label class="small">Titre <span class="muted">*</span></label>
+              <input id="titre" type="text" placeholder="Titre de l'activité">
+            </div>
+            <div>
+              <label class="small">Salle</label>
+              <input id="salle" type="text" placeholder="Ex : LM19C">
+            </div>
+
+            <div>
+              <label class="small">Effectif max</label>
+              <input id="effectif" type="number" min="1" value="10">
+            </div>
+            <div>
+              <label class="small">Sécable</label><br>
+              <input id="separable" type="checkbox" checked> <span class="muted">Permet répartition par sous-groupes</span>
+            </div>
+
+            <div class="full">
+              <label class="small">Classes concernées <span class="muted">(Ctrl / Cmd pour multi)</span></label>
+              <select id="classe-select" multiple style="min-height:46px;padding:10px"></select>
+            </div>
+
+            <div class="full">
+              <label class="small">Séances</label>
+              <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
+                <input id="first-hebdoseance" type="datetime-local" style="max-width:260px">
+                <input id="nb-seances" type="number" min="1" max="20" value="4" style="width:84px">
+                <button class="btn ghost" onclick="ajouterSeanceHebdo()">+ Série hebdo</button>
+                <button class="btn ghost" onclick="ajouterSeanceManuelle()">+ Manuel</button>
+              </div>
+
+              <div id="seances-container" aria-live="polite" aria-atomic="true"></div>
+            </div>
+
+            <div>
+              <label class="small">Ouverture inscriptions</label>
+              <input id="ouverture" type="datetime-local">
+            </div>
+            <div>
+              <label class="small">Fermeture inscriptions</label>
+              <input id="fermeture" type="datetime-local">
+            </div>
+
+            <div class="full">
+              <label class="small">Activités exclusives (optionnel)</label>
+              <select id="exclusives-select" multiple style="min-height:72px;padding:10px"></select>
+            </div>
+
+            <div class="full" style="display:flex;gap:12px;align-items:center;">
+              <button class="btn" onclick="creerActivite()">Créer l'activité</button>
+              <button class="btn secondary" onclick="resetForm()">Réinitialiser</button>
+              <div class="muted small right" style="margin-left:auto">Champs marqués * requis</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLEAU DES ACTIVITES -->
+        <div>
+          <h4 style="margin-bottom:8px">Liste des activités</h4>
+          <table id="table-prof" aria-describedby="prof-desc">
+            <caption id="prof-desc" class="muted small">Activités que vous avez créées</caption>
+            <thead><tr><th>Titre</th><th>Salle</th><th>Effectif</th><th>Inscrits</th><th>Classes</th><th>Sécable</th><th>Ouverte</th><th>Fermeture</th><th>Séances</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="small">© 2025 — TEAMAKER • Interface prototype</footer>
+    </main>
+
+    <!-- RIGHT: SIDE PANEL -->
+    <aside class="side">
+
+      <div id="sidebar-raccourcis" class="card fade-in" aria-hidden="true">
+        <h4>Raccourcis</h4>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <button class="btn secondary" onclick="demoLogin('prof1')">Se connecter (prof1)</button>
+          <button class="btn secondary" onclick="demoLogin('eleve1')">Se connecter (eleve1)</button>
+          <button class="btn secondary" onclick="demoLogin('eleve2')">Se connecter (eleve2)</button>
+        </div>
+      </div>
+
+      <div id="sidebar-statut" class="card fade-in">
+        <h4>Statut</h4>
+        <div class="stats" style="margin-top:8px">
+          <div class="stat"><h4>Activités</h4><p id="count-acts">1</p></div>
+          <div class="stat"><h4>Utilisateurs</h4><p id="count-users">4</p></div>
+        </div>
+        <p class="muted small" style="margin-top:10px">Info : les heures sont affichées en <strong>locale</strong> (fr-FR)</p>
+      </div>
+
+      <div id="sidebar-aide" class="card fade-in">
+        <h4>Aide rapide</h4>
+        <p class="muted small">• Ajoute une série hebdo pour planifier automatiquement des séances (1 semaine d'écart).</p>
+        <p class="muted small">• Pour gérer les inscriptions : passe par le tableau Professeur.</p>
+      </div>
+
+    </aside>
+
   </div>
 
-  <!-- Footer -->
-  <footer style="margin-top: 60px;">
-    © 2025 - Système de contrôle d'accès. Tous droits réservés.
-    <a id="license-link" href="#">Licence</a>
-  </footer>
+<script>
+/* ===========================
+   Données (simulées) & util
+   =========================== */
+const classes = [
+  { id: 1, nom: '3A' },
+  { id: 2, nom: '2B' },
+  { id: 3, nom: '1C' }
+];
 
-  <script>
-  // -----------------------------
-  // DONNEES SIMULEES
-  // -----------------------------
-  const classes = [
-    { id: 1, nom: '3A' },
-    { id: 2, nom: '2B' },
-    { id: 3, nom: '1C' }
-  ];
+const users = [
+  { id: 1, username: 'prof1', password: '123', role: 'prof', nom: 'Dupont', prenom: 'Alain', email: 'a.dupont@school.fr' },
+  { id: 2, username: 'eleve1', password: '123', role: 'eleve', nom: 'Leroy', prenom: 'Emma', classe_id: 1 },
+  { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 2 },
+  { id: 4, username: 'admin', password: '123', role: 'admin', nom: 'Admin', prenom: 'Root' }
+];
 
-  const users = [
-    { id: 1, username: 'prof1', password: '123', role: 'prof', nom: 'Dupont', prenom: 'Alain', email: 'a.dupont@school.fr' },
-    { id: 2, username: 'eleve1', password: '123', role: 'eleve', nom: 'Leroy', prenom: 'Emma', classe_id: 1 },
-    { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 2 },
-    { id: 4, username: 'admin', password: '123', role: 'admin', nom: 'Admin', prenom: 'Root' }
-  ];
-
-  let activites = [
-    {
-      id: 1,
-      titre: 'Atelier Théâtre',
-      prof_id: 1,
-      classe_ids: [1,2],
-      salle: 'LM19C',
-      separable: false,
-      effectif_max: 10,
-      inscriptions: [],
-      seances: [
+let activites = [
+  {
+    id: 1,
+    titre: 'Atelier Théâtre',
+    prof_id: 1,
+    classe_ids: [1,2],
+    salle: 'LM19C',
+    separable: false,
+    effectif_max: 10,
+    inscriptions: [],
+    seances: [
       { id: 1, date_heure: "2025-09-10T14:00", presences: [] },
       { id: 2, date_heure: "2025-09-12T14:00", presences: [] }
-      ],
-      ouverture_inscription: "2025-09-10T14:00",
-      fermeture_inscription: "2025-09-12T14:00",
-      exclusives_ids: []
-
-    }
-  ];
-
-
-  let currentUser = null; // utilisateur connecté
-
-  // ----------------------------------
-  // FONCTION CONNEXION / DECONNEXION
-  // ----------------------------------
-  function login() {
-    // Récupération des valeurs saisies
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value.trim();
-    const user = users.find(u => u.username === username && u.password === password);
-
-    if(user) {
-      currentUser = user;
-      document.getElementById('login-page').classList.add('hidden');
-      document.getElementById('login-msg').textContent = '';
-      afficherPageRole(user.role);      
-    } else {
-      document.getElementById('login-msg').textContent = "Nom d'utilisateur ou mot de passe incorrect";
-    }
+    ],
+    ouverture_inscription: "2025-09-10T14:00",
+    fermeture_inscription: "2025-09-12T14:00",
+    exclusives_ids: []
   }
+];
 
-  function logout() {
-    currentUser = null;
-    document.getElementById('eleve-page').classList.add('hidden');
-    document.getElementById('prof-page').classList.add('hidden');
-    document.getElementById('login-page').classList.remove('hidden');
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
+let currentUser = null;
+const MODE = 'reel';
+
+/* ---------------------------
+   Helpers
+   --------------------------- */
+function $(s){return document.querySelector(s)}
+function $all(s){return Array.from(document.querySelectorAll(s))}
+function formatDateLocal(str){
+  if(!str) return '—';
+  try {
+    const d = new Date(str);
+    return d.toLocaleString('fr-FR', {hour12:false});
+  } catch(e){ return str }
+}
+
+/* ============================
+   Connexion / Deconnexion
+   ============================ */
+function login(){
+  const username = $('#username').value.trim();
+  const password = $('#password').value.trim();
+  const user = users.find(u => u.username === username && u.password === password);
+  if(!user){ $('#login-msg').textContent = "Nom d'utilisateur ou mot de passe incorrect"; return; }
+  currentUser = user;
+  $('#login-msg').textContent = '';
+  $('#username').value = '';
+  $('#password').value = '';
+  onAuthChange();
+}
+function demoLogin(name){
+  const u = users.find(x=>x.username===name);
+  if(u){ currentUser = u; onAuthChange() }
+}
+
+/* logout */
+function logout(){
+  currentUser = null;
+  onAuthChange();
+}
+
+
+/* ===========================
+   Mise à jour de l'UI
+   =========================== */
+/* update UI on auth change */
+function onAuthChange(){
+  // show badge / logout
+  if(currentUser){
+    $('#user-badge').style.display = 'inline-flex';
+    $('#user-name').textContent = `${currentUser.prenom} ${currentUser.nom || ''}`;
+    $('#logout-btn').classList.remove('hidden');
+    // hide login card, show relevant dashboard
+    $('#login-card').classList.add('hidden');
+    afficherPageRole(currentUser.role);
+  } else {
+    $('#user-badge').style.display = 'none';
+    $('#logout-btn').classList.add('hidden');
+    $('#login-card').classList.remove('hidden');
+    cacherToutesPages();
   }
-
-  // ----------------------------------
-  // NAVIGATION PAR ROLE
-  // ----------------------------------
-  function afficherPageRole(role) {
-    // masquer toutes les pages
-    document.querySelectorAll("div[id$='-page']").forEach(div => div.classList.add("hidden"));
-    if (role === "prof") {
-      document.getElementById("prof-page").classList.remove("hidden");
-      document.getElementById("animateur").textContent = `${currentUser.prenom} ${currentUser.nom}`;
-      remplirSelectClasses();
-      majTableProf();
-      majListeExclusives();
-    } else if (role === "eleve") {
-      document.getElementById("eleve-page").classList.remove("hidden");
-      majTableEleve();  
-    }
-  }
+  // update counts
+  $('#count-acts').textContent = activites.length;
+  $('#count-users').textContent = users.length;
+  updateSidePanels();
+}
 
 
-  // -----------------------------
-  // AFFICHAGE ACTIVITES POUR ELEVE
-  // -----------------------------
-  function majTableEleve(){
-    const tbody = document.getElementById('table-eleve').querySelector('tbody');
-    tbody.innerHTML = '';
-    const classeId = currentUser.classe_id;
+/* ===========================
+   Navigation
+   =========================== */
+function cacherToutesPages(){
+  $('#eleve-page').classList.add('hidden');
+  $('#prof-page').classList.add('hidden');
+}
 
-    activites.forEach(act => {
-      if(act.classe_ids.includes(classeId)){
-        const seancesText = act.seances
-          .map(s => new Date(s.date_heure).toLocaleString('fr-FR', { hour12: false }))
-          .join(', ');
-       
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${act.titre}</td>
-          <td>${act.salle}</td>
-          <td>${act.effectif_max}</td>
-          <td>${act.inscriptions.length}</td>
-          <td>${seancesText}</td>
-        `;
-
-        const tdAction = document.createElement('td');
-        const btn = document.createElement('button');
-
-        const now = new Date();
-        const debutInscriptions = new Date(act.ouverture_inscription);
-        const finInscriptions = new Date(act.fermeture_inscription);
-        const toutesSeancesPassees = act.seances.every(s => new Date(s.date_heure) < now);
-
-        if(act.inscriptions.includes(currentUser.id)){
-          btn.disabled = true;
-          btn.textContent = 'Inscrit';
-        } else if(now < debutInscriptions){
-          btn.disabled = true;
-          btn.textContent = 'Inscriptions non ouvertes';
-        } else if(finInscriptions < now && !toutesSeancesPassees){
-          btn.disabled = true;
-          btn.textContent = 'Inscriptions fermées';
-        } else if(toutesSeancesPassees){
-          // Ne rien afficher, on supprimera plus tard côté prof
-          btn.disabled = true;
-          btn.textContent = 'Activité terminée';
-        } else {
-          btn.textContent = 'S’inscrire';
-          btn.onclick = () => {
-            if(act.inscriptions.length >= act.effectif_max){
-              alert('Effectif maximum atteint !');
-              return;
-            }
-            act.inscriptions.push(currentUser.id);
-            majTableEleve();
-            majTableProf();
-          };
-        }
-        tdAction.appendChild(btn);
-        tr.appendChild(tdAction);
-        tbody.appendChild(tr);
-      }
-    });
-  }
-
-  // -----------------------------
-  // PROFESSEUR : CLASSES
-  // -----------------------------
-  function remplirSelectClasses() {
-    const select = document.getElementById("classe-select");
-    if (!select) return;
-    select.innerHTML = '';
-    classes.forEach(cl => {
-      const option = document.createElement("option");
-      option.value = cl.id;
-      option.textContent = cl.nom;
-      select.appendChild(option);
-    });
-  }
-
-  // -----------------------------
-  // AJOUR MANUEL ET HEBDO
-  // -----------------------------
-  function ajouterSeanceHebdo() {
-    const container = document.getElementById("seances-container");
-    const startInput = document.getElementById("first-hebdoseance");
-    const nbInput = document.getElementById("nb-seances");
-
-    const startDate = new Date(startInput.value);
-    const nb = parseInt(nbInput.value);
-
-    if(isNaN(startDate.getTime()) || nb <= 0) {
-      alert("Veuillez choisir une date et un nombre valide.");
-      return;
-    }
-
-    // Supprime les anciennes hebdo de l'activité
-    // Array.from(container.querySelectorAll(".hebdo")).forEach(el => container.removeChild(el));
-
-    // Identifiant unique pour la série
-    const seriesId = Date.now();
-
-    // Conteneur série
-    const serieDiv = document.createElement("div");
-    serieDiv.className = "serie-hebdo";
-    serieDiv.dataset.seriesId = seriesId;
-
-    // Bouton de suppression du bloc
-    const supprSerie = document.createElement("span");
-    supprSerie.textContent = "🗑️";
-    supprSerie.className = "suppr-serie";
-    supprSerie.onclick = () => {
-      container.removeChild(serieDiv);
-    };
-    serieDiv.appendChild(supprSerie);
-    serieDiv.appendChild(document.createElement("br"));
-
-    for (let i = 0; i < nb; i++) {
-      const div = document.createElement("div");
-      div.className = "seance hebdo " + (i===0 ? "hebdo-first" : "hebdo-follow");
-      
-      const input = document.createElement("input");
-      input.type = "datetime-local";
-      const seanceDate = new Date(startDate.getTime() + i*7*24*60*60*1000);
-      input.value = seanceDate.toLocaleString('sv-SE', { hour12: false }).slice(0,16);
-      input.className = "seance-input";
-      div.appendChild(input);
-
-      const suppr = document.createElement("span");
-      suppr.className = "suppr";
-      suppr.textContent = "✖";
-      suppr.onclick = () => {
-        if(div.classList.contains("hebdo-first")) {
-          const next = container.querySelector(".hebdo-follow");
-          if(next) {
-            next.classList.remove("hebdo-follow");
-            next.classList.add("hebdo-first");
-            next.querySelector("input").style.border = "2px solid magenta";
-          }
-        }
-        serieDiv.removeChild(div);
-      };
-      div.appendChild(suppr);
-      serieDiv.appendChild(div);
-
-      // Mise à jour automatique si première change
-      if(i===0){
-        input.onchange = () => {
-          const allHebdo = container.querySelectorAll(".hebdo");
-          const baseDate = new Date(input.value);
-          allHebdo.forEach((d,j) =>{
-            if(j===0) return; // ne pas toucher la première
-            const inp = d.querySelector("input");
-            const nextDate = new Date(baseDate.getTime() + j*7*24*60*60*1000); // juste ajouter 7 jours
-            inp.value = nextDate.toLocaleString('sv-SE', { hour12: false}).slice(0,16);
-          });
-        }
-      }
-    }
-
-    container.appendChild(serieDiv)
-  }
-
-  function ajouterSeanceManuelle() {
-    const container = document.getElementById("seances-container");
-    const div = document.createElement("div");
-    div.className = "seance manuel";
-    
-    const input = document.createElement("input");
-    input.type = "datetime-local";
-    input.className = "seance-input";
-    div.appendChild(input);
-
-    const suppr = document.createElement("span");
-    suppr.className = "suppr";
-    suppr.textContent = "✖";
-    suppr.onclick = () => container.removeChild(div);
-
-    div.appendChild(suppr);
-    container.appendChild(div);
-  }
-
-  // -----------------------------
-  // CREER ACTIVITE
-  // -----------------------------
-  function creerActivite() {
-    const titre = document.getElementById("titre").value;
-    const salle = document.getElementById("salle").value;
-    const effectif = parseInt(document.getElementById("effectif").value) || 10;
-    const separable = document.getElementById("separable").checked;
-    const selectedClasses = Array.from(
-      document.getElementById("classe-select").selectedOptions
-    ).map(opt => parseInt(opt.value));
-    const seances = Array.from(document.getElementsByClassName("seance-input"))
-      .map((input, idx) => ({
-        id: idx + 1,
-        date_heure: input.value,
-        presences: []
-      }));
-    const ouverture = document.getElementById("ouverture").value;
-    const fermeture = document.getElementById("fermeture").value;
-    if (!titre || !salle || !effectif || selectedClasses.length===0 || seances.length ===0) {
-      alert("Veuillez remplir le titre, la salle, l'effectif maximum, la ou les classes concernées, au moins une séance et les dates de début et de fin d'inscriptions");
-      return;
-    }
-    const exclusives = Array.from(
-      document.getElementById("exclusives-select").selectedOptions
-    ).map(opt => parseInt(opt.value));
-
-    // créer l’activité
-    const newAct = {
-      id: activites.length + 1,
-      titre,
-      prof_id: currentUser.id,
-      classe_ids: selectedClasses,
-      salle,
-      separable,
-      effectif_max: effectif,
-      inscriptions: [],
-      seances,
-      ouverture_inscription: ouverture,
-      fermeture_inscription: fermeture,
-      exclusives_ids: exclusives
-    };
-
-    activites.push(newAct);
+function afficherPageRole(role){
+  cacherToutesPages();
+  if(role === 'prof'){
+    $('#prof-page').classList.remove('hidden');
+    populateSelects();
     majTableProf();
     majListeExclusives();
-
-    // Reset formulaire
-    document.getElementById("titre").value = '';
-    document.getElementById("salle").value = '';
-    document.getElementById("effectif").value = '';
-    document.getElementById("seances-container").innerHTML = '';
-    document.getElementById("first-hebdoseance").value = '';
-    document.getElementById("nb-seances").value = 4;
-    document.getElementById("ouverture").value = '';
-    document.getElementById("fermeture").value = '';
-    alert("Activité créée !");
   }
+  else if(role === 'eleve'){
+    $('#eleve-page').classList.remove('hidden');
+    majTableEleve();
+  }
+  else {
+    $('#prof-page').classList.remove('hidden'); // par défaut admin → vue prof
+    populateSelects();
+    majTableProf();
+    majListeExclusives();
+  }
+}
+/* ============================
+   Fill selects
+   ============================ */
+function populateSelects(){
+  const select = $('#classe-select'); select.innerHTML = '';
+  classes.forEach(cl=>{
+    const opt = document.createElement('option'); opt.value = cl.id; opt.textContent = cl.nom;
+    select.appendChild(opt);
+  });
+}
 
-  // -----------------------------
-  // TABLEAU PROF
-  // -----------------------------
-  function majTableProf() {
-    const tbody = document.getElementById("table-prof").querySelector('tbody');
-    tbody.innerHTML = '';
+/* ============================
+   Eleve table
+   ============================ */
+function majTableEleve(){
+  const tbody = $('#table-eleve tbody'); tbody.innerHTML = '';
+  if(!currentUser) return;
+  const classeId = currentUser.classe_id;
+  let totalAct = 0, totalIns = 0;
+  activites.forEach(act=>{
+    if(!act.classe_ids.includes(classeId)) return;
+    totalAct++;
+    const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
+    const tr = document.createElement('tr');
+    const inscritsCount = act.inscriptions.length;
+    tr.innerHTML = `
+      <td>${act.titre}</td>
+      <td>${act.salle}</td>
+      <td>${act.effectif_max}</td>
+      <td>${inscritsCount}</td>
+      <td>${seancesText}</td>
+      <td></td>
+    `;
+    const tdAction = tr.querySelector('td:last-child');
+    const btn = document.createElement('button'); btn.className='btn';
+    const now = new Date();
+    const debut = new Date(act.ouverture_inscription || 0);
+    const fin = new Date(act.fermeture_inscription || 0);
+    const allPassed = act.seances.every(s=> new Date(s.date_heure) < now);
 
-    activites.forEach(act => {
-      if(act.prof_id !== currentUser.id) return;
+    if(act.inscriptions.includes(currentUser.id)){
+      btn.textContent='Inscrit'; btn.disabled=true; btn.classList.add('secondary');
+    } else if(now < debut){
+      btn.textContent='Inscriptions non ouvertes'; btn.disabled=true; btn.classList.add('ghost');
+    } else if(fin < now && !allPassed){
+      btn.textContent='Inscriptions fermées'; btn.disabled=true; btn.classList.add('ghost');
+    } else if(allPassed){
+      btn.textContent='Activité terminée'; btn.disabled=true; btn.classList.add('ghost');
+    } else {
+      btn.textContent='S’inscrire';
+      btn.onclick = ()=>{
+        if(act.inscriptions.length >= act.effectif_max){ alert('Effectif maximum atteint !'); return; }
+        act.inscriptions.push(currentUser.id);
+        totalIns++;
+        majTableEleve(); majTableProf();
+      };
+    }
+    tdAction.appendChild(btn);
+    tbody.appendChild(tr);
+  });
+  $('#stat-act').textContent = totalAct;
+  $('#stat-insc').textContent = activites.reduce((acc,a)=>acc + (a.inscriptions.includes(currentUser?.id||-1) ? 1 : 0),0);
+}
 
-      // Liste des prénoms inscrits
-      const inscritsText = act.inscriptions
-        .map(id => users.find(u => u.id === id)?.prenom || '')
-        .join(', ') || '—';
-      const inscritsDisplay = `${act.inscriptions.length} : ${inscritsText}`;
-
-      // Liste des classes
-      const classesText = act.classe_ids
-        .map(id => classes.find(c => c.id === id)?.nom || '')
-        .join(', ');
-
-      // Séances formatées
-      const seancesText = act.seances
-        .map(s => new Date(s.date_heure).toLocaleString('fr-FR', { hour12: false }))
-        .join(', ');
-
-      const tr = document.createElement('tr');       
-      tr.innerHTML = `
-        <td>${act.titre}</td>
-        <td>${act.salle}</td>
-        <td>${act.effectif_max}</td>
-        <td>${inscritsDisplay}</td>
-        <td>${classesText}</td>
-        <td>${act.separable ? 'Oui' : 'Non'}</td>
-        <td>${new Date(act.ouverture_inscription).toLocaleString('fr-FR', { hour12: false })}</td>
-        <td>${new Date(act.fermeture_inscription).toLocaleString('fr-FR', { hour12: false })}</td>
-        <td>${seancesText}</td>
-
-      `;
-      tbody.appendChild(tr);
+/* ============================
+   Prof functions: seances
+   ============================ */
+function ajouterSeanceHebdo(){
+  const container = $('#seances-container');
+  const startInput = $('#first-hebdoseance'); const nbInput = $('#nb-seances');
+  const start = new Date(startInput.value); const nb = parseInt(nbInput.value);
+  if(isNaN(start.getTime()) || !nb || nb<1){ alert('Choisissez une date et un nombre valide'); return; }
+  const seriesId = Date.now();
+  const serieDiv = document.createElement('div'); serieDiv.className='serie-hebdo'; serieDiv.dataset.seriesId = seriesId;
+  const sup = document.createElement('div'); sup.style.textAlign='right';
+  const supBtn = document.createElement('button'); supBtn.className='btn secondary'; supBtn.textContent='Supprimer série';
+  supBtn.onclick = ()=> serieDiv.remove();
+  sup.appendChild(supBtn); serieDiv.appendChild(sup);
+  for(let i=0;i<nb;i++){
+    const d = document.createElement('div'); d.className='seance-item';
+    const inp = document.createElement('input'); inp.type='datetime-local';
+    const seanceDate = new Date(start.getTime() + i*7*24*3600*1000);
+    inp.value = seanceDate.toISOString().slice(0,16);
+    inp.className='seance-input';
+    const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px';
+    span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
+    const del = document.createElement('button'); del.className='btn ghost'; del.textContent='✖';
+    del.onclick = ()=> d.remove();
+    d.appendChild(span); d.appendChild(inp); d.appendChild(del);
+    serieDiv.appendChild(d);
+  }
+  // keep behavior: if first changes update the following
+  const firstInput = serieDiv.querySelector('.seance-input');
+  firstInput.onchange = ()=>{
+    const all = Array.from(serieDiv.querySelectorAll('.seance-item'));
+    const base = new Date(firstInput.value);
+    all.forEach((el, idx) => {
+      const iInput = el.querySelector('.seance-input');
+      const next = new Date(base.getTime() + idx*7*24*3600*1000);
+      iInput.value = next.toISOString().slice(0,16);
     });
+  };
+  container.appendChild(serieDiv);
+}
+
+function ajouterSeanceManuelle(){
+  const container = $('#seances-container');
+  const d = document.createElement('div'); d.className='seance-item';
+  const inp = document.createElement('input'); inp.type='datetime-local'; inp.className='seance-input';
+  const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px'; span.textContent='Ajout manuel';
+  const del = document.createElement('button'); del.className='btn ghost'; del.textContent='✖';
+  del.onclick = ()=> d.remove();
+  d.appendChild(span); d.appendChild(inp); d.appendChild(del);
+  container.appendChild(d);
+}
+
+/* reset form */
+function resetForm(){
+  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML=''; $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
+}
+
+/* creare Activite */
+function creerActivite(){
+  const titre = $('#titre').value.trim();
+  const salle = $('#salle').value.trim();
+  const effectif = parseInt($('#effectif').value) || 10;
+  const separable = $('#separable').checked;
+  const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
+  const seances = Array.from(document.querySelectorAll('.seance-input')).map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []})).filter(s=>s.date_heure);
+  const ouverture = $('#ouverture').value; const fermeture = $('#fermeture').value;
+  if(!titre || !salle || selectedClasses.length===0 || seances.length===0 || !ouverture || !fermeture){ alert('Veuillez remplir les champs requis et ajouter au moins une séance'); return; }
+  const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
+
+  const newAct = {
+    id: activites.length + 1,
+    titre, prof_id: currentUser.id, classe_ids: selectedClasses, salle, separable,
+    effectif_max: effectif, inscriptions: [], seances, ouverture_inscription: ouverture, fermeture_inscription: fermeture, exclusives_ids: exclusives
+  };
+  activites.push(newAct);
+  majTableProf(); majListeExclusives(); resetForm();
+  alert('Activité créée !');
+}
+
+/* prof table update */
+function majTableProf(){
+  const tbody = $('#table-prof tbody'); tbody.innerHTML = '';
+  activites.forEach(act=>{
+    if(act.prof_id !== currentUser?.id) return;
+    const inscritsText = act.inscriptions.map(id=> users.find(u=>u.id===id)?.prenom || '').join(', ') || '—';
+    const classesText = act.classe_ids.map(id=> classes.find(c=>c.id===id)?.nom || '').join(', ');
+    const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${act.titre}</td>
+      <td>${act.salle}</td>
+      <td>${act.effectif_max}</td>
+      <td>${act.inscriptions.length} : ${inscritsText}</td>
+      <td>${classesText}</td>
+      <td>${act.separable ? 'Oui' : 'Non'}</td>
+      <td>${formatDateLocal(act.ouverture_inscription)}</td>
+      <td>${formatDateLocal(act.fermeture_inscription)}</td>
+      <td>${seancesText}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* exclusives list */
+function majListeExclusives(){
+  const select = $('#exclusives-select'); select.innerHTML='';
+  activites.forEach(act=>{
+    const opt = document.createElement('option'); opt.value=act.id; opt.textContent=act.titre;
+    select.appendChild(opt);
+  });
+}
+
+
+/* ===========================
+   Sidebar panels visibility
+   =========================== */
+function updateSidePanels() {
+  // raccourcis (mode dev seulement)
+  const raccourcis = $('#sidebar-raccourcis');
+  if (raccourcis) {
+    raccourcis.classList.toggle('hidden', MODE != 'dev');
   }
 
-  // -----------------------------
-  // LISTE EXCLUSIVES
-  // -----------------------------
-  function majListeExclusives() {
-    const select = document.getElementById("exclusives-select");
-    if (!select) return;
-    select.innerHTML = '';
-    activites.forEach(act => {
-      const option = document.createElement("option");
-      option.value = act.id;
-      option.textContent = act.titre;
-      select.appendChild(option);
-    });
+  // statut (mode dev seulement)
+  const statut = $('#sidebar-statut');
+  if (statut) {
+    statut.classList.toggle('hidden', MODE !== 'dev');
   }
 
-  </script>
+  // aide rapide (uniquement si prof connecté)
+  const aideRapide = $('#sidebar-aide');
+  if (aideRapide) {
+    aideRapide.classList.toggle('hidden', !(currentUser && currentUser.role === 'prof'));
+  }
+}
+
+
+/* initial UI populate */
+(function init(){
+  populateSelects();
+  majListeExclusives();
+  $('#count-acts').textContent = activites.length;
+  $('#count-users').textContent = users.length;
+  updateSidePanels();
+  // if you want to pre-open a demo user uncomment:
+  // demoLogin('prof1');
+})();
+</script>
 </body>
 </html>
