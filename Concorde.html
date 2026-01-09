@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CONCORDE Prototype 1</title>
+  <title>CONCORDE Prototype 2</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     h1 { color: #333; }
@@ -30,34 +30,74 @@
   <!-- DASHBOARD ELEVE -->
   <div id="eleve-page" class="hidden">
     <h1>Tableau de bord élève</h1>
-    <ul id="liste-activites"></ul>
+    <table id="table-eleve">
+      <thead>
+        <tr>
+          <th>Titre</th>
+          <th>Salle</th>
+          <th>Effectif Max</th>
+          <th>Inscrits</th>
+          <th>Séances</th>
+          <th>Inscriptions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
     <button onclick="logout()">Déconnexion</button>
   </div>
 
   <!-- DASHBOARD PROFESSEUR -->
   <div id="prof-page" class="hidden">
     <h1>Tableau de bord professeur</h1>
+
+    <!-- Formulaire créaion activité -->
     <h3>Créer une activité</h3>
+
     <input type="text" id="titre" placeholder="Titre activité">
+    <span id="animateur"></span><br><br>
     <input type="text" id="salle" placeholder="Salle">
     <input type="number" id="effectif" placeholder="Effectif max">
-    <label>
-      Sécable <input type="checkbox" id="separable" checked>
-    </label>
+    <input type="checkbox" id="separable" checked> <span>Sécable</span><br><br>
+    <select id="classe-select" multiple></select><br><br>
+   
+    <div id="hebdo-container">
+      <label>Première séance : </label>
+      <input type="datetime-local" id="premire-seance"><br>
+
+      <label>Nombre de séances : </label>
+      <input type="number" id="nb-seances" value="4" min="1"><br><br>
+
+      <button onclick="ajouterSeanceHebdo()">+ Ajouter séances hebdomadaires</button>
+    </div><br>
+
+    <div id="seances-container"></div>
+    <button onclick="ajouterSeance()">+ Ajouter une séance</button><br><br>
+    
+    <span>ouverture des inscriptions </span><input type="datetime-local" id="ouverture" title="Ouverture inscriptions"><br>
+    <span>fermeture des inscriptions </span><input type="datetime-local" id="fermeture" title="Fermeture inscriptions"><br><br>
+
+    <select id="exclusives-select" multiple></select><br><br>   
+
+
     <button onclick="creerActivite()">Créer</button>
 
-    <h3>Liste des activités</h3>
-    <table id="table-activites">
+    <h3>Liste des activités (Professeur)</h3>
+    <table id="table-prof">
       <thead>
         <tr>
           <th>Titre</th>
           <th>Salle</th>
           <th>Effectif</th>
-          <th>Présences</th>
+          <th>Inscrits</th>
+          <th>Classes</th>
+          <th>Sécable</th>
+          <th>Ouverte</th>
+          <th>Fermeture</th>
+          <th>Séances</th>
         </tr>
       </thead>
       <tbody></tbody>
-    </table>
+    </table> <br><br>
     <button onclick="logout()">Déconnexion</button>
   </div>
 
@@ -74,7 +114,7 @@
   const users = [
     { id: 1, username: 'prof1', password: '123', role: 'prof', nom: 'Dupont', prenom: 'Alain', email: 'a.dupont@school.fr' },
     { id: 2, username: 'eleve1', password: '123', role: 'eleve', nom: 'Leroy', prenom: 'Emma', classe_id: 1 },
-    { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 1 },
+    { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 2 },
     { id: 4, username: 'admin', password: '123', role: 'admin', nom: 'Admin', prenom: 'Root' }
   ];
 
@@ -84,19 +124,29 @@
       titre: 'Atelier Théâtre',
       prof_id: 1,
       classe_ids: [1,2],
-      salle: '101',
+      salle: 'LM19C',
       separable: false,
       effectif_max: 10,
-      inscriptions: []
+      inscriptions: [],
+      seances: [
+      { id: 1, date_heure: "2025-09-10T14:00", presences: [] },
+      { id: 2, date_heure: "2025-09-12T14:00", presences: [] }
+      ],
+      ouverture_inscription: "2025-09-10T14:00",
+      fermeture_inscription: "2025-09-12T14:00",
+      exclusives_ids: []
+
     }
   ];
 
+
   let currentUser = null; // utilisateur connecté
 
-  // -----------------------------
-  // FONCTION CONNEXION
-  // -----------------------------
+  // ----------------------------------
+  // FONCTION CONNEXION + DECONNEXION
+  // ----------------------------------
   function login() {
+    // Récupération des valeurs saisies
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
     const user = users.find(u => u.username === username && u.password === password);
@@ -105,70 +155,82 @@
       currentUser = user;
       document.getElementById('login-page').classList.add('hidden');
       document.getElementById('login-msg').textContent = '';
-
-      if(user.role === 'eleve') {
-        document.getElementById('eleve-page').classList.remove('hidden');
-        afficherActivites();
-      } else if(user.role === 'prof' || user.role === 'admin') {
-        document.getElementById('prof-page').classList.remove('hidden');
-        afficherTableProf();
-      }
+      afficherPageRole(user.role);      
     } else {
       document.getElementById('login-msg').textContent = "Nom d'utilisateur ou mot de passe incorrect";
     }
   }
 
-  // -----------------------------
-  // FONCTION DECONNEXION
-  // -----------------------------
   function logout() {
     currentUser = null;
-    document.getElementById('login-page').classList.remove('hidden');
     document.getElementById('eleve-page').classList.add('hidden');
     document.getElementById('prof-page').classList.add('hidden');
+    document.getElementById('login-page').classList.remove('hidden');
     document.getElementById('username').value = '';
     document.getElementById('password').value = '';
+  }
+
+  // ----------------------------------
+  // NAVIGATION PAR ROLE
+  // ----------------------------------
+  function afficherPageRole(role) {
+    // masquer toutes les pages
+    document.querySelectorAll("div[id$='-page']").forEach(div => div.classList.add("hidden"));
+    if (role === "prof") {
+      document.getElementById("prof-page").classList.remove("hidden");
+      document.getElementById("animateur").textContent = `${currentUser.prenom} ${currentUser.nom}`;
+      remplirSelectClasses();
+      majTableProf();
+      majListeExclusives();
+    } else if (role === "eleve") {
+      document.getElementById("eleve-page").classList.remove("hidden");
+      majTableEleve();  
+    }
   }
 
   // -----------------------------
   // AFFICHAGE ACTIVITES POUR ELEVE
   // -----------------------------
-  function afficherActivites() {
-    const liste = document.getElementById('liste-activites');
-    liste.innerHTML = '';
-    const eleve = currentUser;
+  function majTableEleve(){
+    const tbody = document.getElementById('table-eleve').querySelector('tbody');
+    tbody.innerHTML = '';
+    const classeId = currentUser.classe_id;
 
     activites.forEach(act => {
-      if(act.classe_ids.includes(eleve.classe_id)) {
-        const li = document.createElement('li');
+      if(act.classe_ids.includes(classeId)){
+        const tr = document.createElement('tr');
 
-        // Récupérer le prof qui a créé l'activité
-        const prof = users.find(u => u.id === act.prof_id);
-        const profNom = prof ? `${prof.prenom} ${prof.nom}` : 'Inconnu';
+        const seancesText = act.seances.map(s => new Date(s.date_heure).toLocaleString()).join(', ');
 
-        li.textContent = `${act.titre} - Salle: ${act.salle} - Créé par: ${profNom}`;
+       
+        tr.innerHTML = `
+          <td>${act.titre}</td>
+          <td>${act.salle}</td>
+          <td>${act.effectif_max}</td>
+          <td>${act.inscriptions.length}</td>
+          <td>${seancesText}</td>
+        `;
 
+        const tdAction = document.createElement('td');
         const btn = document.createElement('button');
-        btn.textContent = 'S’inscrire';
-
-        // Désactiver si déjà inscrit
-        if(act.inscriptions.includes(eleve.id)) {
+        if(act.inscriptions.includes(currentUser.id)){
           btn.disabled = true;
           btn.textContent = 'Inscrit';
+        } else {
+          btn.textContent = 'S’inscrire';
+          btn.onclick = () => {
+            if(act.inscriptions.length >= act.effectif_max){
+              alert('Effectif maximum atteint !');
+              return;
+            }
+            act.inscriptions.push(currentUser.id);
+            majTableEleve();
+            majTableProf();
+          };
         }
-
-        btn.onclick = () => {
-          if(!act.inscriptions.includes(eleve.id)) {
-            act.inscriptions.push(eleve.id);
-            alert('Inscrit !');
-            btn.disabled = true;
-            btn.textContent = 'Inscrit';
-            afficherTableProf(); // mettre à jour le tableau prof
-          }
-        };
-
-        li.appendChild(btn);
-        liste.appendChild(li);
+        tdAction.appendChild(btn);
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
       }
     });
   }
@@ -176,43 +238,132 @@
   // -----------------------------
   // FONCTIONS PROFESSEUR
   // -----------------------------
-  function creerActivite() {
-    const titre = document.getElementById('titre').value;
-    const salle = document.getElementById('salle').value;
-    const effectif = parseInt(document.getElementById('effectif').value) || 10;
-    const separable = document.getElementById('separable').checked;
+  function remplirSelectClasses() {
+    const select = document.getElementById("classe-select");
+    if (!select) return;
+    select.innerHTML = '';
+    classes.forEach(cl => {
+      const option = document.createElement("option");
+      option.value = cl.id;
+      option.textContent = cl.nom;
+      select.appendChild(option);
+    });
+  }
 
+  function ajouterSeance() {
+    const container = document.getElementById("seances-container");
+    const input = document.createElement("input");
+    input.type = "datetime-local";
+    input.className = "seance-input";
+    container.appendChild(input);
+    container.appendChild(document.createElement("br"));
+  }
+
+  function ajouterSeanceHebdo() {
+    const container = document.getElementById("seances-container")
+    const startDate = new Date();
+    for (let i=0; i<4; i++) {// 4 semaines
+      const input = document.createElement("input");
+      input.type = "datetime-local";
+      const nextDate = new Date(startDate);
+      nextDate.setDate(startDate.getDate() + i*7);
+      input.value = nextDate.toISOString().slice(0,16);
+      container.appendChild(input);
+      container.appendChild(document.createElement("br"));
+    }
+  }
+
+  function creerActivite() {
+    const titre = document.getElementById("titre").value;
+    const salle = document.getElementById("salle").value;
+    const effectif = parseInt(document.getElementById("effectif").value) || 10;
+    const separable = document.getElementById("separable").checked;
+    const selectedClasses = Array.from(
+      document.getElementById("classe-select").selectedOptions
+    ).map(opt => parseInt(opt.value));
+    const seances = Array.from(document.getElementsByClassName("seance-input"))
+      .map((input, idx) => ({
+        id: idx + 1,
+        date_heure: input.value,
+        presences: []
+      }));
+    const ouverture = document.getElementById("ouverture").value;
+    const fermeture = document.getElementById("fermeture").value;
+    const exclusives = Array.from(
+      document.getElementById("exclusives-select").selectedOptions
+    ).map(opt => parseInt(opt.value));
+
+    // créer l’activité
     const newAct = {
       id: activites.length + 1,
       titre,
       prof_id: currentUser.id,
-      classe_ids: [1], // pour prototype, on met juste 3A
+      classe_ids: selectedClasses,
       salle,
       separable,
       effectif_max: effectif,
-      inscriptions: []
+      inscriptions: [],
+      seances,
+      ouverture_inscription: ouverture,
+      fermeture_inscription: fermeture,
+      exclusives_ids: exclusives
     };
+
     activites.push(newAct);
-    afficherTableProf();
-    alert('Activité créée !');
+    majTableProf();
+    majListeExclusives();
+
+    alert("Activité créée !");
   }
 
-  function afficherTableProf() {
-    const tbody = document.querySelector('#table-activites tbody');
+  function majTableProf() {
+    const tbody = document.getElementById("table-prof").querySelector('tbody');
     tbody.innerHTML = '';
 
+   
     activites.forEach(act => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+      if(act.prof_id === currentUser.id) {
+         // Récupère la liste des prénoms
+        const inscritsText = act.inscriptions.map(id => {
+          const eleve = users.find(u => u.id === id);
+          return eleve ? eleve.prenom : '';
+        }).join(', ');
+        // nombres : prénoms
+        const inscritsDisplay = `${act.inscriptions.length} : ${inscritsText || '—'}`;
+
+        const tr = document.createElement('tr');
+        const classesText = act.classe_ids.map(id => {
+          const cl = classes.find(c => c.id === id);
+          return cl ? cl.nom : '';
+        }).join(', ');
+        tr.innerHTML = `
         <td>${act.titre}</td>
         <td>${act.salle}</td>
         <td>${act.effectif_max}</td>
-        <td>${act.inscriptions.map(id => users.find(u => u.id===id).prenom).join(', ')}</td>
+        <td>${inscritsDisplay}</td>
+        <td>${classesText}</td>
+        <td>${act.separable ? 'Oui' : 'Non'}</td>
+        <td>${new Date(act.ouverture_inscription).toLocaleString()}</td>
+        <td>${new Date(act.fermeture_inscription).toLocaleString()}</td>
+        <td>${act.seances.map(s => new Date(s.date_heure).toLocaleString()).join(', ')}</td>
+
       `;
-      tbody.appendChild(tr);
+      tbody.appendChild(tr)
+      }
+    });
+  }
+
+  function majListeExclusives() {
+    const select = document.getElementById("exclusives-select");
+    if (!select) return;
+    select.innerHTML = '';
+    activites.forEach(act => {
+      const option = document.createElement("option");
+      option.value = act.id;
+      option.textContent = act.titre;
+      select.appendChild(option);
     });
   }
   </script>
-
 </body>
 </html>
