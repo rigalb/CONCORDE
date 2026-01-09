@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONCORDE Prototype 1</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: #333; }
+    ul { list-style: none; padding: 0; }
+    li { margin-bottom: 10px; }
+    button { margin-left: 10px; }
+    .hidden { display: none; }
+    input { margin: 5px 0; padding: 5px; }
+    table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+  </style>
+</head>
+<body>
+
+  <!-- PAGE DE CONNEXION -->
+  <div id="login-page">
+    <h1>Connexion CONCORDE</h1>
+    <input type="text" id="username" placeholder="Nom d'utilisateur"><br>
+    <input type="password" id="password" placeholder="Mot de passe"><br>
+    <button onclick="login()">Se connecter</button>
+    <p id="login-msg" style="color:red;"></p>
+  </div>
+
+  <!-- DASHBOARD ELEVE -->
+  <div id="eleve-page" class="hidden">
+    <h1>Tableau de bord élève</h1>
+    <ul id="liste-activites"></ul>
+    <button onclick="logout()">Déconnexion</button>
+  </div>
+
+  <!-- DASHBOARD PROFESSEUR -->
+  <div id="prof-page" class="hidden">
+    <h1>Tableau de bord professeur</h1>
+    <h3>Créer une activité</h3>
+    <input type="text" id="titre" placeholder="Titre activité">
+    <input type="text" id="salle" placeholder="Salle">
+    <input type="number" id="effectif" placeholder="Effectif max">
+    <label>
+      Sécable <input type="checkbox" id="separable" checked>
+    </label>
+    <button onclick="creerActivite()">Créer</button>
+
+    <h3>Liste des activités</h3>
+    <table id="table-activites">
+      <thead>
+        <tr>
+          <th>Titre</th>
+          <th>Salle</th>
+          <th>Effectif</th>
+          <th>Présences</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button onclick="logout()">Déconnexion</button>
+  </div>
+
+  <script>
+  // -----------------------------
+  // DONNEES SIMULEES
+  // -----------------------------
+  const classes = [
+    { id: 1, nom: '3A' },
+    { id: 2, nom: '2B' },
+    { id: 3, nom: '1C' }
+  ];
+
+  const users = [
+    { id: 1, username: 'prof1', password: '123', role: 'prof', nom: 'Dupont', prenom: 'Alain', email: 'a.dupont@school.fr' },
+    { id: 2, username: 'eleve1', password: '123', role: 'eleve', nom: 'Leroy', prenom: 'Emma', classe_id: 1 },
+    { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 1 },
+    { id: 4, username: 'admin', password: '123', role: 'admin', nom: 'Admin', prenom: 'Root' }
+  ];
+
+  let activites = [
+    {
+      id: 1,
+      titre: 'Atelier Théâtre',
+      prof_id: 1,
+      classe_ids: [1,2],
+      salle: '101',
+      separable: false,
+      effectif_max: 10,
+      inscriptions: []
+    }
+  ];
+
+  let currentUser = null; // utilisateur connecté
+
+  // -----------------------------
+  // FONCTION CONNEXION
+  // -----------------------------
+  function login() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const user = users.find(u => u.username === username && u.password === password);
+
+    if(user) {
+      currentUser = user;
+      document.getElementById('login-page').classList.add('hidden');
+      document.getElementById('login-msg').textContent = '';
+
+      if(user.role === 'eleve') {
+        document.getElementById('eleve-page').classList.remove('hidden');
+        afficherActivites();
+      } else if(user.role === 'prof' || user.role === 'admin') {
+        document.getElementById('prof-page').classList.remove('hidden');
+        afficherTableProf();
+      }
+    } else {
+      document.getElementById('login-msg').textContent = "Nom d'utilisateur ou mot de passe incorrect";
+    }
+  }
+
+  // -----------------------------
+  // FONCTION DECONNEXION
+  // -----------------------------
+  function logout() {
+    currentUser = null;
+    document.getElementById('login-page').classList.remove('hidden');
+    document.getElementById('eleve-page').classList.add('hidden');
+    document.getElementById('prof-page').classList.add('hidden');
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+  }
+
+  // -----------------------------
+  // AFFICHAGE ACTIVITES POUR ELEVE
+  // -----------------------------
+  function afficherActivites() {
+    const liste = document.getElementById('liste-activites');
+    liste.innerHTML = '';
+    const eleve = currentUser;
+
+    activites.forEach(act => {
+      if(act.classe_ids.includes(eleve.classe_id)) {
+        const li = document.createElement('li');
+
+        // Récupérer le prof qui a créé l'activité
+        const prof = users.find(u => u.id === act.prof_id);
+        const profNom = prof ? `${prof.prenom} ${prof.nom}` : 'Inconnu';
+
+        li.textContent = `${act.titre} - Salle: ${act.salle} - Créé par: ${profNom}`;
+
+        const btn = document.createElement('button');
+        btn.textContent = 'S’inscrire';
+
+        // Désactiver si déjà inscrit
+        if(act.inscriptions.includes(eleve.id)) {
+          btn.disabled = true;
+          btn.textContent = 'Inscrit';
+        }
+
+        btn.onclick = () => {
+          if(!act.inscriptions.includes(eleve.id)) {
+            act.inscriptions.push(eleve.id);
+            alert('Inscrit !');
+            btn.disabled = true;
+            btn.textContent = 'Inscrit';
+            afficherTableProf(); // mettre à jour le tableau prof
+          }
+        };
+
+        li.appendChild(btn);
+        liste.appendChild(li);
+      }
+    });
+  }
+
+  // -----------------------------
+  // FONCTIONS PROFESSEUR
+  // -----------------------------
+  function creerActivite() {
+    const titre = document.getElementById('titre').value;
+    const salle = document.getElementById('salle').value;
+    const effectif = parseInt(document.getElementById('effectif').value) || 10;
+    const separable = document.getElementById('separable').checked;
+
+    const newAct = {
+      id: activites.length + 1,
+      titre,
+      prof_id: currentUser.id,
+      classe_ids: [1], // pour prototype, on met juste 3A
+      salle,
+      separable,
+      effectif_max: effectif,
+      inscriptions: []
+    };
+    activites.push(newAct);
+    afficherTableProf();
+    alert('Activité créée !');
+  }
+
+  function afficherTableProf() {
+    const tbody = document.querySelector('#table-activites tbody');
+    tbody.innerHTML = '';
+
+    activites.forEach(act => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${act.titre}</td>
+        <td>${act.salle}</td>
+        <td>${act.effectif_max}</td>
+        <td>${act.inscriptions.map(id => users.find(u => u.id===id).prenom).join(', ')}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  </script>
+
+</body>
+</html>
