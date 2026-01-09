@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Emploi du temps — Scheduler</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass: rgba(255,255,255,0.03)}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071020);color:#e6eef6}
+    .app{max-width:1100px;margin:28px auto;padding:18px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    button,select,input{background:var(--card);border:1px solid rgba(255,255,255,0.04);color:inherit;padding:8px 10px;border-radius:10px}
+    button.primary{background:linear-gradient(90deg,var(--accent),#7c3aed);font-weight:600}
+
+    .scheduler{display:grid;grid-template-columns:64px repeat(5,1fr);gap:8px;margin-top:18px}
+    .time-col{background:var(--glass);padding:8px;border-radius:10px;display:flex;flex-direction:column;gap:6px}
+    .time-slot{font-size:12px;color:var(--muted);height:48px;display:flex;align-items:center;padding-left:6px}
+
+    .day-col{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);padding:6px;border-radius:10px;min-height:480px;position:relative;overflow:auto}
+    .day-header{position:sticky;top:0;background:transparent;padding:6px 6px 12px 6px;font-weight:600}
+
+    .slot{height:48px;border-radius:8px;margin-bottom:6px;position:relative}
+    .event{position:absolute;left:6px;right:6px;border-radius:8px;padding:8px 10px;font-size:13px;color:#072;cursor:grab;background:linear-gradient(90deg,#fef3c7,#fde68a);box-shadow:0 6px 18px rgba(0,0,0,0.5);border:1px solid rgba(0,0,0,0.15)}
+    .event.work{background:linear-gradient(90deg,#7dd3fc,#60a5fa);color:#022}
+    .event.study{background:linear-gradient(90deg,#bbf7d0,#86efac);color:#032}
+    .event.extra{background:linear-gradient(90deg,#fbcfe8,#fda4af);color:#210}
+
+    .mini{font-size:11px;opacity:0.9;margin-top:6px}
+    .legend{display:flex;gap:8px;align-items:center}
+    .legend .dot{width:12px;height:12px;border-radius:4px}
+
+    .form{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .form-row{display:flex;gap:8px}
+    input[type="time"]{padding:6px}
+    .small{width:120px}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+
+    /* responsive */
+    @media (max-width:900px){.scheduler{grid-template-columns:48px repeat(2,1fr);}.controls{flex-wrap:wrap}}
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Emploi du temps">
+    <header>
+      <h1>Emploi du temps — Scheduler</h1>
+      <div class="controls">
+        <select id="viewSelect" aria-label="Nombre de jours">
+          <option value="5">Semaine (Lun–Ven)</option>
+          <option value="7">Semaine complète</option>
+        </select>
+        <button id="addBtn" class="primary">Ajouter une activité</button>
+        <button id="saveBtn">Enregistrer (local)</button>
+        <button id="clearBtn">Effacer</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="scheduler" id="grid">
+        <div class="time-col" aria-hidden="true">
+          <div class="time-slot">&nbsp;</div>
+        </div>
+        <!-- day columns injected -->
+      </div>
+
+      <section class="form" aria-hidden="true" id="editor" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Nouvelle activité</strong>
+          <button id="closeEditor">Fermer</button>
+        </div>
+        <div class="form-row">
+          <input id="title" placeholder="Titre" />
+          <select id="type">
+            <option value="work">Travail</option>
+            <option value="study">Étude</option>
+            <option value="extra">Autre</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <input id="start" type="time" class="small" />
+          <input id="end" type="time" class="small" />
+          <select id="day" class="small"></select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="saveEvent" class="primary">Ajouter</button>
+          <button id="cancelEvent">Annuler</button>
+        </div>
+      </section>
+
+      <div class="mini" style="margin-top:10px">Glisser-déposer pour réarranger. Sauvegarde automatique locale après modification.</div>
+
+      <footer>
+        Astuce : utilise les touches <kbd>Ctrl</kbd> + <kbd>S</kbd> pour forcer l'enregistrement. Les données sont stockées uniquement dans ton navigateur.
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    // Simple scheduler: week view, 08:00 - 20:00, slots 30min
+    const app = {
+      startHour:8, endHour:20, slotMin:30,
+      viewDays:5, dataKey:'emploi_sched_v1', events:[]
+    };
+
+    const grid = document.getElementById('grid');
+    const viewSelect = document.getElementById('viewSelect');
+    const addBtn = document.getElementById('addBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const editor = document.getElementById('editor');
+
+    function minutesToHHMM(m){
+      const h = Math.floor(m/60); const mm = (m%60).toString().padStart(2,'0');
+      return h+':'+mm;
+    }
+
+    function buildGrid(){
+      grid.innerHTML = '';
+      const timeCol = document.createElement('div'); timeCol.className='time-col';
+      timeCol.innerHTML = '<div class="time-slot">Heure</div>';
+      for(let t=app.startHour*60;t<app.endHour*60;t+=app.slotMin){
+        const ts = document.createElement('div'); ts.className='time-slot'; ts.textContent=minutesToHHMM(t);
+        timeCol.appendChild(ts);
+      }
+      grid.appendChild(timeCol);
+
+      const days = app.viewDays===7?['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']:['Lun','Mar','Mer','Jeu','Ven'];
+      days.forEach((d,idx)=>{
+        const col = document.createElement('div'); col.className='day-col'; col.dataset.day=idx; col.setAttribute('aria-label',d);
+        const header = document.createElement('div'); header.className='day-header'; header.textContent=d; col.appendChild(header);
+        // create empty placeholders for each slot region
+        const slots = document.createElement('div'); slots.className='slots';
+        for(let t=app.startHour*60;t<app.endHour*60;t+=app.slotMin){
+          const s = document.createElement('div'); s.className='slot'; s.dataset.time = t; slots.appendChild(s);
+        }
+        col.appendChild(slots);
+        grid.appendChild(col);
+
+        // click to add quick event
+        col.addEventListener('dblclick', (e)=>{
+          const rect = col.getBoundingClientRect();
+          const y = e.clientY - rect.top - header.offsetHeight;
+          const slotIndex = Math.floor(y / (48 + 6)); // slot height + gap
+          const time = app.startHour*60 + slotIndex*app.slotMin;
+          openEditorFor({day:idx, start:minutesToInput(time), end:minutesToInput(time+app.slotMin)});
+        });
+      });
+
+      populateDaySelect();
+      renderEvents();
+    }
+
+    function minutesToInput(m){const h=Math.floor(m/60).toString().padStart(2,'0');const mm=(m%60).toString().padStart(2,'0');return `${h}:${mm}`}
+
+    function populateDaySelect(){
+      const select = document.getElementById('day'); select.innerHTML='';
+      const names = app.viewDays===7?['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']:['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+      names.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;select.appendChild(o)});
+    }
+
+    function openEditorFor(pref){
+      editor.style.display='flex'; editor.removeAttribute('aria-hidden');
+      document.getElementById('title').value = pref?.title||'';
+      document.getElementById('type').value = pref?.type||'work';
+      document.getElementById('start').value = pref?.start||'08:00';
+      document.getElementById('end').value = pref?.end||'09:00';
+      document.getElementById('day').value = pref?.day||0;
+      editor.dataset.editing = pref?.id||'';
+    }
+
+    function closeEditor(){editor.style.display='none';editor.setAttribute('aria-hidden','true');editor.dataset.editing='';}
+
+    addBtn.addEventListener('click',()=>openEditorFor());
+    document.getElementById('closeEditor').addEventListener('click',closeEditor);
+    document.getElementById('cancelEvent').addEventListener('click',closeEditor);
+
+    document.getElementById('saveEvent').addEventListener('click',()=>{
+      const id = editor.dataset.editing||('e_'+Date.now());
+      const ev = {
+        id:id,
+        title:document.getElementById('title').value||'Activité',
+        type:document.getElementById('type').value,
+        day:parseInt(document.getElementById('day').value,10),
+        start:document.getElementById('start').value,
+        end:document.getElementById('end').value
+      };
+      // basic validation
+      if(ev.end <= ev.start){alert('L\'heure de fin doit être après l\'heure de début');return}
+      const existing = app.events.find(x=>x.id===id);
+      if(existing){Object.assign(existing,ev)}else{app.events.push(ev)}
+      closeEditor(); renderEvents(); saveLocal();
+    });
+
+    function renderEvents(){
+      // clear placed events
+      document.querySelectorAll('.event').forEach(n=>n.remove());
+      const cols = document.querySelectorAll('.day-col');
+      app.events.forEach(ev=>{
+        const col = cols[ev.day]; if(!col) return;
+        const slots = col.querySelector('.slots');
+        const startMin = parseTime(ev.start); const endMin = parseTime(ev.end);
+        const topOffset = ((startMin - app.startHour*60)/(app.slotMin))*(48+6) + col.querySelector('.day-header').offsetHeight;
+        const height = Math.max(32, ((endMin - startMin)/app.slotMin)*(48+6) - 6);
+        const div = document.createElement('div'); div.className = 'event '+ev.type; div.style.top = topOffset+'px'; div.style.height = height+'px';
+        div.setAttribute('draggable','true'); div.dataset.id = ev.id; div.innerHTML = `<strong>${escapeHtml(ev.title)}</strong><div class="mini">${ev.start} - ${ev.end}</div>`;
+        col.appendChild(div);
+
+        // drag behaviour
+        div.addEventListener('dragstart', (e)=>{ e.dataTransfer.setData('text/plain', ev.id); div.style.opacity=0.6 });
+        div.addEventListener('dragend', ()=>{ div.style.opacity=1 });
+
+        // click to edit
+        div.addEventListener('dblclick', ()=>{ openEditorFor(Object.assign({},ev)); editor.dataset.editing = ev.id });
+      });
+
+      // allow drop on day col
+      document.querySelectorAll('.day-col').forEach(col=>{
+        col.addEventListener('dragover', (e)=>{ e.preventDefault(); });
+        col.addEventListener('drop', (e)=>{
+          e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); const ev = app.events.find(x=>x.id===id); if(!ev) return;
+          const rect = col.getBoundingClientRect(); const y = e.clientY - rect.top - col.querySelector('.day-header').offsetHeight; const slotIndex = Math.max(0, Math.floor(y/(48+6)));
+          const newStart = app.startHour*60 + slotIndex*app.slotMin; const dur = parseTime(ev.end)-parseTime(ev.start);
+          ev.start = minutesToInput(newStart); ev.end = minutesToInput(newStart + dur); ev.day = parseInt(col.dataset.day,10);
+          renderEvents(); saveLocal();
+        });
+      });
+    }
+
+    function parseTime(t){ const [hh,mm] = t.split(':').map(Number); return hh*60+mm }
+    function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]) }
+
+    function saveLocal(){ localStorage.setItem(app.dataKey, JSON.stringify(app)); console.info('Enregistré localement') }
+    function loadLocal(){ const raw = localStorage.getItem(app.dataKey); if(!raw) return; try{const parsed=JSON.parse(raw); app.events = parsed.events||[]; app.viewDays = parsed.viewDays||app.viewDays; }catch(e){console.warn('load failed',e)} }
+
+    saveBtn.addEventListener('click', saveLocal);
+    clearBtn.addEventListener('click', ()=>{ if(confirm('Effacer toutes les activités ?')){app.events=[]; renderEvents(); saveLocal()} });
+
+    viewSelect.addEventListener('change', (e)=>{ app.viewDays = parseInt(e.target.value,10); buildGrid(); saveLocal(); });
+
+    window.addEventListener('keydown', (e)=>{ if(e.ctrlKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveLocal(); alert('Enregistré (local)') } });
+
+    // autosave debounce
+    let saveTimeout=null; function autosave(){ clearTimeout(saveTimeout); saveTimeout=setTimeout(saveLocal,600) }
+
+    // load and initial render
+    loadLocal(); buildGrid(); renderEvents();
+
+    // auto-save on changes
+    const obs = new MutationObserver(autosave); obs.observe(grid,{childList:true,subtree:true});
+
+    // helper: show editor when double-click grid header
+    grid.addEventListener('dblclick', (e)=>{
+      if(e.target.classList.contains('time-slot')) return; // handled elsewhere
+    });
+  </script>
+</body>
+</html>
