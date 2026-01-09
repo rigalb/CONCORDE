@@ -163,12 +163,12 @@ class ERDiagramAdvanced:
     toolbar = Frame(self.window)
     toolbar.pack(fill='x', padx=5, pady=5)
 
-    Button(toolbar, text="🔄 Recalculer Layout", command=self._recalculate_layout).pack(side='left', padx=2)
-    Button(toolbar, text="🔍 Zoom +", command=lambda: self._zoom(1.2)).pack(side='left', padx=2)
-    Button(toolbar, text="🔍 Zoom -", command=lambda: self._zoom(0.8)).pack(side='left', padx=2)
-    Button(toolbar, text="↺ Réinitialiser", command=self._reset_view).pack(side='left', padx=2)
-    Button(toolbar, text="💾 Exporter PNG", command=self._export_png).pack(side='left', padx=2)
-    Button(toolbar, text="📊 Exporter SVG", command=self._export_svg).pack(side='left', padx=2)
+    Button(toolbar, text="Recalculer Layout", command=self._recalculate_layout).pack(side='left', padx=2)
+    Button(toolbar, text="Zoom +", command=lambda: self._zoom(1.2)).pack(side='left', padx=2)
+    Button(toolbar, text="Zoom -", command=lambda: self._zoom(0.8)).pack(side='left', padx=2)
+    Button(toolbar, text="Réinitialiser", command=self._reset_view).pack(side='left', padx=2)
+    Button(toolbar, text="Exporter PNG", command=self._export_png).pack(side='left', padx=2)
+    Button(toolbar, text="Exporter SVG", command=self._export_svg).pack(side='left', padx=2)
 
     Label(toolbar, text="  Layout:").pack(side='left', padx=5)
     self.layout_var = StringVar(value="force")
@@ -1174,7 +1174,7 @@ class AdvancedSearchDialog:
     scrollbar.pack(side="right", fill="y")
 
     # Bouton ajouter filtre
-    Button(self.window, text="➕ Ajouter un filtre",
+    Button(self.window, text="+ Ajouter un filtre",
             command=self._add_filter, bg='#28a745', fg='white').pack(pady=5)
 
     # Opérateur logique entre filtres
@@ -1190,11 +1190,11 @@ class AdvancedSearchDialog:
     btn_frame = Frame(self.window)
     btn_frame.pack(pady=10)
 
-    Button(btn_frame, text="🔍 Rechercher", command=self._search,
+    Button(btn_frame, text="Rechercher", command=self._search,
       bg='#4a90e2', fg='white', font=('Arial', 10)).pack(side='left', padx=5)
-    Button(btn_frame, text="🗑️ Réinitialiser", command=self._reset,
+    Button(btn_frame, text="Réinitialiser", command=self._reset,
       bg='#6c757d', fg='white', font=('Arial', 10)).pack(side='left', padx=5)
-    Button(btn_frame, text="❌ Fermer", command=self.window.destroy,
+    Button(btn_frame, text="X Fermer", command=self.window.destroy,
       bg='#dc3545', fg='white', font=('Arial', 10)).pack(side='left', padx=5)
 
     # Ajouter un filtre par défaut
@@ -1248,7 +1248,7 @@ class AdvancedSearchDialog:
     Checkbutton(filter_frame, text="Casse", variable=case_var).grid(row=0, column=7, padx=5)
 
     # Bouton supprimer
-    Button(filter_frame, text="❌", command=lambda: self._remove_filter(filter_frame),
+    Button(filter_frame, text="X", command=lambda: self._remove_filter(filter_frame),
       bg='#dc3545', fg='white').grid(row=0, column=8, padx=5)
 
     self.filters.append({
@@ -1358,13 +1358,13 @@ class DataValidationManager:
     toolbar = Frame(self.window)
     toolbar.pack(fill='x', padx=5, pady=5)
 
-    Button(toolbar, text="➕ Nouvelle règle", command=self._add_rule,
+    Button(toolbar, text="+ Nouvelle règle", command=self._add_rule,
           bg='#28a745', fg='white').pack(side='left', padx=2)
-    Button(toolbar, text="▶️ Valider table", command=self._validate_table,
+    Button(toolbar, text="> Valider table", command=self._validate_table,
           bg='#4a90e2', fg='white').pack(side='left', padx=2)
-    Button(toolbar, text="📊 Rapport", command=self._show_report,
+    Button(toolbar, text="Rapport", command=self._show_report,
           bg='#17a2b8', fg='white').pack(side='left', padx=2)
-    Button(toolbar, text="💾 Sauvegarder règles", command=self._save_rules,
+    Button(toolbar, text="Sauvegarder règles", command=self._save_rules,
           bg='#ffc107', fg='black').pack(side='left', padx=2)
 
     # Liste des règles
@@ -1508,18 +1508,18 @@ class DataValidationManager:
           count = self.cursor.fetchone()[0]
           if count > 0:
             errors.append(f"{col}: {count} valeurs NULL trouvées")
-            rule['status'] = f'❌ {count} erreurs'
+            rule['status'] = f'[KO] {count} erreurs'
           else:
-            rule['status'] = '✅ OK'
+            rule['status'] = '[OK]'
 
         elif rule_type == 'UNIQUE':
           self.cursor.execute(f"SELECT {col}, COUNT(*) FROM {self.current_table} GROUP BY {col} HAVING COUNT(*) > 1")
           duplicates = self.cursor.fetchall()
           if duplicates:
             errors.append(f"{col}: {len(duplicates)} valeurs dupliquées")
-            rule['status'] = f'❌ {len(duplicates)} duplicatas'
+            rule['status'] = f'[KO] {len(duplicates)} duplicatas'
           else:
-            rule['status'] = '✅ OK'
+            rule['status'] = '[OK]'
 
         elif rule_type == 'RANGE (min-max)':
           min_val, max_val = params.split('-')
@@ -1530,9 +1530,9 @@ class DataValidationManager:
           count = self.cursor.fetchone()[0]
           if count > 0:
             errors.append(f"{col}: {count} valeurs hors plage")
-            rule['status'] = f'❌ {count} erreurs'
+            rule['status'] = f'[KO] {count} erreurs'
           else:
-            rule['status'] = '✅ OK'
+            rule['status'] = '[OK]'
 
         elif rule_type == 'REGEX':
           import re
@@ -1544,9 +1544,9 @@ class DataValidationManager:
               invalid_count += 1
           if invalid_count > 0:
             errors.append(f"{col}: {invalid_count} valeurs invalides (regex)")
-            rule['status'] = f'❌ {invalid_count} erreurs'
+            rule['status'] = f'[KO] {invalid_count} erreurs'
           else:
-            rule['status'] = '✅ OK'
+            rule['status'] = '[OK]'
 
         elif rule_type == 'EMAIL':
           import re
@@ -1556,15 +1556,15 @@ class DataValidationManager:
           invalid_count = sum(1 for val in values if not re.match(email_regex, str(val[0])))
           if invalid_count > 0:
             errors.append(f"{col}: {invalid_count} emails invalides")
-            rule['status'] = f'❌ {invalid_count} erreurs'
+            rule['status'] = f'[KO] {invalid_count} erreurs'
           else:
-            rule['status'] = '✅ OK'
+            rule['status'] = '[OK]'
 
           # ... autres types de validation
 
       except Exception as e:
         errors.append(f"{col}: Erreur de validation - {str(e)}")
-        rule['status'] = '❌ Erreur'
+        rule['status'] = '[KO] Erreur'
 
     self._refresh_rules_display()
 
@@ -1572,7 +1572,7 @@ class DataValidationManager:
       messagebox.showwarning("Validation terminée",
                             f"{len(errors)} erreur(s) détectée(s)\n\nVoir le rapport pour plus de détails")
     else:
-      messagebox.showinfo("Validation terminée", "✅ Toutes les règles sont respectées")
+      messagebox.showinfo("Validation terminée", "[OK] Toutes les règles sont respectées")
 
   def _show_report(self):
     """Affiche un rapport détaillé de validation."""
@@ -1671,9 +1671,9 @@ class ChartVisualization:
     btn_frame = Frame(self.window)
     btn_frame.pack(pady=10)
 
-    Button(btn_frame, text="📊 Générer", command=self._generate_chart,
+    Button(btn_frame, text="Générer", command=self._generate_chart,
           bg='#28a745', fg='white', font=('Arial', 10)).pack(side='left', padx=5)
-    Button(btn_frame, text="💾 Exporter PNG", command=self._export_chart,
+    Button(btn_frame, text="Exporter PNG", command=self._export_chart,
           bg='#17a2b8', fg='white', font=('Arial', 10)).pack(side='left', padx=5)
 
     # Zone d'affichage
@@ -1821,9 +1821,9 @@ class DatabaseComparator:
                               font=('Arial', 10), fg='gray')
     self.compare_label.grid(row=1, column=1, padx=5, pady=5, sticky='w')
 
-    Button(select_frame, text="📂 Choisir...", command=self._select_compare_db,
+    Button(select_frame, text="Choisir...", command=self._select_compare_db,
           bg='#4a90e2', fg='white').grid(row=1, column=2, padx=5)
-    Button(select_frame, text="🔍 Comparer", command=self._compare,
+    Button(select_frame, text="Comparer", command=self._compare,
           bg='#28a745', fg='white').grid(row=1, column=3, padx=5)
 
     # Notebook pour résultats
@@ -1835,9 +1835,9 @@ class DatabaseComparator:
     self.schema_frame = Frame(self.notebook)
     self.data_frame = Frame(self.notebook)
 
-    self.notebook.add(self.tables_frame, text="📊 Tables")
-    self.notebook.add(self.schema_frame, text="🏗️ Schémas")
-    self.notebook.add(self.data_frame, text="💾 Données")
+    self.notebook.add(self.tables_frame, text="Tables")
+    self.notebook.add(self.schema_frame, text="Schémas")
+    self.notebook.add(self.data_frame, text="Données")
 
     # Treeview pour tables
     columns = ('Élément', 'DB1', 'DB2', 'Statut')
@@ -1917,7 +1917,7 @@ class DatabaseComparator:
       in_db2 = '✓' if table in tables2 else '✗'
 
       if table in tables1 and table in tables2:
-        status = '✅ Identique'
+        status = '[OK] Identique'
 
         # Compter lignes
         self.cursor.execute(f"SELECT COUNT(*) FROM {table}")
@@ -1927,11 +1927,11 @@ class DatabaseComparator:
         count2 = cursor2.fetchone()[0]
 
         if count1 != count2:
-          status = f'⚠️ Lignes différentes ({count1} vs {count2})'
+          status = f'[WARN] Lignes différentes ({count1} vs {count2})'
       elif table in tables1:
-        status = '➕ Uniquement DB1'
+        status = '+ Uniquement DB1'
       else:
-        status = '➖ Uniquement DB2'
+        status = '- Uniquement DB2'
 
       self.tables_tree.insert('', 'end', values=(table, in_db1, in_db2, status))
 
@@ -1957,16 +1957,16 @@ class DatabaseComparator:
 
       if table in schema1 and table in schema2:
         if schema1[table] == schema2[table]:
-          self.schema_text.insert(END, "✅ Schémas identiques\n")
+          self.schema_text.insert(END, "[OK] Schémas identiques\n")
         else:
-          self.schema_text.insert(END, "⚠️ Schémas différents\n\n")
+          self.schema_text.insert(END, "[WARN] Schémas différents\n\n")
           self.schema_text.insert(END, "DB1:\n" + (schema1[table] or "N/A") + "\n\n")
           self.schema_text.insert(END, "DB2:\n" + (schema2[table] or "N/A") + "\n")
       elif table in schema1:
-        self.schema_text.insert(END, "➕ Uniquement dans DB1\n")
+        self.schema_text.insert(END, "+ Uniquement dans DB1\n")
         self.schema_text.insert(END, schema1[table] + "\n")
       else:
-        self.schema_text.insert(END, "➖ Uniquement dans DB2\n")
+        self.schema_text.insert(END, "- Uniquement dans DB2\n")
         self.schema_text.insert(END, schema2[table] + "\n")
 
 class ToolTip:
@@ -2864,7 +2864,7 @@ class SQLiteEditorPro:
     self.table_combo.bind("<<ComboboxSelected>>", self.load_table)
     ToolTip(self.table_combo, "Sélectionnez une table pour l'afficher")
 
-    Button(toolbar, text="⭐", command=self._toggle_favorite, **btn_style).pack(side='left', padx=2)
+    Button(toolbar, text="*", command=self._toggle_favorite, **btn_style).pack(side='left', padx=2)
     btn_search = Button(toolbar, text="🔍", command=self._show_search, **btn_style)
     btn_search.pack(side='left', padx=2)
     ToolTip(btn_search, "Recherche avancée avec filtres multiples (Ctrl+F)")
@@ -2894,10 +2894,10 @@ class SQLiteEditorPro:
 
     Label(controls_frame, text="  |  ").pack(side='left')
 
-    Button(controls_frame, text="◀", command=self._prev_page).pack(side='left', padx=2)
+    Button(controls_frame, text="<", command=self._prev_page).pack(side='left', padx=2)
     self.page_label = Label(controls_frame, text="Page 1/1", font=('Arial', 9))
     self.page_label.pack(side='left', padx=5)
-    Button(controls_frame, text="▶", command=self._next_page).pack(side='left', padx=2)
+    Button(controls_frame, text=">", command=self._next_page).pack(side='left', padx=2)
 
     Label(controls_frame, text="  Aller à:", font=('Arial', 9)).pack(side='left', padx=5)
     self.goto_page_entry = Entry(controls_frame, width=5)
@@ -3063,7 +3063,7 @@ class SQLiteEditorPro:
       self.table.cell_height = 25
       self.table.header_height = 30
       self.table.draw_table()
-    self.log("🔍 Zoom: 100%")
+    self.log("Zoom: 100%")
 
   def _auto_resize_columns(self) -> None:
     if hasattr(self, 'table'):
