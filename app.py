@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-from flask import Flask, request, session, jsonify, send_from_directory
+from flask import Flask, request, session, jsonify, send_from_directory, send_file
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -15,6 +15,14 @@ from colorama import init
 from dotenv import load_dotenv
 import smtplib
 from email.message import EmailMessage
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from io import BytesIO
 
 from validators import (
   InputValidator,
@@ -44,7 +52,6 @@ def now_local():
 def now_local_str():
   """Retourne l'heure actuelle en heure locale au format ISO"""
   return datetime.now(TIMEZONE).replace(tzinfo=None).isoformat()
-
 
 app.config.update(
   SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
@@ -111,7 +118,7 @@ def role_required(*allowed_roles):
   return decorator
 
 # ========================
-# UTILITAIRES DE SÉCURITÉ
+# UTILITAIRES DE SÉCURITÉ - VERSION SÉCURISÉE
 # ========================
 def get_db_connection():
   conn = sqlite3.connect(DB)
@@ -119,37 +126,67 @@ def get_db_connection():
   return conn
 
 def validate_basic(data, required_fields):
-  """Validation sécurisée des données"""
+  """InputValidator Validation sécurisée des données avec protection XSS/SQL (new version)"""
   if not data:
     return False, "Données manquantes"
 
   for field in required_fields:
-    if field not in data or not str(data[field]).strip():
+    if field not in data:
       return False, f"Champ requis: {field}"
 
+    value = data[field]
+
     # Validation longueur
-    if isinstance(data[field], str) and len(data[field]) > 255:
-      return False, f"Champ trop long: {field}"
+    if isinstance(value, str):
+      # Ne pas permettre les champs vides
+      cleaned, error = InputValidator.validate_string(
+        value,
+        min_length=1,
+        max_length=500,  # Limite raisonnable
+        allow_html=False,
+        field_name=field
+      )
+
+      if error:
+        logger.warning(f"Validation échouée pour {field}: {error}")
+        return False, error
+
+      # Remplacer la valeur par la version nettoyée
+      data[field] = cleaned
 
   return True, None
 
 def sanitize_string(value, max_length=255):
-  """Nettoie une chaîne de caractères"""
-  if not isinstance(value, str):
-    return str(value)[:max_length]
-  return value.strip()[:max_length]
+  """Nettoie une chaîne de caractères avec protection XSS/SQL (new version)"""
+  try:
+    cleaned, error = InputValidator.validate_string(
+      value,
+      max_length=max_length,
+      allow_html=False,
+      allow_empty=True
+    )
+
+    if error:
+      logger.warning(f"Sanitization warning: {error}")
+      return ""
+
+    return cleaned
+  except Exception as e:
+    logger.error(f"Erreur sanitization: {e}")
+    return ""
 
 def validate_integer(value, min_val=None, max_val=None):
-  """Valide un entier avec limites"""
-  try:
-    int_val = int(value)
-    if min_val is not None and int_val < min_val:
-      raise ValueError(f"Valeur minimale: {min_val}")
-    if max_val is not None and int_val > max_val:
-      raise ValueError(f"Valeur maximale: {max_val}")
-    return int_val
-  except (ValueError, TypeError):
-    raise ValueError("Valeur entière requise")
+  """Valide un entier avec limites (new version)"""
+  val, error = InputValidator.validate_integer(
+    value,
+    min_val=min_val,
+    max_val=max_val
+  )
+
+  if error:
+    raise ValidationError(error)
+
+  return val
 
 # ========================
 # FONCTION D'ENVOI D'EMAIL
@@ -184,17 +221,30 @@ def send_email(to_email, subject, html_content, text_content):
 def login():
   try:
     data = request.json
+
+    # Validation basique
     valid, error = validate_basic(data, ['username', 'password'])
     if not valid:
       return jsonify({"error": error}), 400
 
-    username = sanitize_string(data.get("username"), 50)
+    # Validation spécifique username avec InputValidator
+    username_valid, username_error = InputValidator.validate_username(data.get("username"))
+    if not username_valid:
+      logger.warning(f"Tentative login avec username invalide: {username_error}")
+      return jsonify({"error": username_error}), 400
+
+    username = data.get("username").strip()
     password = data.get("password")
 
-    if len(password) > 200:  # Limite raisonnable
+    # Validation longueur password
+    if len(password) > 200:
       return jsonify({"error": "Mot de passe trop long"}), 400
 
+    if len(password) < 1:
+      return jsonify({"error": "Mot de passe requis"}), 400
+
     conn = get_db_connection()
+    # Utilisation de paramètres préparés (protection SQL injection native)
     user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     conn.close()
 
@@ -218,6 +268,9 @@ def login():
     logger.warning(f"Tentative de connexion échouée: {username} depuis {request.remote_addr}")
     return jsonify({"success": False, "error": "Identifiants incorrects"}), 401
 
+  except ValidationError as ve:
+    logger.error(f"Erreur validation login: {str(ve)}")
+    return jsonify({"error": str(ve)}), 400
   except Exception as e:
     logger.error(f"Erreur login: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -267,8 +320,7 @@ def get_classes():
 def get_users():
   try:
     conn = get_db_connection()
-    # Ne jamais retourner les mots de passe
-    rows = conn.execute("SELECT id, prenom, nom, role, classe_id FROM users ORDER BY role, nom").fetchall()
+    rows = conn.execute("SELECT id, prenom, nom, role, classe_id, email FROM users ORDER BY role, nom").fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
   except Exception as e:
@@ -369,46 +421,68 @@ def create_activite():
     if not valid:
       return jsonify({"error": error}), 400
 
-    titre = sanitize_string(data.get("titre"), 100)
-    description = sanitize_string(data.get("description", ""), 500)
-    salle = sanitize_string(data.get("salle"), 50)
+    # Utilisation des helpers sécurisés
+    titre = safe_string(data.get("titre"), max_length=100)
+    description = safe_string(data.get("description", ""), max_length=500)
+    salle = safe_string(data.get("salle"), max_length=50)
 
-    effectif = validate_integer(data.get("effectif_max"), min_val=1, max_val=100)
-    separable = bool(data.get("separable", False))
-    visible_avant = bool(data.get("visible_avant", False))
+    effectif = safe_int(data.get("effectif_max"), min_val=1, max_val=100)
+    separable = InputValidator.validate_boolean(data.get("separable", False))
+    visible_avant = InputValidator.validate_boolean(data.get("visible_avant", False))
 
-    classe_ids = data.get("classe_ids", [])
-    if not isinstance(classe_ids, list) or len(classe_ids) == 0:
-      return jsonify({"error": "Classes requises"}), 400
+    # Validation liste de classes
+    classe_ids, classes_error = InputValidator.validate_list(
+      data.get("classe_ids", []),
+      expected_type=int,
+      min_items=1,
+      field_name="classe_ids"
+    )
+    if classes_error:
+      return jsonify({"error": classes_error}), 400
 
+    # Validation chaque classe_id individuellement
     for cid in classe_ids:
-      validate_integer(cid, min_val=1)
+      safe_int(cid, min_val=1)
 
+    # Validation séances
     seances = data.get("seances", [])
     if not isinstance(seances, list) or len(seances) == 0:
       return jsonify({"error": "Séances requises"}), 400
 
+    # Validation dates avec InputValidator
     ouverture = data.get("date_ouverture_inscriptions")
     fermeture = data.get("date_fermeture_inscriptions")
 
-    try:
-      date_ouverture = datetime.fromisoformat(ouverture)
-      date_fermeture = datetime.fromisoformat(fermeture)
-    except ValueError:
-      return jsonify({"error": "Format de date invalide"}), 400
+    ouverture_valid, ouverture_error = InputValidator.validate_datetime(ouverture, "date d'ouverture")
+    if not ouverture_valid:
+      return jsonify({"error": ouverture_error}), 400
+
+    fermeture_valid, fermeture_error = InputValidator.validate_datetime(fermeture, "date de fermeture")
+    if not fermeture_valid:
+      return jsonify({"error": fermeture_error}), 400
+
+    date_ouverture = datetime.fromisoformat(ouverture)
+    date_fermeture = datetime.fromisoformat(fermeture)
 
     # Vérifier que fermeture > ouverture
     if date_fermeture <= date_ouverture:
       return jsonify({"error": "La date de fermeture doit être après la date d'ouverture"}), 400
 
     # Vérifier que la première séance est après la fermeture des inscriptions
-    seances_dates = [datetime.fromisoformat(s['date_heure']) for s in seances if 'date_heure' in s]
+    seances_dates = []
+    for s in seances:
+      if 'date_heure' in s:
+        date_valid, date_error = InputValidator.validate_datetime(s['date_heure'], "date de séance")
+        if not date_valid:
+          return jsonify({"error": date_error}), 400
+        seances_dates.append(datetime.fromisoformat(s['date_heure']))
+
     if seances_dates:
       premiere_seance = min(seances_dates)
       if premiere_seance <= date_fermeture:
         return jsonify({"error": "La première séance doit être après la date de fermeture des inscriptions"}), 400
 
-    animateur_id = validate_integer(data.get("animateur_id", session["user_id"]), min_val=1)
+    animateur_id = safe_int(data.get("animateur_id", session["user_id"]), min_val=1)
 
     # Vérifier que l'animateur existe
     conn = get_db_connection()
@@ -422,7 +496,7 @@ def create_activite():
 
     groupe_id = data.get("groupe_id", None)
     if groupe_id is not None and groupe_id != "":
-      groupe_id = validate_integer(groupe_id, min_val=1)
+      groupe_id = safe_int(groupe_id, min_val=1)
 
     if groupe_id:
       groupe_exists = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
@@ -431,6 +505,7 @@ def create_activite():
         conn.close()
         return jsonify({"error": f"Groupe invalide: {groupe_id}"}), 400
 
+    # Insertion avec requêtes préparées (protection SQL injection)
     cur.execute("""
       INSERT INTO activites
       (titre, description, prof_id, salle, separable, effectif_max,
@@ -441,6 +516,7 @@ def create_activite():
 
     act_id = cur.lastrowid
 
+    # Insertion classes avec requêtes préparées
     for cid in classe_ids:
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
@@ -451,17 +527,12 @@ def create_activite():
       cur.execute("INSERT INTO activite_classes (activite_id, classe_id) VALUES (?, ?)",
                   (act_id, cid))
 
+    # Insertion séances avec requêtes préparées
     for s in seances:
       if 'date_heure' in s and s['date_heure']:
-        try:
-          datetime.fromisoformat(s['date_heure'])
-          duree = int(s.get('duree', 60))
-          cur.execute("INSERT INTO seances (activite_id, date_heure, duree) VALUES (?, ?, ?)",
-                      (act_id, s["date_heure"], duree))
-        except ValueError:
-          conn.rollback()
-          conn.close()
-          return jsonify({"error": "Format de date séance invalide"}), 400
+        duree = safe_int(s.get('duree', 60), min_val=1, max_val=300)
+        cur.execute("INSERT INTO seances (activite_id, date_heure, duree) VALUES (?, ?, ?)",
+                    (act_id, s["date_heure"], duree))
 
     conn.commit()
     conn.close()
@@ -469,11 +540,401 @@ def create_activite():
     logger.info(f"Activité créée: {titre} par user {session['user_id']}")
     return jsonify({"success": True, "id": act_id})
 
-  except ValueError as ve:
+  except ValidationError as ve:
+    logger.error(f"Erreur validation création activité: {str(ve)}")
     return jsonify({"error": str(ve)}), 400
   except Exception as e:
     logger.error(f"Erreur création activité: {str(e)}")
     return jsonify({"error": "Erreur lors de la création"}), 500
+
+@app.route("/activites/<int:activite_id>", methods=["DELETE"])
+@role_required('prof', 'admin')
+def supprimer_activite(activite_id):
+  try:
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Vérifier que l'activité existe et que le user est le créateur
+    activite = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
+
+    if not activite:
+      conn.close()
+      return jsonify({"error": "Activité introuvable"}), 404
+
+    if activite["prof_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur de cette activité"}), 403
+
+    # Supprimer en cascade
+    # 1. Supprimer les présences liées aux séances de cette activité
+    cur.execute("""
+      DELETE FROM presences
+      WHERE seance_id IN (SELECT id FROM seances WHERE activite_id=?)
+    """, (activite_id,))
+
+    # 2. Supprimer les séances
+    cur.execute("DELETE FROM seances WHERE activite_id=?", (activite_id,))
+
+    # 3. Supprimer les inscriptions
+    cur.execute("DELETE FROM inscriptions WHERE activite_id=?", (activite_id,))
+
+    # 4. Supprimer les associations activité-classes
+    cur.execute("DELETE FROM activite_classes WHERE activite_id=?", (activite_id,))
+
+    # 5. Supprimer l'activité
+    cur.execute("DELETE FROM activites WHERE id=?", (activite_id,))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Activité {activite_id} supprimée par user {session['user_id']}")
+    return jsonify({"success": True})
+
+  except Exception as e:
+    logger.error(f"Erreur suppression activité : {str(e)}")
+    return jsonify({"error": "Erreur lors de la suppression"}), 500
+
+@app.route("/activites/<int:activite_id>", methods=["PUT"])
+@role_required('prof', 'admin')
+def modifier_activite(activite_id):
+  try:
+    data = request.json
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Vérifier que l'activité existe et que le user est le créateur
+    activite = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
+
+    if not activite:
+      conn.close()
+      return jsonify({"error": "Activité introuvable"}), 404
+
+    if activite["prof_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur"}), 403
+
+    # Validation basique
+    valid, error = validate_basic(data, ['titre', 'salle', 'effectif_max'])
+    if not valid:
+      conn.close()
+      return jsonify({"error": error}), 400
+
+    titre = safe_string(data.get("titre"), max_length=100)
+    description = safe_string(data.get("description", ""), max_length=500)
+    salle = safe_string(data.get("salle"), max_length=50)
+    effectif = safe_int(data.get("effectif_max"), min_val=1, max_val=100)
+    visible_avant = InputValidator.validate_boolean(data.get("visible_avant", False))
+
+    classe_ids, classes_error = InputValidator.validate_list(
+      data.get("classe_ids", []),
+      expected_type=int,
+      min_items=1,
+      field_name="classe_ids"
+    )
+    if classes_error:
+      conn.close()
+      return jsonify({"error": classes_error}), 400
+
+    for cid in classe_ids:
+      safe_int(cid, min_val=1)
+
+    # Validation dates
+    ouverture = data.get("date_ouverture_inscriptions")
+    fermeture = data.get("date_fermeture_inscriptions")
+
+    ouverture_valid, ouverture_error = InputValidator.validate_datetime(ouverture, "date d'ouverture")
+    if not ouverture_valid:
+      conn.close()
+      return jsonify({"error": ouverture_error}), 400
+
+    fermeture_valid, fermeture_error = InputValidator.validate_datetime(fermeture, "date de fermeture")
+    if not fermeture_valid:
+      conn.close()
+      return jsonify({"error": fermeture_error}), 400
+
+    date_ouverture = datetime.fromisoformat(ouverture)
+    date_fermeture = datetime.fromisoformat(fermeture)
+
+    if date_fermeture <= date_ouverture:
+      conn.close()
+      return jsonify({"error": "La date de fermeture doit être après la date d'ouverture"}), 400
+
+    animateur_id = safe_int(data.get("animateur_id", session["user_id"]), min_val=1)
+
+    animateur_exists = cur.execute("SELECT 1 FROM users WHERE id=?", (animateur_id,)).fetchone()
+    if not animateur_exists:
+      conn.close()
+      return jsonify({"error": f"Animateur invalide: {animateur_id}"}), 400
+
+    groupe_id = data.get("groupe_id", None)
+    if groupe_id is not None and groupe_id != "":
+      groupe_id = safe_int(groupe_id, min_val=1)
+      groupe_exists = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+      if not groupe_exists:
+        conn.close()
+        return jsonify({"error": f"Groupe invalide: {groupe_id}"}), 400
+    else:
+      groupe_id = None
+
+    # Mettre à jour l'activité
+    cur.execute("""
+      UPDATE activites
+      SET titre=?, description=?, salle=?, effectif_max=?,
+        date_ouverture_inscriptions=?, date_fermeture_inscriptions=?,
+        visible_avant=?, animateur_id=?, groupe_id=?
+      WHERE id=?
+    """, (titre, description, salle, effectif, ouverture, fermeture,
+        int(visible_avant), animateur_id, groupe_id, activite_id))
+
+    # Mettre à jour les classes
+    cur.execute("DELETE FROM activite_classes WHERE activite_id=?", (activite_id,))
+    for cid in classe_ids:
+      classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
+      if not classe_exists:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": f"Classe invalide: {cid}"}), 400
+      cur.execute("INSERT INTO activite_classes (activite_id, classe_id) VALUES (?, ?)",
+                  (activite_id, cid))
+
+    # Gérer les séances
+    seances_data = data.get("seances", [])
+    if not isinstance(seances_data, list) or len(seances_data) == 0:
+      conn.rollback()
+      conn.close()
+      return jsonify({"error": "Séances requises"}), 400
+
+    # Récupérer les IDs des séances existantes
+    existing_seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
+    existing_ids = {s["id"] for s in existing_seances}
+
+    # Séparer séances à mettre à jour et nouvelles séances
+    seances_to_keep = set()
+
+    for s in seances_data:
+      if 'id' in s and s['id']:
+        # Séance existante - mise à jour
+        seance_id = safe_int(s['id'], min_val=1)
+        if seance_id in existing_ids:
+          date_valid, date_error = InputValidator.validate_datetime(s['date_heure'], "date de séance")
+          if not date_valid:
+            conn.rollback()
+            conn.close()
+            return jsonify({"error": date_error}), 400
+
+          duree = safe_int(s.get('duree', 60), min_val=1, max_val=300)
+          cur.execute("UPDATE seances SET date_heure=?, duree=? WHERE id=?",
+                      (s['date_heure'], duree, seance_id))
+          seances_to_keep.add(seance_id)
+      else:
+        # Nouvelle séance
+        date_valid, date_error = InputValidator.validate_datetime(s['date_heure'], "date de séance")
+        if not date_valid:
+          conn.rollback()
+          conn.close()
+          return jsonify({"error": date_error}), 400
+
+        duree = safe_int(s.get('duree', 60), min_val=1, max_val=300)
+        cur.execute("INSERT INTO seances (activite_id, date_heure, duree) VALUES (?, ?, ?)",
+                    (activite_id, s['date_heure'], duree))
+
+    # Supprimer les séances qui n'existent plus
+    seances_to_delete = existing_ids - seances_to_keep
+    for sid in seances_to_delete:
+      # Supprimer les présences liées
+      cur.execute("DELETE FROM presences WHERE seance_id=?", (sid,))
+      cur.execute("DELETE FROM seances WHERE id=?", (sid,))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Activité {activite_id} modifiée par user {session['user_id']}")
+    return jsonify({"success": True})
+
+  except ValidationError as ve:
+    logger.error(f"Erreur validation modification activité: {str(ve)}")
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur modification activité: {str(e)}")
+    return jsonify({"error": "Erreur lors de la modification"}), 500
+
+
+
+
+@app.route("/seances/<int:seance_id>/pdf", methods=["POST"])
+@role_required('prof', 'admin')
+def generer_pdf_seance(seance_id):
+  try:
+    data = request.json
+    options = {
+      'show_emargement': data.get('show_emargement', True),
+      'show_appel': data.get('show_appel', True),
+      'show_commentaire': data.get('show_commentaire', False)
+    }
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    seance_data = cur.execute("""
+      SELECT s.*, a.titre, a.description, a.salle, a.effectif_max,
+            a.animateur_id, a.prof_id, a.separable
+      FROM seances s
+      JOIN activites a ON s.activite_id = a.id
+      WHERE s.id = ?
+    """, (seance_id,)).fetchone()
+
+    if not seance_data:
+      conn.close()
+      return jsonify({"error": "Séance introuvable"}), 404
+
+    if seance_data["prof_id"] != session["user_id"] and seance_data["animateur_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    presences = cur.execute("""
+      SELECT p.*, u.prenom, u.nom, c.nom as classe_nom
+      FROM presences p
+      JOIN users u ON p.eleve_id = u.id
+      LEFT JOIN classes c ON u.classe_id = c.id
+      WHERE p.seance_id = ?
+      ORDER BY u.nom, u.prenom
+    """, (seance_id,)).fetchall()
+
+    animateur_id = seance_data["animateur_id"] or seance_data["prof_id"]
+    animateur = cur.execute("SELECT prenom, nom FROM users WHERE id=?", (animateur_id,)).fetchone()
+
+    conn.close()
+
+    # PDF ULTRA COMPACT
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+      buffer,
+      pagesize=A4,
+      topMargin=1*cm,
+      bottomMargin=1*cm,
+      leftMargin=1*cm,
+      rightMargin=1*cm
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    # TITRE SIMPLE, AUCUNE COULEUR
+    title = Paragraph(
+      f"<b>LYCÉE ASSOMPTION – LISTE D'APPEL<br/>{seance_data['titre']}</b>",
+      ParagraphStyle(
+        "Title",
+        parent=styles["Normal"],
+        fontSize=13,
+        alignment=TA_CENTER,
+        spaceAfter=6,
+        leading=13
+      )
+    )
+    story.append(title)
+
+    # INFOS SÉANCE (compact)
+    date_seance = formatDateLocal(seance_data['date_heure']) if seance_data['date_heure'] else '—'
+    duree = seance_data['duree'] or 60
+    anim = f"{animateur['prenom']} {animateur['nom']}" if animateur else "—"
+
+    info = [
+      ["Date :", date_seance],
+      ["Durée :", f"{duree} min"],
+      ["Salle :", seance_data['salle'] or "—"],
+      ["Animateur :", anim],
+      ["Inscrits :", f"{len(presences)}/{seance_data['effectif_max']}"]
+    ]
+
+    info_table = Table(info, colWidths=[2.5*cm, 11*cm])
+    info_table.setStyle(TableStyle([
+      ("ALIGN", (0, 0), (0, -1), "RIGHT"),
+      ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+      ("FONTSIZE", (0, 0), (-1, -1), 9),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+      ("TOPPADDING", (0, 0), (-1, -1), 1),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 0.2*cm))
+
+    # TABLEAU ÉLÈVES — STYLE REGISTRE
+    headers = ["N°", "Nom", "Prénom", "Classe"]
+    col_widths = [0.9*cm, 4.2*cm, 3.7*cm, 2*cm]
+
+    if options["show_appel"]:
+      headers.append("Présent")
+      col_widths.append(1.5*cm)
+
+    if options["show_emargement"]:
+      headers.append("Signature")
+      col_widths.append(3.5*cm)
+
+    rows = [headers]
+
+    for i, p in enumerate(presences, 1):
+      row = [
+        str(i),
+        p["nom"],
+        p["prenom"],
+        p["classe_nom"] or "—"
+      ]
+
+      if options["show_appel"]:
+        row.append("")
+
+      if options["show_emargement"]:
+        row.append("")
+
+      rows.append(row)
+
+    table = Table(rows, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+      # En-tête
+      ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+      ("FONTSIZE", (0, 0), (-1, 0), 9),
+      ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+      ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+      ("TOPPADDING", (0, 0), (-1, 0), 2),
+
+      # Corps
+      ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+      ("FONTSIZE", (0, 1), (-1, -1), 8),
+      ("ALIGN", (0, 1), (0, -1), "CENTER"),
+      ("ALIGN", (1, 1), (1, -1), "LEFT"),
+
+      ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
+
+      ("LEFTPADDING", (0, 0), (-1, -1), 2),
+      ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+      ("TOPPADDING", (0, 1), (-1, -1), 1),
+      ("BOTTOMPADDING", (0, 1), (-1, -1), 1)
+    ]))
+
+    story.append(table)
+
+    # Build
+    doc.build(story)
+
+    buffer.seek(0)
+    return send_file(
+      buffer,
+      mimetype="application/pdf",
+      as_attachment=True,
+      download_name=f"appel_{seance_id}.pdf"
+    )
+
+  except Exception as e:
+    logger.error(f"Erreur PDF : {e}")
+    return jsonify({"error": "Erreur PDF"}), 500
+
+# Fonction helper pour le formatage de date (à ajouter si pas déjà présente)
+def formatDateLocal(date_str):
+  try:
+    d = datetime.fromisoformat(date_str.replace(' ', 'T'))
+    return d.strftime('%d/%m/%Y à %H:%M')
+  except:
+    return date_str
 
 # ========================
 # INSCRIPTIONS
@@ -827,7 +1288,6 @@ def get_activite_classes():
 # ========================
 # GROUPES D'EXCLUSIVITÉ - ÉLÈVES NON INSCRITS
 # ========================
-
 @app.route("/groupes/<int:groupe_id>/eleves-non-inscrits", methods=["GET"])
 @role_required('prof', 'admin')
 def get_eleves_non_inscrits(groupe_id):
@@ -1207,7 +1667,7 @@ def update_groupe(groupe_id):
         return jsonify({"error": f"Classe invalide: {cid}"}), 400
 
       cur.execute("INSERT INTO groupe_classes (groupe_id, classe_id) VALUES (?, ?)",
-                (groupe_id, cid))
+                  (groupe_id, cid))
 
     conn.commit()
     conn.close()
@@ -1612,11 +2072,10 @@ def signup_form():
 <p>Contactez l'administrateur pour obtenir une nouvelle invitation.</p>
 </body></html>""", 404
 
-  return send_from_directory(".", "signup.html")
+  return send_from_directory(".", "prof_signup.html")
 
 @app.route("/inscription", methods=["POST"])
 def process_signup():
-  """Traite l'inscription d'un nouveau professeur"""
   try:
     data = request.json
 
@@ -1625,23 +2084,31 @@ def process_signup():
     if not valid:
       return jsonify({"error": error}), 400
 
-    token = data.get("token")
-    username = sanitize_string(data.get("username"), 50)
-    prenom = sanitize_string(data.get("prenom"), 50)
-    nom = sanitize_string(data.get("nom"), 50)
-    matiere = sanitize_string(data.get("matiere"), 100)
-    password = data.get("password")
-    classe_id = data.get("classe_id")
+    token = safe_string(data.get("token"), max_length=200)
 
+    # Validation username avec règles strictes
+    username_valid, username_error = InputValidator.validate_username(data.get("username"))
+    if not username_valid:
+      return jsonify({"error": username_error}), 400
+    username = data.get("username").strip()
+
+    prenom = safe_string(data.get("prenom"), max_length=50)
+    nom = safe_string(data.get("nom"), max_length=50)
+    matiere = safe_string(data.get("matiere"), max_length=100)
+    password = data.get("password")
+
+    # Validation password
     if len(password) < 8:
       return jsonify({"error": "Mot de passe trop court (min 8 caractères)"}), 400
-
     if len(password) > 200:
       return jsonify({"error": "Mot de passe trop long"}), 400
+
+    classe_id = data.get("classe_id")
 
     conn = get_db_connection()
     cur = conn.cursor()
 
+    # Vérification token avec requête préparée
     invitation = cur.execute("""
       SELECT * FROM invitation_tokens
       WHERE token=? AND used=0 AND datetime(expires_at) > ?
@@ -1651,24 +2118,23 @@ def process_signup():
       conn.close()
       return jsonify({"error": "Token invalide ou expiré"}), 400
 
+    # Vérification username unique
     existing = cur.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
     if existing:
       conn.close()
       return jsonify({"error": "Ce nom d'utilisateur existe déjà"}), 400
 
+    # Vérification email unique
     existing_email = cur.execute("SELECT 1 FROM users WHERE email=?", (invitation["email"],)).fetchone()
     if existing_email:
       conn.close()
       return jsonify({"error": "Un compte existe déjà avec cet email"}), 400
 
+    # Validation classe_id si fournie
     if classe_id:
-      try:
-        classe_id = validate_integer(classe_id, min_val=1)
-        classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (classe_id,)).fetchone()
-        if not classe_exists:
-          conn.close()
-          return jsonify({"error": "Classe invalide"}), 400
-      except ValueError:
+      classe_id = safe_int(classe_id, min_val=1)
+      classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (classe_id,)).fetchone()
+      if not classe_exists:
         conn.close()
         return jsonify({"error": "Classe invalide"}), 400
     else:
@@ -1676,6 +2142,7 @@ def process_signup():
 
     password_hash = generate_password_hash(password)
 
+    # Insertion avec requêtes préparées
     cur.execute("""
       INSERT INTO users (prenom, nom, username, password_hash, role, email, classe_id)
       VALUES (?, ?, ?, ?, 'prof', ?, ?)
@@ -1701,7 +2168,8 @@ def process_signup():
     logger.info(f"Nouveau professeur inscrit : {username} ({prenom} {nom}) - Matière: {matiere}")
     return jsonify({"success": True, "message": "Compte créé avec succès"})
 
-  except ValueError as ve:
+  except ValidationError as ve:
+    logger.error(f"Erreur validation inscription: {str(ve)}")
     return jsonify({"error": str(ve)}), 400
   except Exception as e:
     logger.error(f"Erreur inscription : {str(e)}")
@@ -1719,15 +2187,16 @@ def serve_static(filename):
   # Liste blanche des fichiers autorisés pour la sécurité
   allowed_files = [
     "styles.css",
-    "MultiSelect.css",
+    "Select_Comp.css",
     "script.js",
-    "MultiSelect.js"
+    "Select_Comp.js"
   ]
 
   if filename in allowed_files:
     return send_from_directory(".", filename)
   else:
     return "File not found", 404
+
 
 # ========================
 # GESTION ERREURS
