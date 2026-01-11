@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE prototype v8(UI upgraded)</title>
+  <title>CONCORDE prototype v9(UI upgraded + modals enchanced)<title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -442,7 +442,7 @@
                 <th>Classes</th>
                 <th>Sécable</th>
                 <th>Visible avant</th>
-                <th>Ouverte</th>
+                <th>Ouverture</th>
                 <th>Fermeture</th>
                 <th>Séances</th>
               </tr>
@@ -661,25 +661,31 @@ function populateSelects(){
 /* ============================
    Eleve table
    ============================ */
-function majTableEleve(){
-  const tbody = $('#table-eleve tbody');tbody.innerHTML = '';
-  if(!currentUser) return;
+function majTableEleve() {
+  const tbody = $('#table-eleve tbody'); tbody.innerHTML = '';
+  if (!currentUser) return;
 
   const classeId = currentUser.classe_id;
-  let totalAct = 0, totalIns = 0;
+  let totalAct = 0; let totalIns = 0; // compteur inscriptions de l'élève
 
+  const now = new Date();
 
-  activites.forEach(act=>{
-    // si activité est masquée avant ouverture et qu'on est avant ouverture -> ne pas afficher (sauf si visible_avant true)
-    const now = new Date();
+  activites.forEach(act => {
     const debut = new Date(act.ouverture_inscription || 0);
-    if(!act.visible_avant && now < debut) return;
+    const fin = new Date(act.fermeture_inscription || 0);
+    const allPassed = act.seances.every(s => new Date(s.date_heure) < now);
 
-    if(!act.classe_ids.includes(classeId)) return;
+    // Vérification visibilité
+    if (!act.visible_avant && now < debut) return;       // avant ouverture et non visible
+    if (!act.classe_ids.includes(classeId)) return;     // classe non concernée
+    if (now > fin && allPassed) return;                 // après fermeture et toutes séances passées
+
     totalAct++;
-    const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
-    const tr = document.createElement('tr');
+
+    const seancesText = act.seances.map(s => formatDateLocal(s.date_heure)).join(', ');
     const inscritsCount = act.inscriptions.length;
+
+    const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${act.titre}</td>
       <td>${act.salle}</td>
@@ -688,33 +694,68 @@ function majTableEleve(){
       <td>${seancesText}</td>
       <td></td>
     `;
-    const tdAction = tr.querySelector('td:last-child');
-    const btn = document.createElement('button'); btn.className='btn';
-    const fin = new Date(act.fermeture_inscription || 0);
-    const allPassed = act.seances.every(s=> new Date(s.date_heure) < now);
 
-    if(act.inscriptions.includes(currentUser.id)){
-      btn.textContent='Inscrit'; btn.disabled=true; btn.classList.add('secondary');
-    } else if(now < debut){
-      btn.textContent='Inscriptions non ouvertes'; btn.disabled=true; btn.classList.add('ghost');
-    } else if(fin < now && !allPassed){
-      btn.textContent='Inscriptions fermées'; btn.disabled=true; btn.classList.add('ghost');
-    } else if(allPassed){
-      btn.textContent='Activité terminée'; btn.disabled=true; btn.classList.add('ghost');
+    const tdAction = tr.querySelector('td:last-child');
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+
+    const estInscrit = act.inscriptions.includes(currentUser.id);
+    const inscriptionsOuvertes = now >= debut && now <= fin && !allPassed;
+
+    if (now < debut) {
+      // avant ouverture
+      btn.textContent = 'Inscriptions non ouvertes';
+      btn.disabled = true;
+      btn.classList.add('ghost');
+    } else if (now > fin && !inscriptionsOuvertes) {
+      // période passée mais séances non terminées -> fermée
+      btn.textContent = 'Inscriptions fermées';
+      btn.disabled = true;
+      btn.classList.add('ghost');
+    } else if (allPassed) {
+      // toutes les séances passées
+      btn.textContent = 'Activité terminée';
+      btn.disabled = true;
+      btn.classList.add('ghost');
+    } else if (estInscrit) {
+      totalIns++; // compter l'inscription
+      btn.textContent = 'Se désinscrire';
+      btn.onclick = () => {
+        if (!inscriptionsOuvertes) {
+          alert('Les inscriptions sont fermées, impossible de se désinscrire.');
+          return;
+        }
+        if (confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)) {
+          act.inscriptions = act.inscriptions.filter(id => id !== currentUser.id);
+          majTableEleve();
+          majTableProf();
+        }
+      };
     } else {
-      btn.textContent='S’inscrire';
-      btn.onclick = ()=>{
-        if(act.inscriptions.length >= act.effectif_max){ alert('Effectif maximum atteint !'); return; }
-        act.inscriptions.push(currentUser.id);
-        totalIns++;
-        majTableEleve(); majTableProf();
+      btn.textContent = 'S’inscrire';
+      btn.onclick = () => {
+        if (!inscriptionsOuvertes) {
+          alert('Inscriptions non ouvertes ou terminées');
+          return;
+        }
+        if (act.inscriptions.length >= act.effectif_max) {
+          alert('Effectif maximum atteint !');
+          return;
+        }
+        if (confirm(`Veux-tu t’inscrire à "${act.titre}" ?`)) {
+          act.inscriptions.push(currentUser.id);
+          majTableEleve();
+          majTableProf();
+        }
       };
     }
+
     tdAction.appendChild(btn);
     tbody.appendChild(tr);
   });
+
   $('#stat-act').textContent = totalAct;
-  $('#stat-insc').textContent = activites.reduce((acc,a)=>acc + (a.inscriptions.includes(currentUser?.id||-1) ? 1 : 0),0);
+  $('#stat-insc').textContent = totalIns;
 }
 
 /* ============================
