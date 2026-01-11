@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE alpha v0.3</title>
+  <title>CONCORDE alpha v0.4</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -18,8 +18,8 @@
     --radius:12px;
     --shadow: 0 6px 20px rgba(20,30,60,0.06);
     --glass-2: rgba(0,0,0,0.03);
-    --max-width:1100px;
-    --gap:16px;
+    --max-width:1400px;
+    --gap:20px;
     font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
   }
 
@@ -28,27 +28,26 @@
   body{
     background: linear-gradient(180deg, var(--bg), #eef3fb);
     color: var(--text);
-    padding: 28px;
+    padding: 20px;
     -webkit-font-smoothing:antialiased;
     -moz-osx-font-smoothing:grayscale;
     line-height: 1.45;
     display: flex;
     justify-content: center;
-
   }
 
-  /* Container */
+  /* Container principal */
   .wrap{
     width: 100%;
     max-width: var(--max-width);
     margin: 0 auto;
     display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 28px;
+    grid-template-columns: 1fr 320px;
+    gap: var(--gap);
     align-items: start;
   }
 
-  /* Header card (spans columns) */
+  /* Header */
   header{
     grid-column: 1 / -1;
     display: flex;
@@ -63,11 +62,13 @@
     top: 18px;
     z-index: 10;
   }
+
   .brand {
     display: flex;
     align-items: center;
     gap: 12px;
   }
+
   .logo {
     width: 46px; height: 46px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
@@ -76,33 +77,33 @@
     align-items: center; justify-content: center;
     box-shadow: 0 6px 18px rgba(11,114,255,0.14), inset 0 -6px 12px rgba(255,255,255,0.08);
   }
+
   .logo svg{width: 26px; height: 26px; fill: white;}
   .brand h1{font-size: 18px; color: var(--text); margin-bottom: 2px;}
   .brand p{font-size: 12px; color: var(--muted); margin-top: 0;}
 
-  /* header actions */
   .header-actions{margin-left:auto; display:flex; gap:12px; align-items:center}
   .role-badge{
     display:inline-flex;align-items:center;gap:8px;background:var(--glass);padding:8px 12px;border-radius:999px;color:var(--primary);font-weight:600;font-size:13px;
   }
 
-  /* Panels */
+  /* Cards */
   .card{
     background: var(--card);
     border-radius: var(--radius);
-    padding: 18px;
+    padding: 20px;
     box-shadow: var(--shadow);
     border: 1px solid var(--glass-2);
   }
 
-  /* Left column: main */
+  /* Main content */
   .main{
     display: flex;
     flex-direction: column;
     gap: var(--gap);
   }
 
-  /* Login card compact */
+  /* Login card */
   #login-card {
     max-width: 620px;
     display: grid;
@@ -110,6 +111,7 @@
     gap: 18px;
     align-items: center;
   }
+
   #login-card .credentials{padding-right: 6px;}
   label.small{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
   input[type="text"], input[type="password"], select, input[type="number"], input[type="datetime-local"]{
@@ -119,6 +121,7 @@
     font-size: 14px; color: var(--text);
     transition:box-shadow .18s ease, border-color .18s ease, transform .06s ease;
   }
+
   input:focus, select:focus{outline:none;border-color:var(--primary); box-shadow:0 6px 18px rgba(11,114,255,0.08); transform:translateY(-1px);}
 
   input.error, select.error {
@@ -132,14 +135,14 @@
     accent-color: var(--primary);
     cursor: pointer;
     margin: 6px;
-    margin-top: 6px;
     vertical-align: middle;
   }
 
   .error {
-    border-color: #dd1738 !important; /* contour rouge */
-    color: #dd1738; /* texte rouge */
+    border-color: #dd1738 !important;
+    color: #dd1738;
   }
+
   #seances-container.error {
     border: 2px solid #dd1738;
   }
@@ -147,40 +150,447 @@
   .login-cta{
     display:flex;flex-direction:column;gap:8px;align-items:stretch;
   }
+
   .muted-note{font-size:12px;color:var(--muted)}
 
-  /* Role dashboards (right column) */
+  /* Right sidebar */
   .side{
     display: flex;
     flex-direction: column;
     gap: var(--gap);
   }
 
-  /* Grid of small stats */
+  /* Stats */
   .stats{
     display: flex;
     gap: 12px;
     align-items: center;
   }
+
   .stat{
     background:linear-gradient(180deg,#fff,#fbfdff);
     border-radius:10px;padding:10px 12px;border:1px solid var(--glass-2);flex:1;text-align:center;
   }
+
   .stat h4{font-size:13px;color:var(--muted);font-weight:600}
   .stat p{font-size:16px;font-weight:700;color:var(--text)}
 
-  /* Tables */
-  table{
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 12px;
-    font-size: 14px;
+  /* Layout dashboard avec panneau latéral */
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: var(--gap);
+    height: 100%;
   }
-  th, td{padding:10px;border-bottom:1px solid #f0f4fb;text-align:left}
-  th{font-size:13px;color:var(--muted);font-weight:600;background:transparent}
-  tr td:last-child{width: 160px; text-align: right;}
 
-  /* Forms layout for prof */
+  /* Panneau des activités */
+  .activities-panel {
+    background: #f8fafc;
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+
+  .activities-panel h4 {
+    margin-bottom: 12px;
+    color: var(--text);
+    font-size: 16px;
+  }
+
+  /* Cards d'activités avec améliorations UX */
+  .activity-card {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .activity-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(11,114,255,0.1);
+    transform: translateY(-1px);
+  }
+
+  .activity-card.selected {
+    border-color: var(--primary);
+    background: var(--glass);
+    box-shadow: 0 6px 16px rgba(11,114,255,0.15);
+  }
+
+  .activity-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 8px;
+  }
+
+  .activity-title {
+    margin: 0;
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .activity-room {
+    background: var(--glass);
+    color: var(--primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  .activity-details {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .activity-meta {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Indicateurs visuels pour activités sécables */
+  .activity-card[data-separable="true"]:before {
+    content: "|";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+    opacity: 0.6;
+  }
+
+  .activity-card[data-separable="false"]:before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+    opacity: 0.6;
+  }
+
+  /* Seances pour élèves */
+  .activity-seances {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .seance-item-eleve {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .seance-item-eleve:last-child {
+    border-bottom: none;
+  }
+
+  .seance-date {
+    font-size: 11px;
+    color: var(--muted);
+    flex: 1;
+  }
+
+  .seance-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    min-width: 50px;
+  }
+
+  .seance-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+
+  .seance-btn.inscrit {
+    background: var(--accent);
+    color: white;
+  }
+
+  .seance-btn.inscrit:hover {
+    background: #c1286b;
+  }
+
+  .seance-btn.libre {
+    background: var(--primary);
+    color: white;
+  }
+
+  .seance-btn.libre:hover {
+    background: #0a5fd6;
+  }
+
+  .seance-btn.ferme {
+    background: #e2e8f0;
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+
+  /* Emploi du temps */
+  .schedule-container {
+    background: white;
+    border-radius: var(--radius);
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .schedule-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+
+  .schedule-nav {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .schedule-nav button {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .schedule-nav button:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .schedule-week {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+  }
+
+  .schedule-grid {
+    flex: 1;
+    overflow: auto;
+    background: white;
+  }
+
+  .schedule-table {
+    display: grid;
+    grid-template-columns: 80px repeat(7, 1fr);
+    gap: 1px;
+    background: #e2e8f0;
+    height: 100%;
+  }
+
+  .schedule-cell {
+    background: white;
+    padding: 8px 4px;
+    min-height: 50px;
+    position: relative;
+  }
+
+  .schedule-header-cell {
+    background: #f1f5f9;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .schedule-hour-cell {
+    background: #f1f5f9;
+    font-size: 11px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .schedule-slot {
+    background: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .schedule-slot.highlighted {
+    background: rgba(11,114,255,0.1);
+  }
+
+  /* Styles pour les weekend */
+  .schedule-slot[id*="sam"], .schedule-slot[id*="dim"] {
+    background: #f8fafc !important;
+    position: relative;
+  }
+
+  .schedule-slot[id*="sam"]:after, .schedule-slot[id*="dim"]:after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(180,190,200,0.1) 2px,
+      rgba(180,190,200,0.1) 4px
+    );
+    pointer-events: none;
+  }
+
+  .seance-block {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .modal-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: calc(var(--radius) + 4px);
+    padding: 28px;
+    max-width: 650px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+    transform: scale(0.9) translateY(20px);
+    transition: transform 0.3s ease;
+  }
+
+  .modal-overlay.visible .modal-content {
+    transform: scale(1) translateY(0);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 4px;
+    border-radius: 4px;
+  }
+
+  .modal-close:hover {
+    background: #f1f5f9;
+    color: var(--text);
+  }
+
+  .modal-body {
+    line-height: 1.6;
+  }
+
+  .detail-row {
+    display: flex;
+    margin-bottom: 12px;
+  }
+
+  .detail-label {
+    font-weight: 600;
+    color: var(--text);
+    min-width: 120px;
+  }
+
+  .detail-value {
+    color: var(--muted);
+    flex: 1;
+  }
+
+  .inscriptions-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px;
+    background: #f8fafc;
+  }
+
+  .inscription-item {
+    padding: 4px 0;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 13px;
+  }
+
+  .inscription-item:last-child {
+    border-bottom: none;
+  }
+
+  /* Boutons */
+  .btn{
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 0; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; font-size: 13px;
+    box-shadow: 0 4px 12px rgba(11, 114, 255, 0.2);
+    transition:transform .12s ease, box-shadow .12s ease, background .12s;
+  }
+
+  .btn:active{transform:translateY(1px);box-shadow:0 2px 8px rgba(11,114,255,0.15)}
+  .btn.secondary{background:transparent;color:var(--primary);border:1px solid rgba(11,114,255,0.2);box-shadow:none;}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px dashed #eef4ff;box-shadow:none;}
+  .btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;}
+
+  .icon{width:16px;height:16px;display:inline-block;vertical-align:middle}
+
+  /* Forms pour prof */
   .form-grid{
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -189,7 +599,6 @@
 
   .full{ grid-column: 1 / -1;}
 
-  /* Seances list */
   #seances-container{min-height:80px;border:1px dashed #e6eef8;padding:12px;border-radius:8px;background:linear-gradient(180deg,#fff,#fcfdff)}
 
   .serie-hebdo{
@@ -200,40 +609,45 @@
     margin-bottom: 8px;
     transition: box-shadow 0.2s ease;
   }
-  .serie-hebdo:hover {
-    box-shadow: 0 4px 12px rgba(11,114,255,0.12); /* mise en avant au hover */
+
+  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.15);background:#fff;}
+  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #dfe8f1;}
+
+  /* Status badges */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
   }
 
-  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:var(--radius);border:1px solid rgba(0,0,0,0.15);background:#fff;transition: border-color 0.2s ease, box-shadow 0.2s ease;}
-  .seance-item:hover{border-color: var(--primary);box-shadow: 0 4px 10px rgba(11,114,255,0.08)}
-
-  .seance-item.small{font-size:13px;color:var(--muted)}
-  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #dfe8f1;transition: border-color 0.2s ease, box-shadow 0.2s ease}
-  .seance-item input:focus{border-color: var(--primary);box-shadow: 0 4px 12px rgba(11,114,255,0.08);}
-
-
-  /* Pill / badges */
-  .pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:13px;background:var(--glass);color:var(--primary);font-weight:600}
-
-  /* Buttons */
-  .btn{
-    display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; border: 0; background: var(--primary); color: #fff; font-weight: 700; cursor: pointer;
-    box-shadow: 0 8px 18px rgba(11, 114, 255, 0.12);
-    transition:transform .12s ease, box-shadow .12s ease, background .12s;
+  .status-badge.open {
+    background: #dcfce7;
+    color: #166534;
   }
-  .btn:active{transform:translateY(2px);box-shadow:0 4px 12px rgba(11,114,255,0.08)}
-  .btn.secondary{background:transparent;color:var(--primary);border:1px solid rgba(11,114,255,0.08);box-shadow:none;font-weight:600}
-  .btn.ghost{background:transparent;color:var(--muted);border:1px dashed #eef4ff}
 
-  .icon{width:18px;height:18px;display:inline-block;vertical-align:middle}
+  .status-badge.closed {
+    background: #fee2e2;
+    color: #991b1b;
+  }
 
-  /* Tiny utilities */
+  .status-badge.inscrit {
+    background: #fce7f3;
+    color: #be185d;
+  }
+
+  /* Utilities */
   .muted{color:var(--muted);font-size:13px}
+  .small{font-size:12px}
   .mb{margin-bottom:12px}
   .hidden{display:none !important;}
   .right{margin-left:auto}
+  .text-center{text-align:center}
 
-  /* Footer (small) */
+  /* Footer */
   footer.small{
     grid-column: 1 / -1;
     margin-top: 8px;
@@ -242,21 +656,19 @@
     font-size: 13px;
   }
 
-  /* micro animations */
-  .fade-in { animation:fadeIn .28s ease both }
-  @keyframes fadeIn { from {opacity:0; transform: translateY(6px)} to {opacity:1; transform:none} }
+  /* Animations */
+  .fade-in { animation:fadeIn .3s ease both }
+  @keyframes fadeIn { from {opacity:0; transform: translateY(10px)} to {opacity:1; transform:none} }
 
   /* Responsive */
-  @media (max-width:980px){
-    .wrap{grid-template-columns: 1fr; padding-bottom:80px}
-    header{position:relative}
-    #login-card{grid-template-columns:1fr; gap:12px}
-    .side{order:2}
-    .main{order:1}
-    .card{padding:14px}
+  @media (max-width:1200px){
+    .wrap{grid-template-columns: 1fr; gap:16px;}
+    .dashboard-layout{grid-template-columns: 1fr; gap:16px;}
+    .activities-panel{max-height: 300px;}
+    .schedule-container{height: 400px;}
   }
 
-  /* Mode DEV pour tester */
+  /* Mode DEV */
   .dev-raccourcis { display: none; }
   .dev-mode .dev-raccourcis { display: block; }
 
@@ -287,7 +699,7 @@
           <span id="user-name">Utilisateur</span>
         </div>
         <div style="width:8px"></div>
-        <button id="logout-btn" class="btn secondary hidden" onclick="logout()" aria-hidden="true">
+        <button id="logout-btn" class="btn secondary hidden" onclick="logout()">
           <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v12a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
           Déconnexion
         </button>
@@ -429,28 +841,111 @@
           </div>
         </div>
 
-        <!-- TABLEAU DES ACTIVITES -->
-        <div>
-          <h4 style="margin-bottom:8px">Liste des activités</h4>
-          <table id="table-prof" aria-describedby="prof-desc">
-            <caption id="prof-desc" class="muted small">Activités que vous avez créées ou dont vous êtes l'animateur</caption>
-            <thead>
-              <tr>
-                <th>Titre</th>
-                <th>Salle</th>
-                <th>Effectif</th>
-                <th>Animateur</th>
-                <th>Inscrits</th>
-                <th>Classes</th>
-                <th>Sécable</th>
-                <th>Visible avant</th>
-                <th>Ouverture</th>
-                <th>Fermeture</th>
-                <th>Séances</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <!-- PARTIE VISUALISATION : ACTIVITÉS + EMPLOI DU TEMPS -->
+        <div style="display: grid; grid-template-columns: 400px 1fr; gap: 20px; margin-top: 20px;">
+
+          <!-- VOLET GAUCHE : LISTE DES ACTIVITÉS -->
+          <div>
+            <h4 style="margin-bottom:12px">Mes activités</h4>
+            <div style="background: #f8fafc; border-radius: 8px; padding: 12px; border: 1px solid #e2e8f0;">
+              <div id="liste-activites-prof" style="max-height: 400px; overflow-y: auto;">
+                <!-- Les activités seront listées ici -->
+              </div>
+            </div>
+          </div>
+
+          <!-- VOLET DROIT : EMPLOI DU TEMPS -->
+          <div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <h4>Emploi du temps</h4>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="prev-week" class="btn ghost" style="padding: 6px 10px;">‹ Semaine précédente</button>
+                <span id="current-week" style="font-size: 14px; font-weight: 600; color: var(--primary);">Semaine du XX/XX</span>
+                <button id="next-week" class="btn ghost" style="padding: 6px 10px;">Semaine suivante ›</button>
+              </div>
+            </div>
+
+            <div id="emploi-du-temps" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden;">
+              <!-- Grille emploi du temps style École Directe -->
+              <div style="display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 1px; background: #e2e8f0;">
+
+                <!-- En-tête des jours -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;"></div>
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">LUN</div>
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">MAR</div>
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">MER</div>
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">JEU</div>
+                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">VEN</div>
+
+                <!-- Créneaux horaires de 8h à 18h -->
+                <!-- 8h-9h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">8h-9h</div>
+                <div id="slot-lun-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 9h-10h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">9h-10h</div>
+                <div id="slot-lun-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 10h-11h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">10h-11h</div>
+                <div id="slot-lun-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 11h-12h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">11h-12h</div>
+                <div id="slot-lun-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 14h-15h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">14h-15h</div>
+                <div id="slot-lun-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 15h-16h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">15h-16h</div>
+                <div id="slot-lun-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 16h-17h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">16h-17h</div>
+                <div id="slot-lun-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+                <!-- 17h-18h -->
+                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">17h-18h</div>
+                <div id="slot-lun-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mar-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-mer-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-jeu-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+                <div id="slot-ven-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
+
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -531,10 +1026,23 @@ function getUserName(id){ const u=getUserById(id); return u ? `${u.prenom} ${u.n
    =========================== */
 async function apiGet(url){
   try {
-    const res = await fetch(url, {credentials:'same-origin'});
+    const res = await fetch(url, {
+      credentials:'same-origin',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
     if(!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`HTTP ${res.status}: ${errorText}`);
+      if(res.status === 401) {
+        // Session expirée
+        console.warn('Session expirée, redirection vers login');
+        currentUser = null;
+        onAuthChange();
+        throw new Error('Session expirée');
+      }
+      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
+      throw new Error(errorData.error || `HTTP ${res.status}`);
     }
     return res.json();
   } catch(e) {
@@ -552,8 +1060,14 @@ async function apiPost(url, data){
       body: JSON.stringify(data)
     });
     if(!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`HTTP ${res.status}: ${errorText}`);
+      if(res.status === 401) {
+        console.warn('Non autorisé, redirection vers login');
+        currentUser = null;
+        onAuthChange();
+        throw new Error('Non autorisé');
+      }
+      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
+      throw new Error(errorData.error || `HTTP ${res.status}`);
     }
     return res.json();
   } catch(e) {
@@ -571,8 +1085,14 @@ async function apiDelete(url, data){
       body: JSON.stringify(data)
     });
     if(!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`HTTP ${res.status}: ${errorText}`);
+      if(res.status === 401) {
+        console.warn('Non autorisé, redirection vers login');
+        currentUser = null;
+        onAuthChange();
+        throw new Error('Non autorisé');
+      }
+      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
+      throw new Error(errorData.error || `HTTP ${res.status}`);
     }
     return res.json();
   } catch(e) {
@@ -645,32 +1165,78 @@ async function logout(){
 }
 
 /* ===========================
+   Vérification du statut d'authentification
+   =========================== */
+async function checkAuthStatus() {
+  try {
+    const userData = await apiGet('/me');
+    if (userData && userData.id) {
+      currentUser = userData;
+      console.log('[OK] Session valide:', currentUser);
+      return true;
+    }
+  } catch (e) {
+    console.log('[INFO] Pas de session active ou expirée');
+    currentUser = null;
+  }
+  return false;
+}
+
+/* ===========================
    Récupération des données
    =========================== */
 async function fetchAllData() {
   try {
-    // Récupérer les données de base
-    users = await apiGet('/users');
-    classes = await apiGet('/classes');
-
-    if(!currentUser) return; // Éviter l'enrichissement si pas connecté
-
     console.log('Récupération des données...');
 
-    // Récupérer les données brutes
-    const [rawActivites, rawActiviteClasses, rawSeances, rawInscriptions] = await Promise.all([
+    // Récupérer les classes (toujours accessible)
+    classes = await apiGet('/classes');
+    console.log('Classes récupérées:', classes.length);
+
+    // Si pas connecté, s'arrêter là
+    if (!currentUser) {
+      console.log('[INFO] Pas d\'utilisateur connecté, arrêt du fetch');
+      users = [];
+      activites = [];
+      return;
+    }
+
+    // Données selon le rôle
+    if (currentUser.role === 'prof' || currentUser.role === 'admin') {
+      // Professeurs peuvent voir tous les utilisateurs
+      try {
+        users = await apiGet('/users');
+        console.log('Utilisateurs récupérés:', users.length);
+      } catch (e) {
+        console.warn('[INFO] Erreur récupération users:', e.message);
+        users = [];
+      }
+    } else {
+      // Élèves n'ont pas accès à la liste des utilisateurs
+      users = [currentUser]; // Seulement leur propre profil
+    }
+
+    // Récupérer les données principales
+    const [rawActivites, rawActiviteClasses, rawSeances] = await Promise.all([
       apiGet('/activites'),
       apiGet('/activite_classes'),
-      apiGet('/seances'),
-      apiGet('/inscriptions')
+      apiGet('/seances')
     ]);
 
     console.log('Données reçues:', {
       activites: rawActivites.length,
       classes: rawActiviteClasses.length,
-      seances: rawSeances.length,
-      inscriptions: rawInscriptions.length
+      seances: rawSeances.length
     });
+
+    // Récupérer les inscriptions selon le rôle
+    let rawInscriptions = [];
+    try {
+      rawInscriptions = await apiGet('/inscriptions');
+    } catch (e) {
+      console.warn('[WARN] Erreur récupération inscriptions:', e.message);
+      rawInscriptions = [];
+    }
 
     // Enrichir chaque activité
     activites = rawActivites.map(act => {
@@ -684,7 +1250,7 @@ async function fetchAllData() {
         .filter(s => s.activite_id === act.id)
         .map(s => ({ id: s.id, date_heure: s.date_heure }));
 
-      // Inscriptions liées (utiliser eleve_id au lieu de user_id)
+      // Inscriptions liées
       act.inscriptions = rawInscriptions
         .filter(i => i.activite_id === act.id)
         .map(i => i.eleve_id);
@@ -692,10 +1258,15 @@ async function fetchAllData() {
       return act;
     });
 
-    console.log('[OK] Activités enrichies:', activites);
+    console.log('[OK] Activités enrichies:', activites.length);
 
   } catch(e) {
     console.error('[KO] Erreur lors du fetch des données:', e);
+    // Ne pas throw, permettre à l'app de continuer
+    if (e.message.includes('Session expirée') || e.message.includes('Non autorisé')) {
+      // L'utilisateur sera redirigé vers le login
+      return;
+    }
     throw e;
   }
 }
@@ -738,8 +1309,9 @@ function afficherPageRole(role){
   if(role==='prof' || role==='admin'){
     $('#prof-page').classList.remove('hidden');
     populateSelects();
-    majTableProf();
+    majListeActivitesProf(); // Changé
     majListeExclusives();
+    initEmploiDuTemps(); // Nouveau
   } else if(role==='eleve'){
     $('#eleve-page').classList.remove('hidden');
     majTableEleve();
@@ -782,7 +1354,7 @@ function populateSelects(){
 /* ===========================
    Table élève
    =========================== */
-function majTableEleve(){
+async function majTableEleve(){
   const tbody = $('#table-eleve tbody');
   tbody.innerHTML = '';
   if(!currentUser) {
@@ -804,7 +1376,11 @@ function majTableEleve(){
   const now = new Date();
   let totalAct = 0, totalIns = 0;
 
-  activites.forEach(act => {
+  // Stocker les états d'inscription (connus après action)
+  const inscriptionStates = new Map();
+
+  // Pour chaque activité, créer la ligne avec bouton intelligent
+  for (const act of activites) {
     // Filtrer selon visibilité et dates
     const ouverture = new Date(act.date_ouverture_inscriptions);
     const fermeture = new Date(act.date_fermeture_inscriptions);
@@ -813,15 +1389,15 @@ function majTableEleve(){
     // Vérifications de visibilité pour les élèves
     if(!(act.visible_avant*1) && now < ouverture) {
       console.log(`Activité ${act.titre} non visible (avant ouverture)`);
-      return;  // pas encore visible
+      continue;  // pas encore visible
     }
     if(!act.classe_ids.includes(classeId)) {
       console.log(`Activité ${act.titre} non autorisée pour classe ${classeId}`);
-      return;    // classe non autorisée
+      continue;    // classe non autorisée
     }
     if(now > fermeture && allPassed) {
       console.log(`Activité ${act.titre} terminée`);
-      return;          // activité terminée
+      continue;          // activité terminée
     }
 
     totalAct++;
@@ -831,6 +1407,10 @@ function majTableEleve(){
 
     // Nombre d'inscrits
     const inscritsCount = act.inscriptions?.length || 0;
+
+    // Vérifier si l'élève est déjà inscrit
+    const estInscrit = act.inscriptions?.includes(currentUser.id) || false;
+    if(estInscrit) totalIns++;
 
     // Créer ligne
     const tr = document.createElement('tr');
@@ -845,78 +1425,131 @@ function majTableEleve(){
 
     // Bouton inscription / désinscription
     const tdAction = tr.querySelector('td:last-child');
-    const estInscrit = act.inscriptions?.includes(currentUser.id);
     const inscriptionsOuvertes = now >= ouverture && now <= fermeture && !allPassed;
 
     const btn = document.createElement('button');
     btn.className = 'btn';
+    btn.dataset.activiteId = act.id;
 
-    if(now < ouverture){
-      btn.textContent = 'Inscriptions non ouvertes';
-      btn.disabled = true;
-      btn.classList.add('ghost');
-    } else if(now > fermeture && !inscriptionsOuvertes){
-      btn.textContent = 'Inscriptions fermées';
-      btn.disabled = true;
-      btn.classList.add('ghost');
-    } else if(allPassed){
-      btn.textContent = 'Activité terminée';
-      btn.disabled = true;
-      btn.classList.add('ghost');
-    } else if(estInscrit){
-      totalIns++;
-      btn.textContent = 'Se désinscrire';
-      btn.onclick = async () => {
-        if(!inscriptionsOuvertes){ alert('Les inscriptions sont fermées'); return; }
-        if(confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)){
-          try {
-            console.log(`Désinscription de l'activité ${act.id}...`);
-            const result = await apiDelete('/inscriptions', {activite_id: act.id});
-            console.log('[OK] Désinscription réussie:', result);
-            await fetchAllData();
-            majTableEleve();
-            majTableProf();
-          } catch(e) {
-            console.error('[KO] Erreur désinscription:', e);
-            alert('Erreur lors de la désinscription: ' + e.message);
-          }
-        }
-      };
-    } else {
-      btn.textContent = "S'inscrire";
-      btn.onclick = async () => {
-        if(!inscriptionsOuvertes){ alert('Inscriptions non ouvertes'); return; }
-        if(act.inscriptions?.length >= act.effectif_max){ alert('Effectif max atteint'); return; }
-
-        // Vérification supplémentaire
-        if(!currentUser.classe_id) {
-          alert('Erreur: votre classe n\'est pas définie. Contactez un administrateur.');
-          console.error('[KO] Classe ID manquante dans currentUser:', currentUser);
-          return;
-        }
-
-        if(confirm(`Veux-tu t'inscrire à "${act.titre}" ?`)){
-          try {
-            console.log(`Inscription à l'activité ${act.id}...`);
-            console.log('Utilisateur actuel:', currentUser);
-            const result = await apiPost('/inscriptions', {activite_id: act.id});
-            console.log('[OK] Inscription réussie:', result);
-            await fetchAllData();
-            majTableEleve();
-            majTableProf();
-          } catch(e) {
-            console.error('[KO] Erreur inscription:', e);
-            alert('Erreur lors de l\'inscription: ' + e.message);
-          }
-        }
-      };
+    // Fonction pour mettre à jour le bouton selon l'état
+    function updateButton(isInscrit) {
+      if(now < ouverture){
+        btn.textContent = 'Inscriptions non ouvertes';
+        btn.disabled = true;
+        btn.classList.add('ghost');
+        btn.classList.remove('secondary');
+      } else if(now > fermeture && !inscriptionsOuvertes){
+        btn.textContent = 'Inscriptions fermées';
+        btn.disabled = true;
+        btn.classList.add('ghost');
+        btn.classList.remove('secondary');
+      } else if(allPassed){
+        btn.textContent = 'Activité terminée';
+        btn.disabled = true;
+        btn.classList.add('ghost');
+        btn.classList.remove('secondary');
+      } else if(isInscrit){
+        btn.textContent = 'Se désinscrire';
+        btn.disabled = false;
+        btn.classList.remove('ghost');
+        btn.classList.add('secondary');
+      } else {
+        btn.textContent = "S'inscrire";
+        btn.disabled = false;
+        btn.classList.remove('ghost', 'secondary');
+      }
     }
+
+    // Initialiser avec l'état réel depuis la DB
+    inscriptionStates.set(act.id, estInscrit);
+    updateButton(estInscrit);
+
+    // Gestionnaire de clic
+    btn.onclick = async () => {
+      if(!inscriptionsOuvertes){
+        alert('Les inscriptions ne sont pas ouvertes');
+        return;
+      }
+
+      const currentState = inscriptionStates.get(act.id);
+
+      try {
+        if(currentState) {
+          // Il est inscrit -> désinscription
+          if(confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)){
+            console.log(`Désinscription de l'activité ${act.id}...`);
+            await apiDelete('/inscriptions', {activite_id: act.id});
+            console.log('[OK] Désinscription réussie');
+
+            // Mettre à jour l'état
+            inscriptionStates.set(act.id, false);
+            updateButton(false);
+            totalIns = Math.max(0, totalIns - 1);
+            $('#stat-insc').textContent = totalIns;
+
+            // Mettre à jour le compteur d'inscrits dans le tableau
+            const inscritsCell = tr.querySelector('td:nth-child(4)');
+            const currentCount = parseInt(inscritsCell.textContent);
+            if(currentCount > 0) inscritsCell.textContent = currentCount - 1;
+
+            // Mettre à jour les données locales
+            const actIndex = activites.findIndex(a => a.id === act.id);
+            if(actIndex !== -1) {
+              activites[actIndex].inscriptions = activites[actIndex].inscriptions.filter(id => id !== currentUser.id);
+            }
+          }
+        } else {
+          // Il n'est pas inscrit -> inscription
+          if(act.inscriptions?.length >= act.effectif_max){
+            alert('Effectif max atteint');
+            return;
+          }
+
+          console.log(`Tentative d'inscription à l'activité ${act.id}...`);
+          await apiPost('/inscriptions', {activite_id: act.id});
+          console.log('[OK] Inscription réussie');
+
+          // Mettre à jour l'état
+          inscriptionStates.set(act.id, true);
+          updateButton(true);
+          totalIns++;
+          $('#stat-insc').textContent = totalIns;
+
+          // Mettre à jour le compteur d'inscrits dans le tableau
+          const inscritsCell = tr.querySelector('td:nth-child(4)');
+          inscritsCell.textContent = parseInt(inscritsCell.textContent) + 1;
+
+          // Mettre à jour les données locales
+          const actIndex = activites.findIndex(a => a.id === act.id);
+          if(actIndex !== -1) {
+            activites[actIndex].inscriptions.push(currentUser.id);
+          }
+        }
+      } catch(e) {
+        console.error('[KO] Erreur action:', e);
+        if(e.message.includes('Déjà inscrit')) {
+          // Il était déjà inscrit, corriger l'état
+          inscriptionStates.set(act.id, true);
+          updateButton(true);
+          if(!estInscrit) { // Si on pensait qu'il n'était pas inscrit
+            totalIns++;
+            $('#stat-insc').textContent = totalIns;
+          }
+        } else if(e.message.includes('Inscription non trouvée')) {
+          // Il n'était pas inscrit, corriger l'état
+          inscriptionStates.set(act.id, false);
+          updateButton(false);
+        } else {
+          alert('Erreur: ' + e.message);
+        }
+      }
+    };
 
     tdAction.appendChild(btn);
     tbody.appendChild(tr);
-  });
+  }
 
-  // Mettre à jour stats
+  // Mettre à jour stats finales
   $('#stat-act').textContent = totalAct;
   $('#stat-insc').textContent = totalIns;
 }
@@ -924,52 +1557,208 @@ function majTableEleve(){
 /* ===========================
    Table prof
    =========================== */
-function majTableProf() {
-  const tbody = $('#table-prof tbody');
-  tbody.innerHTML = '';
+function majListeActivitesProf() {
+  const container = $('#liste-activites-prof');
+  if (!container) return;
 
-  activites.forEach(act => {
-    if (act.prof_id !== currentUser?.id) return;
+  container.innerHTML = '';
 
-    // Inscrits : Prénom Nom (Classe)
-    const inscrits = (act.inscriptions || []).map(id => {
-      const u = getUserById(id);
-      if (!u) return '';
-      const classeNom = classes.find(c => c.id === u.classe_id)?.nom || '—';
-      return `${u.prenom} ${u.nom} (${classeNom})`;
-    });
+  // Filtrer les activités du prof connecté
+  const mesActivites = activites.filter(act =>
+    act.prof_id === currentUser?.id || act.animateur_id === currentUser?.id
+  );
 
-    const inscritsCount = inscrits.length;
-    const inscritsText = inscrits.length > 0 ? inscrits.join(', ') : '—';
+  if (mesActivites.length === 0) {
+    container.innerHTML = '<p class="muted" style="text-align: center; padding: 20px;">Aucune activité</p>';
+    return;
+  }
 
-    // Classes liées
+  mesActivites.forEach(act => {
+    // Inscrits count et classes
+    const inscritsCount = act.inscriptions?.length || 0;
     const classesText = act.classe_ids
       .map(id => classes.find(c => c.id === id)?.nom || '')
       .join(', ');
 
-    // Séances liées
-    const seancesText = (act.seances || [])
-      .map(s => formatDateLocal(s.date_heure))
-      .join(', ');
-
-    // Animateur
-    const animateur = getUserName(act.animateur_id);
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${act.titre}</td>
-      <td>${act.salle}</td>
-      <td>${act.effectif_max}</td>
-      <td>${animateur}</td>
-      <td title="${inscritsText}">[${inscritsCount}/${act.effectif_max}] ${inscritsText.length > 50 ? inscritsText.substring(0,50) + '...' : inscritsText}</td>
-      <td>${classesText}</td>
-      <td>${act.separable ? 'Oui' : 'Non'}</td>
-      <td>${act.visible_avant ? 'Oui' : 'Non'}</td>
-      <td>${formatDateLocal(act.date_ouverture_inscriptions)}</td>
-      <td>${formatDateLocal(act.date_fermeture_inscriptions)}</td>
-      <td>${seancesText}</td>
+    // Card pour chaque activité
+    const actCard = document.createElement('div');
+    actCard.style.cssText = `
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
     `;
-    tbody.appendChild(tr);
+
+    actCard.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+        <h5 style="margin: 0; color: var(--primary); font-size: 14px; font-weight: 600;">${act.titre}</h5>
+        <span style="background: var(--glass); color: var(--primary); padding: 2px 6px; border-radius: 4px; font-size: 11px;">${act.salle}</span>
+      </div>
+      <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">
+        Classes: ${classesText}
+      </div>
+      <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+        Inscrits: ${inscritsCount}/${act.effectif_max}
+      </div>
+      <div style="font-size: 11px; color: var(--muted);">
+        ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
+      </div>
+    `;
+
+    // Hover effect
+    actCard.onmouseenter = () => {
+      actCard.style.borderColor = 'var(--primary)';
+      actCard.style.boxShadow = '0 4px 12px rgba(11,114,255,0.1)';
+    };
+    actCard.onmouseleave = () => {
+      actCard.style.borderColor = '#e2e8f0';
+      actCard.style.boxShadow = 'none';
+    };
+
+    // Click pour sélectionner l'activité dans l'emploi du temps
+    actCard.onclick = () => {
+      // Désélectionner les autres
+      document.querySelectorAll('.activite-selected').forEach(el => {
+        el.classList.remove('activite-selected');
+        el.style.borderColor = '#e2e8f0';
+        el.style.backgroundColor = 'white';
+      });
+
+      // Sélectionner celle-ci
+      actCard.classList.add('activite-selected');
+      actCard.style.borderColor = 'var(--primary)';
+      actCard.style.backgroundColor = 'var(--glass)';
+
+      // Mettre à jour l'emploi du temps
+      highlightActiviteInSchedule(act);
+    };
+
+    container.appendChild(actCard);
+  });
+}
+
+/* ===========================
+   Gestion de l'emploi du temps
+   =========================== */
+let currentWeekOffset = 0; // 0 = semaine courante
+
+function initEmploiDuTemps() {
+  updateWeekDisplay();
+
+  // Navigation semaines
+  $('#prev-week').onclick = () => {
+    currentWeekOffset--;
+    updateWeekDisplay();
+    updateScheduleView();
+  };
+
+  $('#next-week').onclick = () => {
+    currentWeekOffset++;
+    updateWeekDisplay();
+    updateScheduleView();
+  };
+
+  updateScheduleView();
+}
+
+function updateWeekDisplay() {
+  const today = new Date();
+  const monday = getMonday(today);
+  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+
+  const friday = new Date(monday);
+  friday.setDate(friday.getDate() + 4);
+
+  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${friday.getDate().toString().padStart(2,'0')}/${(friday.getMonth()+1).toString().padStart(2,'0')}`;
+  $('#current-week').textContent = weekText;
+}
+
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
+function updateScheduleView() {
+  // Vider tous les créneaux
+  document.querySelectorAll('.time-slot').forEach(slot => {
+    slot.innerHTML = '';
+    slot.style.backgroundColor = 'white';
+  });
+
+  // Afficher les séances de la semaine courante
+  const monday = getMonday(new Date());
+  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+
+  activites.forEach(act => {
+    if (act.prof_id !== currentUser?.id && act.animateur_id !== currentUser?.id) return;
+
+    act.seances?.forEach(seance => {
+      const seanceDate = new Date(seance.date_heure);
+      const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
+
+      if (daysDiff >= 0 && daysDiff < 7) {
+        const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
+        const hour = seanceDate.getHours();
+
+        if (daysDiff < 5) { // Seulement lun-ven
+          const slotId = `slot-${dayName}-${hour}`;
+          const slot = document.getElementById(slotId);
+
+          if (slot) {
+            const seanceDiv = document.createElement('div');
+            seanceDiv.style.cssText = `
+              background: linear-gradient(135deg, var(--primary), var(--accent));
+              color: white;
+              padding: 2px 4px;
+              border-radius: 4px;
+              font-size: 10px;
+              font-weight: 600;
+              margin-bottom: 2px;
+              cursor: pointer;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            `;
+            seanceDiv.textContent = act.titre;
+            seanceDiv.title = `${act.titre}\n${act.salle}\n${formatDateLocal(seance.date_heure)}`;
+
+            slot.appendChild(seanceDiv);
+          }
+        }
+      }
+    });
+  });
+}
+
+function highlightActiviteInSchedule(activite) {
+  // Reset highlighting
+  document.querySelectorAll('.time-slot').forEach(slot => {
+    slot.style.backgroundColor = 'white';
+  });
+
+  // Highlight les créneaux de cette activité
+  const monday = getMonday(new Date());
+  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+
+  activite.seances?.forEach(seance => {
+    const seanceDate = new Date(seance.date_heure);
+    const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
+
+    if (daysDiff >= 0 && daysDiff < 5) {
+      const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven'][daysDiff];
+      const hour = seanceDate.getHours();
+      const slotId = `slot-${dayName}-${hour}`;
+      const slot = document.getElementById(slotId);
+
+      if (slot) {
+        slot.style.backgroundColor = 'rgba(11,114,255,0.1)';
+      }
+    }
   });
 }
 
@@ -1019,7 +1808,7 @@ function resetForm(){
 }
 
 /* ===========================
-   Créer activité
+   Créer activité avec API
    =========================== */
 async function creerActivite(){
   const titre = $('#titre').value.trim();
@@ -1047,7 +1836,11 @@ async function creerActivite(){
   // Validation des champs obligatoires
   if (!titre) { $('#titre')?.classList.add('error'); hasError = true; }
   if (!salle) { $('#salle')?.classList.add('error'); hasError = true; }
-  if (!effectif || effectif < 1) { $('#effectif')?.classList.add('error'); hasError = true; }
+  if (!effectif || effectif < 1 || effectif > 100) {
+    $('#effectif')?.classList.add('error');
+    hasError = true;
+    if(effectif > 100) alert('Effectif maximum autorisé: 100');
+  }
   if (selectedClasses.length === 0) { $('#classe-select')?.classList.add('error'); hasError = true; }
   if (!ouverture) { $('#ouverture')?.classList.add('error'); hasError = true; }
   if (!fermeture) { $('#fermeture')?.classList.add('error'); hasError = true; }
@@ -1090,12 +1883,13 @@ async function creerActivite(){
     const result = await apiPost('/activites', newAct);
     console.log('[OK] Activité créée:', result);
     await fetchAllData();
-    majTableProf();
+    majListeActivitesProf(); // Changé
     majListeExclusives();
+    updateScheduleView(); // Nouveau
     resetForm();
     alert('Activité créée et enregistrée en base!');
   } catch(e) {
-    console.error('[KO] Erreur création:', e);
+    console.error('Erreur création:', e);
     alert('Erreur lors de la création : ' + e.message);
   }
 }
@@ -1147,7 +1941,7 @@ function ajouterSeanceHebdo(){
     del.onclick = ()=>{
       d.remove();
       majLabels(serieDiv);
-      // si plus de séance dans cette série supprimer le contenuer
+      // Si plus de séance dans cette série supprimer le conteneur
       if(serieDiv.querySelectorAll('.seance-item').length === 0){
         serieDiv.remove();
       }
@@ -1158,12 +1952,12 @@ function ajouterSeanceHebdo(){
     serieDiv.appendChild(d);
   }
 
-  // fonction pour recalculer labels et dates
+  // Fonction pour recalculer labels et dates
   function majLabels(serieDiv){
     const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
     if(items.length === 0) return;
 
-    // séance pivot : la plus proche
+    // Séance pivot : la plus proche
     const pivotInput = items.reduce((minInp, item) => {
       const inp = item.querySelector('.seance-input');
       return new Date(inp.value) < new Date(minInp.value) ? inp : minInp;
@@ -1181,7 +1975,7 @@ function ajouterSeanceHebdo(){
     });
   }
 
-  // gestion du changement de date
+  // Gestion du changement de date
   serieDiv.querySelectorAll('.seance-input').forEach(inp => {
     inp.onchange = ()=> majLabels(serieDiv);
   });
@@ -1215,7 +2009,7 @@ function ajouterSeanceManuelle(){
   inp.onchange = ()=> majManual();
   majManual(); // mise à jour immédiate
 
-  // fonction pour trier les séances manuelles et mettre labels correctement
+  // Fonction pour trier les séances manuelles et mettre labels correctement
   function majManual(){
     const manualItems = Array.from(container.querySelectorAll('.seance-item.manual'));
 
@@ -1226,7 +2020,7 @@ function ajouterSeanceManuelle(){
       return da - db;
     });
 
-    // enlever tous les items manuels du DOM
+    // Enlever tous les items manuels du DOM
     manualItems.forEach(item => container.removeChild(item));
 
     //remettre les éléments triés en tête
@@ -1247,9 +2041,13 @@ function updateSidePanels(){
   const raccourcis = $('#sidebar-raccourcis');
   if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
 
+  // Statut (mode dev seulement)
+  const statut = $('#sidebar-statut');
+  if (statut) statut.style.display = MODE === 'dev' ? 'block' : 'none';
+
   // Aide rapide (uniquement si prof connecté)
   const aideRapide = $('#sidebar-aide');
-  if (aideRapide) aideRapide.classList.toggle('hidden', !(currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')));
+  if (aideRapide) aideRapide.style.display = (currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')) ? 'block' : 'none';
 }
 
 /* ===========================
@@ -1274,23 +2072,43 @@ $('#password').addEventListener('keypress', (e) => {
 });
 
 /* ===========================
-   Initialisation
+   Initialisation sécurisée
    =========================== */
 (async function init(){
   try{
     console.log('[START] Initialisation de l\'application...');
-    await fetchAllData();
+
+    // Vérifier d'abord si une session existe
+    const hasValidSession = await checkAuthStatus();
+
+    if (hasValidSession) {
+      console.log('[OK] Session existante détectée');
+      await fetchAllData();
+    } else {
+      console.log('[INFO] Aucune session active, affichage du login');
+      // NE PAS récupérer les classes si pas connecté (elles nécessitent l'auth)
+      classes = [];
+      users = [];
+      activites = [];
+    }
+
     onAuthChange();
     updateSidePanels();
-    console.log('[OK] Application initialisée');
+    console.log('✅ Application initialisée');
   } catch(e){
-    console.error('[KO] Erreur lors de l\'initialisation:', e);
+    console.error('❌ Erreur lors de l\'initialisation:', e);
     // Afficher un message d'erreur à l'utilisateur
     const loginMsg = $('#login-msg');
     if(loginMsg) {
       loginMsg.textContent = 'Erreur de connexion au serveur';
       loginMsg.style.color = '#dd1738';
     }
+    // S'assurer que le login est visible en cas d'erreur
+    currentUser = null;
+    classes = [];
+    users = [];
+    activites = [];
+    onAuthChange();
   }
 })();
 </script>
