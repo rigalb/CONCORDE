@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PROTOTYPE alpha v0.1</title>
+  <title>CONCORDE alpha v0.2</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -256,7 +256,9 @@
     .card{padding:14px}
   }
 
-  /* Tooltip */
+  /* Mode DEV pour tester */
+  .dev-raccourcis { display: none; }
+  .dev-mode .dev-raccourcis { display: block; }
 
 </style>
 </head>
@@ -348,7 +350,7 @@
           <div class="pill" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg> Professeur</div>
           <div>
             <h3 id="prof-title">Tableau de bord — Professeur</h3>
-            <p class="muted">Crée des activités, gére les inscriptions et exporte si nécessaire.</p>
+            <p class="muted">Crée des activités, gère les inscriptions et exporte si nécessaire.</p>
           </div>
         </div>
 
@@ -384,7 +386,7 @@
               <div>
                 <label class="small">Visible avant ouverture</label>
                 <input id="visible-avant" type="checkbox">
-                <span class="muted">Permet aux élèves de voir l’activité avant l’ouverture</span>
+                <span class="muted">Permet aux élèves de voir l'activité avant l'ouverture</span>
               </div>
             </div>
 
@@ -457,11 +459,22 @@
 
     <!-- RIGHT: SIDE PANEL -->
     <aside class="side">
+
+      <!-- Raccourcis DEV -->
+      <div id="sidebar-raccourcis" class="card fade-in dev-raccourcis" aria-hidden="true">
+        <h4>Raccourcis (DEV)</h4>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <button class="btn secondary" onclick="demoLogin('prof1')">Se connecter (prof1)</button>
+          <button class="btn secondary" onclick="demoLogin('eleve1')">Se connecter (eleve1)</button>
+          <button class="btn secondary" onclick="demoLogin('eleve2')">Se connecter (eleve2)</button>
+        </div>
+      </div>
+
       <div id="sidebar-statut" class="card fade-in">
         <h4>Statut</h4>
         <div class="stats" style="margin-top:8px">
-          <div class="stat"><h4>Activités</h4><p id="count-acts">1</p></div>
-          <div class="stat"><h4>Utilisateurs</h4><p id="count-users">4</p></div>
+          <div class="stat"><h4>Activités</h4><p id="count-acts">0</p></div>
+          <div class="stat"><h4>Utilisateurs</h4><p id="count-users">0</p></div>
         </div>
         <p class="muted small" style="margin-top:10px">Info : les heures sont affichées en <strong>locale</strong> (fr-FR)</p>
       </div>
@@ -476,13 +489,9 @@
 
   </div>
 
-
-
-
-
 <script>
 /* ===========================
-   Helpers & Utils
+   Configuration & Variables
    =========================== */
 const MODE = 'reel';
 let currentUser = null;
@@ -490,6 +499,14 @@ let users = [];
 let classes = [];
 let activites = [];
 
+// Mode DEV : activer les raccourcis
+if(MODE === 'dev') {
+  document.body.classList.add('dev-mode');
+}
+
+/* ===========================
+   Helpers & Utils
+   =========================== */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
 
@@ -513,29 +530,55 @@ function getUserName(id){ const u=getUserById(id); return u ? `${u.prenom} ${u.n
    API helpers
    =========================== */
 async function apiGet(url){
-  const res = await fetch(url, {credentials:'same-origin'});
-  if(!res.ok) throw new Error(await res.text());
-  return res.json();
+  try {
+    const res = await fetch(url, {credentials:'same-origin'});
+    if(!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch(e) {
+    console.error('API GET Error:', e);
+    throw e;
+  }
 }
+
 async function apiPost(url, data){
-  const res = await fetch(url, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    credentials:'same-origin',
-    body: JSON.stringify(data)
-  });
-  if(!res.ok) throw new Error(await res.text());
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch(e) {
+    console.error('API POST Error:', e);
+    throw e;
+  }
 }
+
 async function apiDelete(url, data){
-  const res = await fetch(url, {
-    method:'DELETE',
-    headers:{'Content-Type':'application/json'},
-    credentials:'same-origin',
-    body: JSON.stringify(data)
-  });
-  if(!res.ok) throw new Error(await res.text());
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method:'DELETE',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch(e) {
+    console.error('API DELETE Error:', e);
+    throw e;
+  }
 }
 
 /* ===========================
@@ -544,17 +587,47 @@ async function apiDelete(url, data){
 async function login(){
   const username = $('#username').value.trim();
   const password = $('#password').value.trim();
+
+  if(!username || !password) {
+    $('#login-msg').textContent = 'Veuillez remplir tous les champs';
+    return;
+  }
+
   try{
+    console.log(`Tentative de connexion avec: ${username}`);
     const data = await apiPost('/login', {username,password});
-    if(!data.success) { $('#login-msg').textContent = data.error; return; }
+    console.log('Réponse de connexion:', data);
+
+    if(!data.success) {
+      $('#login-msg').textContent = data.error || 'Erreur de connexion';
+      return;
+    }
     currentUser = data;
+    console.log('Utilisateur connecté:', currentUser);
+
     $('#login-msg').textContent='';
-    $('#username').value=''; $('#password').value='';
+    $('#username').value='';
+    $('#password').value='';
     await fetchAllData();
     onAuthChange();
   } catch(e){
-    $('#login-msg').textContent = 'Erreur connexion';
-    console.error(e);
+    $('#login-msg').textContent = 'Erreur de connexion: ' + e.message;
+    console.error('Erreur de connexion:', e);
+  }
+}
+
+// Fonction pour demo (mode dev)
+async function demoLogin(username){
+  if(MODE !== 'dev') return;
+  try{
+    const data = await apiPost('/login', {username, password: '123'});
+    if(data.success) {
+      currentUser = data;
+      await fetchAllData();
+      onAuthChange();
+    }
+  } catch(e){
+    console.error('Demo login error:', e);
   }
 }
 
@@ -563,52 +636,72 @@ async function logout(){
     await apiPost('/logout',{});
     currentUser = null;
     onAuthChange();
-  } catch(e){ console.error(e); }
+  } catch(e){
+    console.error('Logout error:', e);
+    // Forcer la déconnexion côté client même en cas d'erreur serveur
+    currentUser = null;
+    onAuthChange();
+  }
 }
 
 /* ===========================
-   Initial fetch data
+   Récupération des données
    =========================== */
 async function fetchAllData() {
-  // récupérer les données brutes
-  users = await apiGet('/users');
-  classes = await apiGet('/classes');
+  try {
+    // Récupérer les données de base
+    users = await apiGet('/users');
+    classes = await apiGet('/classes');
 
-  if(!currentUser) return; // éviter enrichissement si pas connecté
+    if(!currentUser) return; // Éviter l'enrichissement si pas connecté
 
-  const rawActivites = await apiGet('/activites');
-  const rawActiviteClasses = await apiGet('/activite_classes');
-  const rawSeances = await apiGet('/seances');
-  const rawInscriptions = await apiGet('/inscriptions');
+    console.log('Récupération des données...');
 
+    // Récupérer les données brutes
+    const [rawActivites, rawActiviteClasses, rawSeances, rawInscriptions] = await Promise.all([
+      apiGet('/activites'),
+      apiGet('/activite_classes'),
+      apiGet('/seances'),
+      apiGet('/inscriptions')
+    ]);
 
+    console.log('Données reçues:', {
+      activites: rawActivites.length,
+      classes: rawActiviteClasses.length,
+      seances: rawSeances.length,
+      inscriptions: rawInscriptions.length
+    });
 
-  // enrichir chaque activité
-  activites = rawActivites.map(act => {
-    // classes liées
-    act.classe_ids = rawActiviteClasses
-      .filter(ac => ac.activite_id === act.id)
-      .map(ac => Number(ac.classe_id));
+    // Enrichir chaque activité
+    activites = rawActivites.map(act => {
+      // Classes liées
+      act.classe_ids = rawActiviteClasses
+        .filter(ac => ac.activite_id === act.id)
+        .map(ac => Number(ac.classe_id));
 
-    // séances liées
-    act.seances = rawSeances
-      .filter(s => s.activite_id === act.id)
-      .map(s => ({ id: s.id, date_heure: s.date_heure }));
+      // Séances liées
+      act.seances = rawSeances
+        .filter(s => s.activite_id === act.id)
+        .map(s => ({ id: s.id, date_heure: s.date_heure }));
 
-    // inscriptions liées
-    act.inscriptions = rawInscriptions
-      .filter(i => i.activite_id === act.id)
-      .map(i => i.eleve_id);
+      // Inscriptions liées (utiliser eleve_id au lieu de user_id)
+      act.inscriptions = rawInscriptions
+        .filter(i => i.activite_id === act.id)
+        .map(i => i.eleve_id);
 
-    return act;
-  });
+      return act;
+    });
 
-  console.log("[OK] Activités enrichies :", activites);
+    console.log('[OK] Activités enrichies:', activites);
+
+  } catch(e) {
+    console.error('[KO] Erreur lors du fetch des données:', e);
+    throw e;
+  }
 }
 
-
 /* ===========================
-   UI update on auth change
+   Mise à jour de l'UI
    =========================== */
 function onAuthChange(){
   if(currentUser){
@@ -635,6 +728,7 @@ function cacherToutesPages(){
   $('#eleve-page').classList.add('hidden');
   $('#prof-page').classList.add('hidden');
 }
+
 function afficherPageRole(role){
   cacherToutesPages();
   if(role==='prof' || role==='admin'){
@@ -652,6 +746,7 @@ function afficherPageRole(role){
    Populate selects
    =========================== */
 function populateSelects(){
+  // Sélect classes
   const select = $('#classe-select');
   if(select){
     select.innerHTML='';
@@ -662,6 +757,8 @@ function populateSelects(){
       select.appendChild(opt);
     });
   }
+
+  // Select animateurs (profs + admin)
   const animSelect = $('#animateur-select');
   if(animSelect){
     animSelect.innerHTML='';
@@ -672,20 +769,34 @@ function populateSelects(){
       opt.textContent=`${p.prenom} ${p.nom||''}`;
       animSelect.appendChild(opt);
     });
+    // Valeur par défaut
     const defaultId = (currentUser && currentUser.role==='prof') ? currentUser.id : (profs[0]?.id||'');
     if(defaultId) animSelect.value=defaultId;
   }
 }
 
 /* ===========================
-   Eleve table
+   Table élève
    =========================== */
 function majTableEleve(){
   const tbody = $('#table-eleve tbody');
   tbody.innerHTML = '';
-  if(!currentUser) return;
+  if(!currentUser) {
+    console.warn('[WARN] Pas d\'utilisateur connecté');
+    return;
+  }
 
   const classeId = Number(currentUser.classe_id);
+  console.log('Mise à jour table élève');
+  console.log('Utilisateur:', currentUser);
+  console.log('Classe ID:', classeId);
+
+  if(!classeId || isNaN(classeId)) {
+    console.error('[KO] Classe ID invalide:', classeId);
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#dd1738">Erreur: classe non définie pour cet élève</td></tr>';
+    return;
+  }
+
   const now = new Date();
   let totalAct = 0, totalIns = 0;
 
@@ -695,9 +806,19 @@ function majTableEleve(){
     const fermeture = new Date(act.date_fermeture_inscriptions);
     const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
 
-    //if(!(act.visible_avant*1) && now < ouverture) return;  // pas encore visible
-    //if(!act.classe_ids.includes(classeId)) return;    // classe non autorisée
-    //if(now > fermeture && allPassed) return;          // activité terminée
+    // Vérifications de visibilité pour les élèves
+    if(!(act.visible_avant*1) && now < ouverture) {
+      console.log(`Activité ${act.titre} non visible (avant ouverture)`);
+      return;  // pas encore visible
+    }
+    if(!act.classe_ids.includes(classeId)) {
+      console.log(`Activité ${act.titre} non autorisée pour classe ${classeId}`);
+      return;    // classe non autorisée
+    }
+    if(now > fermeture && allPassed) {
+      console.log(`Activité ${act.titre} terminée`);
+      return;          // activité terminée
+    }
 
     totalAct++;
 
@@ -744,22 +865,45 @@ function majTableEleve(){
       btn.onclick = async () => {
         if(!inscriptionsOuvertes){ alert('Les inscriptions sont fermées'); return; }
         if(confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)){
-          await apiDelete('/inscriptions', {activite_id: act.id});
-          await fetchAllData();
-          majTableEleve();
-          majTableProf();
+          try {
+            console.log(`Désinscription de l'activité ${act.id}...`);
+            const result = await apiDelete('/inscriptions', {activite_id: act.id});
+            console.log('[OK] Désinscription réussie:', result);
+            await fetchAllData();
+            majTableEleve();
+            majTableProf();
+          } catch(e) {
+            console.error('[KO] Erreur désinscription:', e);
+            alert('Erreur lors de la désinscription: ' + e.message);
+          }
         }
       };
     } else {
-      btn.textContent = 'S’inscrire';
+      btn.textContent = "S'inscrire";
       btn.onclick = async () => {
         if(!inscriptionsOuvertes){ alert('Inscriptions non ouvertes'); return; }
         if(act.inscriptions?.length >= act.effectif_max){ alert('Effectif max atteint'); return; }
-        if(confirm(`Veux-tu t’inscrire à "${act.titre}" ?`)){
-          await apiPost('/inscriptions', {activite_id: act.id});
-          await fetchAllData();
-          majTableEleve();
-          majTableProf();
+
+        // Vérification supplémentaire
+        if(!currentUser.classe_id) {
+          alert('Erreur: votre classe n\'est pas définie. Contactez un administrateur.');
+          console.error('[KO] Classe ID manquante dans currentUser:', currentUser);
+          return;
+        }
+
+        if(confirm(`Veux-tu t'inscrire à "${act.titre}" ?`)){
+          try {
+            console.log(`Inscription à l'activité ${act.id}...`);
+            console.log('Utilisateur actuel:', currentUser);
+            const result = await apiPost('/inscriptions', {activite_id: act.id});
+            console.log('[OK] Inscription réussie:', result);
+            await fetchAllData();
+            majTableEleve();
+            majTableProf();
+          } catch(e) {
+            console.error('[KO] Erreur inscription:', e);
+            alert('Erreur lors de l\'inscription: ' + e.message);
+          }
         }
       };
     }
@@ -774,7 +918,7 @@ function majTableEleve(){
 }
 
 /* ===========================
-   Prof table / Création Activité
+   Table prof
    =========================== */
 function majTableProf() {
   const tbody = $('#table-prof tbody');
@@ -813,7 +957,7 @@ function majTableProf() {
       <td>${act.salle}</td>
       <td>${act.effectif_max}</td>
       <td>${animateur}</td>
-      <td>[${inscritsCount}/${act.effectif_max}] ${inscritsText}</td>
+      <td title="${inscritsText}">[${inscritsCount}/${act.effectif_max}] ${inscritsText.length > 50 ? inscritsText.substring(0,50) + '...' : inscritsText}</td>
       <td>${classesText}</td>
       <td>${act.separable ? 'Oui' : 'Non'}</td>
       <td>${act.visible_avant ? 'Oui' : 'Non'}</td>
@@ -825,118 +969,173 @@ function majTableProf() {
   });
 }
 
-
+/* ===========================
+   Gestion des exclusives
+   =========================== */
 function majListeExclusives(){
-  const select = $('#exclusives-select'); select.innerHTML='';
+  const select = $('#exclusives-select');
+  if(!select) return;
+  select.innerHTML='';
   activites.forEach(act=>{
-    const opt = document.createElement('option'); opt.value=act.id; opt.textContent=act.titre; select.appendChild(opt);
+    const opt = document.createElement('option');
+    opt.value=act.id;
+    opt.textContent=act.titre;
+    select.appendChild(opt);
   });
 }
 
-
-
-/* reset form */
+/* ===========================
+   Reset form
+   =========================== */
 function resetForm(){
-  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML='';
-  $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
-  // remettre animateur par défaut et visible_avant à false
+  $('#titre').value='';
+  $('#salle').value='';
+  $('#effectif').value='30';
+  $('#seances-container').innerHTML='';
+  $('#first-hebdoseance').value='';
+  $('#nb-seances').value=4;
+  $('#ouverture').value='';
+  $('#fermeture').value='';
+
+  // Remettre animateur par défaut et visible_avant à false
   if($('#animateur-select')){
     const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
     $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
   }
   if($('#visible-avant')) $('#visible-avant').checked = false;
+  if($('#separable')) $('#separable').checked = true;
+
+  // Clear selections
+  if($('#classe-select')) {
+    Array.from($('#classe-select').options).forEach(opt => opt.selected = false);
+  }
+  if($('#exclusives-select')) {
+    Array.from($('#exclusives-select').options).forEach(opt => opt.selected = false);
+  }
 }
 
-
-/* creare Activite */
+/* ===========================
+   Créer activité
+   =========================== */
 async function creerActivite(){
   const titre = $('#titre').value.trim();
   const salle = $('#salle').value.trim();
-  const effectif = parseInt($('#effectif').value) || 10;
+  const effectif = parseInt($('#effectif').value) || 30;
   const separable = $('#separable').checked;
   const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
   const seances = Array.from(document.querySelectorAll('.seance-input'))
-    .map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []}))
+    .map((input, idx)=>({ date_heure: input.value}))
     .filter(s=>s.date_heure);
   const ouverture = $('#ouverture').value;
   const fermeture = $('#fermeture').value;
   const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
   const seancesContainer = $('#seances-container');
 
-  // retirer anciennes erreurs
+  // Retirer anciennes erreurs
   let hasError = false;
   ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
-    $(sel).classList.remove('error');
+    const el = $(sel);
+    if(el) el.classList.remove('error');
   });
   $all('.seance-input').forEach(inp => inp.classList.remove('error'));
-  seancesContainer.classList.remove('error'); // container des séances
+  if(seancesContainer) seancesContainer.classList.remove('error');
 
-  // validation des champs obligatoires
-  if (!titre) { $('#titre').classList.add('error'); hasError = true; }
-  if (!salle) { $('#salle').classList.add('error'); hasError = true; }
-  if (!effectif || effectif < 1) { $('#effectif').classList.add('error'); hasError = true; }
-  if (selectedClasses.length === 0) { $('#classe-select').classList.add('error'); hasError = true; }
-  if (!ouverture) { $('#ouverture').classList.add('error'); hasError = true; }
-  if (!fermeture) { $('#fermeture').classList.add('error'); hasError = true; }
-  if (seances.length === 0) {seancesContainer.classList.add('error'); hasError = true;}
+  // Validation des champs obligatoires
+  if (!titre) { $('#titre')?.classList.add('error'); hasError = true; }
+  if (!salle) { $('#salle')?.classList.add('error'); hasError = true; }
+  if (!effectif || effectif < 1) { $('#effectif')?.classList.add('error'); hasError = true; }
+  if (selectedClasses.length === 0) { $('#classe-select')?.classList.add('error'); hasError = true; }
+  if (!ouverture) { $('#ouverture')?.classList.add('error'); hasError = true; }
+  if (!fermeture) { $('#fermeture')?.classList.add('error'); hasError = true; }
+  if (seances.length === 0) { seancesContainer?.classList.add('error'); hasError = true; }
 
   if (hasError) {
-    // retirer l'erreur dès que l'utilisateur modifie le champ
+    alert('Veuillez remplir tous les champs obligatoires');
+    // Retirer l'erreur dès que l'utilisateur modifie le champ
     $all('input, select').forEach(el => {
       el.oninput = () => el.classList.remove('error');
+      el.onchange = () => el.classList.remove('error');
     });
-    // sur les séances
-    seancesContainer.onchange = () => seancesContainer.classList.remove('error');
-    return; // bloquer la création tant que les champs obligatoires ne sont pas remplis
+    return;
   }
 
-  // récupération animateur + visible_avant
+  // Récupération animateur + visible_avant
   const animateurId = $('#animateur-select') ? parseInt($('#animateur-select').value) : currentUser.id;
   const visibleAvant = $('#visible-avant') ? !!$('#visible-avant').checked : false;
 
-  // tout est bon → création de l'activité
+  // Préparer les données pour l'API
   const newAct = {
-    titre, prof_id: currentUser.id, animateur_id: animateurId, visible_avant: visibleAvant, classe_ids: selectedClasses, salle, separable,
-    effectif_max: effectif, inscriptions: [], seances, date_ouverture_inscriptions: ouverture, date_fermeture_inscriptions: fermeture, exclusives_ids: exclusives
+    titre,
+    description: '',
+    prof_id: currentUser.id,
+    animateur_id: animateurId,
+    visible_avant: visibleAvant,
+    classe_ids: selectedClasses,
+    salle,
+    separable,
+    effectif_max: effectif,
+    seances,
+    date_ouverture_inscriptions: ouverture,
+    date_fermeture_inscriptions: fermeture,
+    exclusives_ids: exclusives
   };
 
+  console.log('Création activité:', newAct);
+
   try {
-    await apiPost('/activites', newAct);
+    const result = await apiPost('/activites', newAct);
+    console.log('[OK] Activité créée:', result);
     await fetchAllData();
     majTableProf();
     majListeExclusives();
     resetForm();
-    alert('Activité créee et enregistrée en base!');
+    alert('Activité créée et enregistrée en base!');
   } catch(e) {
+    console.error('[KO] Erreur création:', e);
     alert('Erreur lors de la création : ' + e.message);
   }
 }
 
-/* ============================
-   Prof functions: seances
-   ============================ */
+/* ===========================
+   Gestion des séances
+   =========================== */
 function ajouterSeanceHebdo(){
   const container = $('#seances-container');
-  const startInput = $('#first-hebdoseance'); const nbInput = $('#nb-seances');
-  const start = new Date(startInput.value); const nb = parseInt(nbInput.value);
+  const startInput = $('#first-hebdoseance');
+  const nbInput = $('#nb-seances');
+  const start = new Date(startInput.value);
+  const nb = parseInt(nbInput.value);
 
-  if(isNaN(start.getTime()) || !nb || nb<1){ alert('Choisissez une date et un nombre valide'); return; }
+  if(isNaN(start.getTime()) || !nb || nb<1){
+    alert('Choisissez une date et un nombre valide');
+    return;
+  }
 
   const seriesId = Date.now();
-  const serieDiv = document.createElement('div'); serieDiv.className='serie-hebdo'; serieDiv.dataset.seriesId = seriesId;
+  const serieDiv = document.createElement('div');
+  serieDiv.className='serie-hebdo';
+  serieDiv.dataset.seriesId = seriesId;
 
-  const sup = document.createElement('div'); sup.style.textAlign='right';
-  const supBtn = document.createElement('button'); supBtn.className='btn secondary'; supBtn.textContent='Supprimer série';
+  const sup = document.createElement('div');
+  sup.style.textAlign='right';
+  const supBtn = document.createElement('button');
+  supBtn.className='btn secondary';
+  supBtn.textContent='Supprimer série';
   supBtn.onclick = ()=> serieDiv.remove();
-  sup.appendChild(supBtn); serieDiv.appendChild(sup);
+  sup.appendChild(supBtn);
+  serieDiv.appendChild(sup);
 
   for(let i=0;i<nb;i++){
-    const d = document.createElement('div'); d.className='seance-item';
-    const inp = document.createElement('input'); inp.type='datetime-local';
+    const d = document.createElement('div');
+    d.className='seance-item';
+    const inp = document.createElement('input');
+    inp.type='datetime-local';
     const seanceDate = new Date(start.getTime() + i*7*24*3600*1000);
     inp.value = formatDateInputLocal(seanceDate);
     inp.className='seance-input';
-    const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px';
+    const span = document.createElement('div');
+    span.className='small muted';
+    span.style.minWidth='110px';
     span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
     const del = document.createElement('button');
     del.className='btn ghost';
@@ -949,9 +1148,12 @@ function ajouterSeanceHebdo(){
         serieDiv.remove();
       }
     };
-    d.appendChild(span); d.appendChild(inp); d.appendChild(del);
+    d.appendChild(span);
+    d.appendChild(inp);
+    d.appendChild(del);
     serieDiv.appendChild(d);
   }
+
   // fonction pour recalculer labels et dates
   function majLabels(serieDiv){
     const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
@@ -985,15 +1187,25 @@ function ajouterSeanceHebdo(){
 
 function ajouterSeanceManuelle(){
   const container = $('#seances-container');
-  const d = document.createElement('div'); d.className='seance-item manual';
-  const inp = document.createElement('input'); inp.type='datetime-local'; inp.className='seance-input';
-  const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px'; span.textContent='Ajout manuel';
-  const del = document.createElement('button'); del.className='btn ghost'; del.textContent='✖';
+  const d = document.createElement('div');
+  d.className='seance-item manual';
+  const inp = document.createElement('input');
+  inp.type='datetime-local';
+  inp.className='seance-input';
+  const span = document.createElement('div');
+  span.className='small muted';
+  span.style.minWidth='110px';
+  span.textContent='Ajout manuel';
+  const del = document.createElement('button');
+  del.className='btn ghost';
+  del.textContent='✖';
   del.onclick = ()=> {
     d.remove();
     majManual();
   };
-  d.appendChild(span); d.appendChild(inp); d.appendChild(del);
+  d.appendChild(span);
+  d.appendChild(inp);
+  d.appendChild(del);
   container.appendChild(d);
 
   inp.onchange = ()=> majManual();
@@ -1023,28 +1235,59 @@ function ajouterSeanceManuelle(){
   }
 }
 
-
-
 /* ===========================
    Sidebar panels
    =========================== */
 function updateSidePanels(){
-    if($('#sidebar-raccourcis')) $('#sidebar-raccourcis').classList.toggle('hidden', MODE!='dev');
-    if($('#sidebar-statut')) $('#sidebar-statut').classList.toggle('hidden', MODE!='dev');
-    if($('#sidebar-aide')) $('#sidebar-aide').classList.toggle('hidden',!(currentUser && currentUser.role==='prof'));
+  // Raccourcis (mode dev seulement)
+  const raccourcis = $('#sidebar-raccourcis');
+  if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
+
+  // Aide rapide (uniquement si prof connecté)
+  const aideRapide = $('#sidebar-aide');
+  if (aideRapide) aideRapide.classList.toggle('hidden', !(currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')));
 }
 
 /* ===========================
-   Init
+   Gestion des erreurs et événements
+   =========================== */
+// Gestion des erreurs globales
+window.addEventListener('error', (e) => {
+  console.error('Erreur JavaScript:', e.error);
+});
+
+// Gestion des erreurs de promesses non catchées
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Promise rejetée:', e.reason);
+});
+
+// Enter key pour login
+$('#username').addEventListener('keypress', (e) => {
+  if(e.key === 'Enter') login();
+});
+$('#password').addEventListener('keypress', (e) => {
+  if(e.key === 'Enter') login();
+});
+
+/* ===========================
+   Initialisation
    =========================== */
 (async function init(){
-    try{
-        await fetchAllData();
-        onAuthChange();
-        updateSidePanels()
-    } catch(e){
-        console.error(e);
+  try{
+    console.log('[START] Initialisation de l\'application...');
+    await fetchAllData();
+    onAuthChange();
+    updateSidePanels();
+    console.log('[OK] Application initialisée');
+  } catch(e){
+    console.error('[KO] Erreur lors de l\'initialisation:', e);
+    // Afficher un message d'erreur à l'utilisateur
+    const loginMsg = $('#login-msg');
+    if(loginMsg) {
+      loginMsg.textContent = 'Erreur de connexion au serveur';
+      loginMsg.style.color = '#dd1738';
     }
+  }
 })();
 </script>
 </body>
