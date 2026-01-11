@@ -3,23 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE alpha v0.4</title>
+  <title>CONCORDE alpha v0.5</title>
+  <link rel="author" href="#" />
 <style>
   :root{
     --bg:#f6f8fb;
     --card:#ffffff;
     --text:#222;
     --muted:#6b7280;
-    --primary:#0b72ff;    /* bleu principal */
-    --accent:#d63384;     /* magenta accent */
-    --warm:#ff8a00;       /* orange */
-    --cool:#00b5cc;       /* cyan */
+    --primary:#0b72ff;
+    --accent:#d63384;
+    --warm:#ff8a00;
+    --cool:#00b5cc;
     --glass: rgba(11,114,255,0.06);
     --radius:12px;
     --shadow: 0 6px 20px rgba(20,30,60,0.06);
     --glass-2: rgba(0,0,0,0.03);
-    --max-width:1400px;
-    --gap:20px;
+    --max-width:1400px; /* Plus large */
+    --gap:20px; /* Plus d'espacement */
     font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
   }
 
@@ -36,7 +37,7 @@
     justify-content: center;
   }
 
-  /* Container principal */
+  /* Container principal plus large */
   .wrap{
     width: 100%;
     max-width: var(--max-width);
@@ -91,12 +92,12 @@
   .card{
     background: var(--card);
     border-radius: var(--radius);
-    padding: 20px;
+    padding: 20px; /* Plus de padding */
     box-shadow: var(--shadow);
     border: 1px solid var(--glass-2);
   }
 
-  /* Main content */
+  /* Left column: main */
   .main{
     display: flex;
     flex-direction: column;
@@ -153,7 +154,7 @@
 
   .muted-note{font-size:12px;color:var(--muted)}
 
-  /* Right sidebar */
+  /* Right column: side */
   .side{
     display: flex;
     flex-direction: column;
@@ -175,10 +176,10 @@
   .stat h4{font-size:13px;color:var(--muted);font-weight:600}
   .stat p{font-size:16px;font-weight:700;color:var(--text)}
 
-  /* Layout dashboard avec panneau latéral */
+  /* Layout pour prof/élève avec panneau latéral */
   .dashboard-layout {
     display: grid;
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: 320px 1fr; /* Panneau + contenu principal */
     gap: var(--gap);
     height: 100%;
   }
@@ -199,7 +200,7 @@
     font-size: 16px;
   }
 
-  /* Cards d'activités avec améliorations UX */
+  /* Cards d'activités */
   .activity-card {
     background: white;
     border-radius: 8px;
@@ -214,13 +215,11 @@
   .activity-card:hover {
     border-color: var(--primary);
     box-shadow: 0 4px 12px rgba(11,114,255,0.1);
-    transform: translateY(-1px);
   }
 
   .activity-card.selected {
     border-color: var(--primary);
     background: var(--glass);
-    box-shadow: 0 6px 16px rgba(11,114,255,0.15);
   }
 
   .activity-card-header {
@@ -256,26 +255,7 @@
     color: var(--muted);
   }
 
-  /* Indicateurs visuels pour activités sécables */
-  .activity-card[data-separable="true"]:before {
-    content: "|";
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    font-size: 12px;
-    opacity: 0.6;
-  }
-
-  .activity-card[data-separable="false"]:before {
-    content: "";
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    font-size: 12px;
-    opacity: 0.6;
-  }
-
-  /* Seances pour élèves */
+  /* Seances pour élèves dans les cards d'activités */
   .activity-seances {
     margin-top: 8px;
     padding-top: 8px;
@@ -301,19 +281,12 @@
   }
 
   .seance-btn {
-    padding: 3px 8px;
+    padding: 2px 6px;
     font-size: 10px;
-    border-radius: 6px;
+    border-radius: 4px;
     border: none;
     cursor: pointer;
     font-weight: 600;
-    transition: all 0.2s ease;
-    min-width: 50px;
-  }
-
-  .seance-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
 
   .seance-btn.inscrit {
@@ -321,17 +294,9 @@
     color: white;
   }
 
-  .seance-btn.inscrit:hover {
-    background: #c1286b;
-  }
-
   .seance-btn.libre {
     background: var(--primary);
     color: white;
-  }
-
-  .seance-btn.libre:hover {
-    background: #0a5fd6;
   }
 
   .seance-btn.ferme {
@@ -340,13 +305,13 @@
     cursor: not-allowed;
   }
 
-  /* Emploi du temps */
+  /* Emploi du temps plus grand et plus haut */
   .schedule-container {
     background: white;
     border-radius: var(--radius);
     border: 1px solid #e2e8f0;
     overflow: hidden;
-    height: 600px;
+    height: 600px; /* Plus haut */
     display: flex;
     flex-direction: column;
   }
@@ -395,7 +360,7 @@
 
   .schedule-table {
     display: grid;
-    grid-template-columns: 80px repeat(7, 1fr);
+    grid-template-columns: 80px repeat(7, 1fr); /* 7 jours maintenant */
     gap: 1px;
     background: #e2e8f0;
     height: 100%;
@@ -416,6 +381,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-direction: column;
+  }
+
+  /* En-têtes emploi du temps avec jour actuel */
+  .schedule-header-cell.today {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    font-weight: 700;
+  }
+
+  .schedule-header-cell.today::after {
+    content: " 📍";
+    font-size: 10px;
+  }
+
+  .schedule-cell.today-column {
+    background: rgba(11,114,255,0.02);
   }
 
   .schedule-hour-cell {
@@ -437,27 +419,8 @@
     background: rgba(11,114,255,0.1);
   }
 
-  /* Styles pour les weekend */
-  .schedule-slot[id*="sam"], .schedule-slot[id*="dim"] {
-    background: #f8fafc !important;
-    position: relative;
-  }
-
-  .schedule-slot[id*="sam"]:after, .schedule-slot[id*="dim"]:after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 2px,
-      rgba(180,190,200,0.1) 2px,
-      rgba(180,190,200,0.1) 4px
-    );
-    pointer-events: none;
+  .schedule-slot.today-column {
+    background: rgba(11,114,255,0.02);
   }
 
   .seance-block {
@@ -474,7 +437,7 @@
     white-space: nowrap;
   }
 
-  /* Modal */
+  /* Modal pour détails activité */
   .modal-overlay {
     position: fixed;
     top: 0;
@@ -498,13 +461,13 @@
 
   .modal-content {
     background: white;
-    border-radius: calc(var(--radius) + 4px);
-    padding: 28px;
-    max-width: 650px;
+    border-radius: var(--radius);
+    padding: 24px;
+    max-width: 600px;
     width: 90%;
-    max-height: 85vh;
+    max-height: 80vh;
     overflow-y: auto;
-    box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
     transform: scale(0.9) translateY(20px);
     transition: transform 0.3s ease;
   }
@@ -613,32 +576,6 @@
   .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.15);background:#fff;}
   .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #dfe8f1;}
 
-  /* Status badges */
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .status-badge.open {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .status-badge.closed {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .status-badge.inscrit {
-    background: #fce7f3;
-    color: #be185d;
-  }
-
   /* Utilities */
   .muted{color:var(--muted);font-size:13px}
   .small{font-size:12px}
@@ -666,6 +603,7 @@
     .dashboard-layout{grid-template-columns: 1fr; gap:16px;}
     .activities-panel{max-height: 300px;}
     .schedule-container{height: 400px;}
+    .schedule-table{grid-template-columns: 60px repeat(7, 1fr);}
   }
 
   /* Mode DEV */
@@ -678,27 +616,25 @@
   <div class="wrap">
 
     <!-- HEADER -->
-    <header class="card fade-in" role="banner" aria-label="En-tête">
-      <div class="brand" aria-hidden="true">
-        <div class="logo" title="TEAMAKER">
-          <!-- leaf + cup svg combined -->
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <header class="card fade-in">
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M6 12c0-3.314 2.686-6 6-6 1.04 0 2.02.247 2.88.688l-1.54 1.91A3.997 3.997 0 0012 9a4 4 0 00-4 4v1H6v-2z" />
             <path d="M2 17c0 2.76 2.24 5 5 5h10a5 5 0 005-5 1 1 0 00-1-1H3a1 1 0 00-1 1z" opacity=".12"/>
           </svg>
         </div>
         <div>
           <h1>TEAMAKER</h1>
-          <p>Gestion simple des activités & inscriptions</p>
+          <p>Gestion moderne des activités & inscriptions</p>
         </div>
       </div>
 
-      <div class="header-actions" role="navigation" aria-label="Actions">
-        <div id="user-badge" class="role-badge pill" style="display:none">
+      <div class="header-actions">
+        <div id="user-badge" class="role-badge" style="display:none">
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg>
           <span id="user-name">Utilisateur</span>
         </div>
-        <div style="width:8px"></div>
         <button id="logout-btn" class="btn secondary hidden" onclick="logout()">
           <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v12a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
           Déconnexion
@@ -706,14 +642,14 @@
       </div>
     </header>
 
-    <!-- LEFT: MAIN (cards & tables) -->
+    <!-- MAIN CONTENT -->
     <main class="main">
 
       <!-- LOGIN CARD -->
-      <section id="login-card" class="card fade-in" aria-labelledby="login-title">
+      <section id="login-card" class="card fade-in">
         <div class="credentials">
-          <h3 id="login-title">Connexion</h3>
-          <p class="muted-note mb">Connecte-toi pour accéder à ton espace (prof / élève).</p>
+          <h3>Connexion</h3>
+          <p class="muted-note mb">Connecte-toi pour accéder à ton espace.</p>
 
           <label class="small" for="username">Nom d'utilisateur</label>
           <input id="username" type="text" placeholder="" autocomplete="username">
@@ -721,11 +657,11 @@
           <label class="small" for="password">Mot de passe</label>
           <input id="password" type="password" placeholder="" autocomplete="current-password">
 
-          <p id="login-msg" class="muted danger" aria-live="polite"></p>
+          <p id="login-msg" class="muted" style="color:#dd1738"></p>
         </div>
 
         <div class="login-cta">
-          <button class="btn" onclick="login()" aria-label="Se connecter">
+          <button class="btn" onclick="login()">
             <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM21 3h-8v2h8v14h-8v2h8a2 2 0 002-2V5a2 2 0 00-2-2z" fill="currentColor"/></svg>
             Se connecter
           </button>
@@ -733,46 +669,68 @@
       </section>
 
       <!-- STUDENT DASHBOARD -->
-      <section id="eleve-page" class="card hidden fade-in" aria-labelledby="eleve-title">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div class="pill" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg> Élève</div>
+      <section id="eleve-page" class="card hidden fade-in">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="role-badge">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg>
+            Élève
+          </div>
           <div>
-            <h3 id="eleve-title">Tableau de bord — Élève</h3>
-            <p class="muted">Consulte les activités disponibles pour ta classe et inscris-toi.</p>
+            <h3>Mes activités et emploi du temps</h3>
+            <p class="muted">Inscris-toi aux activités et consulte ton planning.</p>
           </div>
         </div>
 
-        <div class="mb" style="display:flex;gap:12px;margin-top:12px;">
-          <div class="stat"><h4>Activités</h4><p id="stat-act">0</p></div>
-          <div class="stat"><h4>Inscriptions</h4><p id="stat-insc">0</p></div>
+        <div class="stats mb">
+          <div class="stat"><h4>Activités</h4><p id="stat-act-eleve">0</p></div>
+          <div class="stat"><h4>Inscriptions</h4><p id="stat-insc-eleve">0</p></div>
         </div>
 
-        <table id="table-eleve" aria-describedby="eleve-desc">
-          <caption id="eleve-desc" class="muted small">Liste des activités ouvertes à ta classe</caption>
-          <thead>
-            <tr><th>Titre</th><th>Salle</th><th>Max</th><th>Inscrits</th><th>Séances</th><th></th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="dashboard-layout">
+          <div class="activities-panel">
+            <h4>Activités disponibles</h4>
+            <div id="liste-activites-eleve">
+              <!-- Les activités élève seront listées ici -->
+            </div>
+          </div>
+
+          <div class="schedule-container">
+            <div class="schedule-header">
+              <h4>Emploi du temps</h4>
+              <div class="schedule-nav">
+                <button id="prev-week-eleve">← Précédente</button>
+                <span id="current-week-eleve" class="schedule-week">Semaine</span>
+                <button id="next-week-eleve">Suivante →</button>
+              </div>
+            </div>
+            <div class="schedule-grid">
+              <div id="emploi-du-temps-eleve" class="schedule-table">
+                <!-- Grille emploi du temps élève -->
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <!-- PROFESSOR DASHBOARD (main working area) -->
-      <section id="prof-page" class="card hidden fade-in" aria-labelledby="prof-title">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div class="pill" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg> Professeur</div>
+      <!-- PROFESSOR DASHBOARD -->
+      <section id="prof-page" class="card hidden fade-in">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="role-badge">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg>
+            Professeur
+          </div>
           <div>
-            <h3 id="prof-title">Tableau de bord — Professeur</h3>
-            <p class="muted">Crée des activités, gère les inscriptions et exporte si nécessaire.</p>
+            <h3>Gestion des activités</h3>
+            <p class="muted">Crée des activités, gère les inscriptions et consulte l'emploi du temps.</p>
           </div>
         </div>
 
-        <!-- CREATION D'ACTIVITE -->
-        <div class="mb" style="margin-top:12px;">
-          <h4 style="margin-bottom:8px">Créer / modifier une activité</h4>
+        <!-- CRÉATION D'ACTIVITÉ -->
+        <div class="mb">
+          <h4 style="margin-bottom:12px">Créer / modifier une activité</h4>
           <div class="form-grid">
-
             <div>
-              <label class="small">Titre <span class="muted">*</span></label>
+              <label class="small">Titre <span style="color:#dd1738">*</span></label>
               <input id="titre" type="text" placeholder="Titre de l'activité">
             </div>
             <div>
@@ -791,19 +749,19 @@
 
             <div style="display: flex; gap: 20px; align-items: center;" class="full">
               <div>
-                <label class="small">Sécable</label>
                 <input id="separable" type="checkbox" checked>
-                <span class="muted">Oblige l'inscription à toutes les séances en un clic</span>
+                <label class="small">Sécable</label>
+                <span class="muted small">Permet l'inscription séance par séance</span>
               </div>
               <div>
-                <label class="small">Visible avant ouverture</label>
                 <input id="visible-avant" type="checkbox">
-                <span class="muted">Permet aux élèves de voir l'activité avant l'ouverture</span>
+                <label class="small">Visible avant ouverture</label>
+                <span class="muted small">Visible avant la date d'ouverture</span>
               </div>
             </div>
 
             <div class="full">
-              <label class="small">Classes concernées <span class="muted">(Ctrl / Cmd pour multi)</span></label>
+              <label class="small">Classes concernées</label>
               <select id="classe-select" multiple style="min-height:46px;padding:10px"></select>
             </div>
 
@@ -815,8 +773,7 @@
                 <button class="btn ghost" onclick="ajouterSeanceHebdo()">+ Série hebdo</button>
                 <button class="btn ghost" onclick="ajouterSeanceManuelle()">+ Manuel</button>
               </div>
-
-              <div id="seances-container" aria-live="polite" aria-atomic="true"></div>
+              <div id="seances-container"></div>
             </div>
 
             <div>
@@ -836,132 +793,49 @@
             <div class="full" style="display:flex;gap:12px;align-items:center;">
               <button class="btn" onclick="creerActivite()">Créer l'activité</button>
               <button class="btn secondary" onclick="resetForm()">Réinitialiser</button>
-              <div class="muted small right" style="margin-left:auto">Champs marqués * requis</div>
             </div>
           </div>
         </div>
 
-        <!-- PARTIE VISUALISATION : ACTIVITÉS + EMPLOI DU TEMPS -->
-        <div style="display: grid; grid-template-columns: 400px 1fr; gap: 20px; margin-top: 20px;">
-
-          <!-- VOLET GAUCHE : LISTE DES ACTIVITÉS -->
-          <div>
-            <h4 style="margin-bottom:12px">Mes activités</h4>
-            <div style="background: #f8fafc; border-radius: 8px; padding: 12px; border: 1px solid #e2e8f0;">
-              <div id="liste-activites-prof" style="max-height: 400px; overflow-y: auto;">
-                <!-- Les activités seront listées ici -->
-              </div>
+        <!-- DASHBOARD PROF -->
+        <div class="dashboard-layout">
+          <div class="activities-panel">
+            <h4>Mes activités</h4>
+            <div id="liste-activites-prof">
+              <!-- Les activités prof seront listées ici -->
             </div>
           </div>
 
-          <!-- VOLET DROIT : EMPLOI DU TEMPS -->
-          <div>
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <div class="schedule-container">
+            <div class="schedule-header">
               <h4>Emploi du temps</h4>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <button id="prev-week" class="btn ghost" style="padding: 6px 10px;">‹ Semaine précédente</button>
-                <span id="current-week" style="font-size: 14px; font-weight: 600; color: var(--primary);">Semaine du XX/XX</span>
-                <button id="next-week" class="btn ghost" style="padding: 6px 10px;">Semaine suivante ›</button>
+              <div class="schedule-nav">
+                <button id="prev-week-prof">← Précédente</button>
+                <span id="current-week-prof" class="schedule-week">Semaine</span>
+                <button id="next-week-prof">Suivante →</button>
               </div>
             </div>
-
-            <div id="emploi-du-temps" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden;">
-              <!-- Grille emploi du temps style École Directe -->
-              <div style="display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 1px; background: #e2e8f0;">
-
-                <!-- En-tête des jours -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;"></div>
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">LUN</div>
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">MAR</div>
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">MER</div>
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">JEU</div>
-                <div style="background: #f1f5f9; padding: 8px; font-size: 12px; font-weight: 600; text-align: center;">VEN</div>
-
-                <!-- Créneaux horaires de 8h à 18h -->
-                <!-- 8h-9h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">8h-9h</div>
-                <div id="slot-lun-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-8" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 9h-10h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">9h-10h</div>
-                <div id="slot-lun-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-9" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 10h-11h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">10h-11h</div>
-                <div id="slot-lun-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-10" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 11h-12h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">11h-12h</div>
-                <div id="slot-lun-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-11" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 14h-15h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">14h-15h</div>
-                <div id="slot-lun-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-14" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 15h-16h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">15h-16h</div>
-                <div id="slot-lun-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-15" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 16h-17h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">16h-17h</div>
-                <div id="slot-lun-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-16" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
-                <!-- 17h-18h -->
-                <div style="background: #f1f5f9; padding: 8px; font-size: 11px; text-align: center;">17h-18h</div>
-                <div id="slot-lun-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mar-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-mer-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-jeu-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-                <div id="slot-ven-17" class="time-slot" style="background: white; padding: 4px; min-height: 40px; cursor: pointer;"></div>
-
+            <div class="schedule-grid">
+              <div id="emploi-du-temps-prof" class="schedule-table">
+                <!-- Grille emploi du temps prof -->
               </div>
             </div>
           </div>
-
         </div>
       </section>
 
-      <footer class="small">© 2025 — TEAMAKER • Interface prototype</footer>
+      <footer class="small">© 2025 — TEAMAKER • Interface moderne</footer>
     </main>
 
-    <!-- RIGHT: SIDE PANEL -->
+    <!-- SIDEBAR -->
     <aside class="side">
-
       <!-- Raccourcis DEV -->
-      <div id="sidebar-raccourcis" class="card fade-in dev-raccourcis" aria-hidden="true">
+      <div id="sidebar-raccourcis" class="card fade-in dev-raccourcis">
         <h4>Raccourcis (DEV)</h4>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-          <button class="btn secondary" onclick="demoLogin('prof1')">Se connecter (prof1)</button>
-          <button class="btn secondary" onclick="demoLogin('eleve1')">Se connecter (eleve1)</button>
-          <button class="btn secondary" onclick="demoLogin('eleve2')">Se connecter (eleve2)</button>
+          <button class="btn secondary" onclick="demoLogin('prof1')">Prof</button>
+          <button class="btn secondary" onclick="demoLogin('eleve1')">Élève 1</button>
+          <button class="btn secondary" onclick="demoLogin('eleve2')">Élève 2</button>
         </div>
       </div>
 
@@ -971,16 +845,27 @@
           <div class="stat"><h4>Activités</h4><p id="count-acts">0</p></div>
           <div class="stat"><h4>Utilisateurs</h4><p id="count-users">0</p></div>
         </div>
-        <p class="muted small" style="margin-top:10px">Info : les heures sont affichées en <strong>locale</strong> (fr-FR)</p>
       </div>
 
       <div id="sidebar-aide" class="card fade-in">
-        <h4>Aide rapide</h4>
-        <p class="muted small">• Ajoute une série hebdo pour planifier automatiquement des séances (1 semaine d'écart).</p>
-        <p class="muted small">• Pour gérer les inscriptions : passe par le tableau Professeur.</p>
+        <h4>Aide</h4>
+        <p class="muted small">• Cliquez sur une activité pour voir les détails</p>
+        <p class="muted small">• Les activités sécables permettent l'inscription par séance</p>
       </div>
-
     </aside>
+
+    <!-- MODAL DÉTAILS ACTIVITÉ -->
+    <div id="activity-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-title">Détails de l'activité</h3>
+          <button class="modal-close" onclick="closeActivityModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <!-- Contenu dynamique -->
+        </div>
+      </div>
+    </div>
 
   </div>
 
@@ -993,8 +878,10 @@ let currentUser = null;
 let users = [];
 let classes = [];
 let activites = [];
+let currentWeekOffsetProf = 0;
+let currentWeekOffsetEleve = 0;
 
-// Mode DEV : activer les raccourcis
+// Mode DEV
 if(MODE === 'dev') {
   document.body.classList.add('dev-mode');
 }
@@ -1021,6 +908,20 @@ function formatDateInputLocal(date){
 function getUserById(id){ return users.find(u=>u.id===id)||null; }
 function getUserName(id){ const u=getUserById(id); return u ? `${u.prenom} ${u.nom||''}` : '—'; }
 
+function getUserNameWithClass(id){
+  const u=getUserById(id);
+  if (!u) return '—';
+  const className = u.classe_nom ? ` (${u.classe_nom})` : '';
+  return `${u.prenom} ${u.nom||''}${className}`;
+}
+
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
 /* ===========================
    API helpers
    =========================== */
@@ -1035,7 +936,6 @@ async function apiGet(url){
     });
     if(!res.ok) {
       if(res.status === 401) {
-        // Session expirée
         console.warn('Session expirée, redirection vers login');
         currentUser = null;
         onAuthChange();
@@ -1136,7 +1036,6 @@ async function login(){
   }
 }
 
-// Fonction pour demo (mode dev)
 async function demoLogin(username){
   if(MODE !== 'dev') return;
   try{
@@ -1158,15 +1057,11 @@ async function logout(){
     onAuthChange();
   } catch(e){
     console.error('Logout error:', e);
-    // Forcer la déconnexion côté client même en cas d'erreur serveur
     currentUser = null;
     onAuthChange();
   }
 }
 
-/* ===========================
-   Vérification du statut d'authentification
-   =========================== */
 async function checkAuthStatus() {
   try {
     const userData = await apiGet('/me');
@@ -1240,17 +1135,14 @@ async function fetchAllData() {
 
     // Enrichir chaque activité
     activites = rawActivites.map(act => {
-      // Classes liées
       act.classe_ids = rawActiviteClasses
         .filter(ac => ac.activite_id === act.id)
         .map(ac => Number(ac.classe_id));
 
-      // Séances liées
       act.seances = rawSeances
         .filter(s => s.activite_id === act.id)
         .map(s => ({ id: s.id, date_heure: s.date_heure }));
 
-      // Inscriptions liées
       act.inscriptions = rawInscriptions
         .filter(i => i.activite_id === act.id)
         .map(i => i.eleve_id);
@@ -1278,16 +1170,12 @@ function onAuthChange(){
   if(currentUser){
     $('#user-badge').style.display='inline-flex';
     $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
-    const logoutBtn = $('#logout-btn');
-    logoutBtn.classList.remove('hidden');
-    logoutBtn.removeAttribute('aria-hidden');
+    $('#logout-btn').classList.remove('hidden');
     $('#login-card').classList.add('hidden');
     afficherPageRole(currentUser.role);
   } else {
     $('#user-badge').style.display='none';
-    const logoutBtn = $('#logout-btn');
-    logoutBtn.classList.add('hidden');
-    logoutBtn.setAttribute('aria-hidden', 'true');
+    $('#logout-btn').classList.add('hidden');
     $('#login-card').classList.remove('hidden');
     cacherToutesPages();
   }
@@ -1296,9 +1184,6 @@ function onAuthChange(){
   updateSidePanels();
 }
 
-/* ===========================
-   Navigation
-   =========================== */
 function cacherToutesPages(){
   $('#eleve-page').classList.add('hidden');
   $('#prof-page').classList.add('hidden');
@@ -1309,18 +1194,16 @@ function afficherPageRole(role){
   if(role==='prof' || role==='admin'){
     $('#prof-page').classList.remove('hidden');
     populateSelects();
-    majListeActivitesProf(); // Changé
+    majListeActivitesProf();
     majListeExclusives();
-    initEmploiDuTemps(); // Nouveau
+    initEmploiDuTempsProf();
   } else if(role==='eleve'){
     $('#eleve-page').classList.remove('hidden');
-    majTableEleve();
+    majListeActivitesEleve();
+    initEmploiDuTempsEleve();
   }
 }
 
-/* ===========================
-   Populate selects
-   =========================== */
 function populateSelects(){
   // Sélect classes
   const select = $('#classe-select');
@@ -1352,210 +1235,272 @@ function populateSelects(){
 }
 
 /* ===========================
-   Table élève
+   Interface Élève
    =========================== */
-async function majTableEleve(){
-  const tbody = $('#table-eleve tbody');
-  tbody.innerHTML = '';
-  if(!currentUser) {
-    console.warn('[WARN] Pas d\'utilisateur connecté');
-    return;
-  }
+function majListeActivitesEleve() {
+  const container = $('#liste-activites-eleve');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if(!currentUser) return;
 
   const classeId = Number(currentUser.classe_id);
-  console.log('Mise à jour table élève');
-  console.log('Utilisateur:', currentUser);
-  console.log('Classe ID:', classeId);
-
   if(!classeId || isNaN(classeId)) {
-    console.error('[KO] Classe ID invalide:', classeId);
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#dd1738">Erreur: classe non définie pour cet élève</td></tr>';
+    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Classe non définie</p>';
     return;
   }
 
   const now = new Date();
   let totalAct = 0, totalIns = 0;
 
-  // Stocker les états d'inscription (connus après action)
-  const inscriptionStates = new Map();
-
-  // Pour chaque activité, créer la ligne avec bouton intelligent
-  for (const act of activites) {
-    // Filtrer selon visibilité et dates
+  // Filtrer activités pour cette classe
+  const activitesEleve = activites.filter(act => {
     const ouverture = new Date(act.date_ouverture_inscriptions);
     const fermeture = new Date(act.date_fermeture_inscriptions);
     const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
 
-    // Vérifications de visibilité pour les élèves
-    if(!(act.visible_avant*1) && now < ouverture) {
-      console.log(`Activité ${act.titre} non visible (avant ouverture)`);
-      continue;  // pas encore visible
-    }
-    if(!act.classe_ids.includes(classeId)) {
-      console.log(`Activité ${act.titre} non autorisée pour classe ${classeId}`);
-      continue;    // classe non autorisée
-    }
-    if(now > fermeture && allPassed) {
-      console.log(`Activité ${act.titre} terminée`);
-      continue;          // activité terminée
-    }
+    if(!(act.visible_avant*1) && now < ouverture) return false;
+    if(!act.classe_ids.includes(classeId)) return false;
+    if(now > fermeture && allPassed) return false;
 
-    totalAct++;
+    return true;
+  });
 
-    // Préparer le texte des séances
-    const seancesText = (act.seances || []).map(s => formatDateLocal(s.date_heure)).join(', ');
-
-    // Nombre d'inscrits
-    const inscritsCount = act.inscriptions?.length || 0;
-
-    // Vérifier si l'élève est déjà inscrit
-    const estInscrit = act.inscriptions?.includes(currentUser.id) || false;
-    if(estInscrit) totalIns++;
-
-    // Créer ligne
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${act.titre}</td>
-      <td>${act.salle}</td>
-      <td>${act.effectif_max}</td>
-      <td>${inscritsCount}</td>
-      <td>${seancesText}</td>
-      <td></td>
-    `;
-
-    // Bouton inscription / désinscription
-    const tdAction = tr.querySelector('td:last-child');
-    const inscriptionsOuvertes = now >= ouverture && now <= fermeture && !allPassed;
-
-    const btn = document.createElement('button');
-    btn.className = 'btn';
-    btn.dataset.activiteId = act.id;
-
-    // Fonction pour mettre à jour le bouton selon l'état
-    function updateButton(isInscrit) {
-      if(now < ouverture){
-        btn.textContent = 'Inscriptions non ouvertes';
-        btn.disabled = true;
-        btn.classList.add('ghost');
-        btn.classList.remove('secondary');
-      } else if(now > fermeture && !inscriptionsOuvertes){
-        btn.textContent = 'Inscriptions fermées';
-        btn.disabled = true;
-        btn.classList.add('ghost');
-        btn.classList.remove('secondary');
-      } else if(allPassed){
-        btn.textContent = 'Activité terminée';
-        btn.disabled = true;
-        btn.classList.add('ghost');
-        btn.classList.remove('secondary');
-      } else if(isInscrit){
-        btn.textContent = 'Se désinscrire';
-        btn.disabled = false;
-        btn.classList.remove('ghost');
-        btn.classList.add('secondary');
-      } else {
-        btn.textContent = "S'inscrire";
-        btn.disabled = false;
-        btn.classList.remove('ghost', 'secondary');
-      }
-    }
-
-    // Initialiser avec l'état réel depuis la DB
-    inscriptionStates.set(act.id, estInscrit);
-    updateButton(estInscrit);
-
-    // Gestionnaire de clic
-    btn.onclick = async () => {
-      if(!inscriptionsOuvertes){
-        alert('Les inscriptions ne sont pas ouvertes');
-        return;
-      }
-
-      const currentState = inscriptionStates.get(act.id);
-
-      try {
-        if(currentState) {
-          // Il est inscrit -> désinscription
-          if(confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)){
-            console.log(`Désinscription de l'activité ${act.id}...`);
-            await apiDelete('/inscriptions', {activite_id: act.id});
-            console.log('[OK] Désinscription réussie');
-
-            // Mettre à jour l'état
-            inscriptionStates.set(act.id, false);
-            updateButton(false);
-            totalIns = Math.max(0, totalIns - 1);
-            $('#stat-insc').textContent = totalIns;
-
-            // Mettre à jour le compteur d'inscrits dans le tableau
-            const inscritsCell = tr.querySelector('td:nth-child(4)');
-            const currentCount = parseInt(inscritsCell.textContent);
-            if(currentCount > 0) inscritsCell.textContent = currentCount - 1;
-
-            // Mettre à jour les données locales
-            const actIndex = activites.findIndex(a => a.id === act.id);
-            if(actIndex !== -1) {
-              activites[actIndex].inscriptions = activites[actIndex].inscriptions.filter(id => id !== currentUser.id);
-            }
-          }
-        } else {
-          // Il n'est pas inscrit -> inscription
-          if(act.inscriptions?.length >= act.effectif_max){
-            alert('Effectif max atteint');
-            return;
-          }
-
-          console.log(`Tentative d'inscription à l'activité ${act.id}...`);
-          await apiPost('/inscriptions', {activite_id: act.id});
-          console.log('[OK] Inscription réussie');
-
-          // Mettre à jour l'état
-          inscriptionStates.set(act.id, true);
-          updateButton(true);
-          totalIns++;
-          $('#stat-insc').textContent = totalIns;
-
-          // Mettre à jour le compteur d'inscrits dans le tableau
-          const inscritsCell = tr.querySelector('td:nth-child(4)');
-          inscritsCell.textContent = parseInt(inscritsCell.textContent) + 1;
-
-          // Mettre à jour les données locales
-          const actIndex = activites.findIndex(a => a.id === act.id);
-          if(actIndex !== -1) {
-            activites[actIndex].inscriptions.push(currentUser.id);
-          }
-        }
-      } catch(e) {
-        console.error('[KO] Erreur action:', e);
-        if(e.message.includes('Déjà inscrit')) {
-          // Il était déjà inscrit, corriger l'état
-          inscriptionStates.set(act.id, true);
-          updateButton(true);
-          if(!estInscrit) { // Si on pensait qu'il n'était pas inscrit
-            totalIns++;
-            $('#stat-insc').textContent = totalIns;
-          }
-        } else if(e.message.includes('Inscription non trouvée')) {
-          // Il n'était pas inscrit, corriger l'état
-          inscriptionStates.set(act.id, false);
-          updateButton(false);
-        } else {
-          alert('Erreur: ' + e.message);
-        }
-      }
-    };
-
-    tdAction.appendChild(btn);
-    tbody.appendChild(tr);
+  if (activitesEleve.length === 0) {
+    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucune activité disponible</p>';
+    $('#stat-act-eleve').textContent = '0';
+    $('#stat-insc-eleve').textContent = '0';
+    return;
   }
 
-  // Mettre à jour stats finales
-  $('#stat-act').textContent = totalAct;
-  $('#stat-insc').textContent = totalIns;
+  activitesEleve.forEach(act => {
+    totalAct++;
+
+    const inscritsCount = act.inscriptions?.length || 0;
+    const classesText = act.classe_ids
+      .map(id => classes.find(c => c.id === id)?.nom || '')
+      .join(', ');
+
+    // Vérifier inscriptions de l'élève
+    const inscriptionsEleve = act.inscriptions?.includes(currentUser.id) || false;
+    if(inscriptionsEleve) totalIns++;
+
+    const actCard = document.createElement('div');
+    actCard.className = 'activity-card';
+
+    actCard.innerHTML = `
+      <div class="activity-card-header">
+        <h5 class="activity-title">${act.titre}</h5>
+        <span class="activity-room">${act.salle}</span>
+      </div>
+      <div class="activity-details">Classes: ${classesText}</div>
+      <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
+      <div class="activity-meta">
+        ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
+      </div>
+      ${act.separable ? '<div class="activity-seances" id="seances-' + act.id + '"></div>' : ''}
+    `;
+
+    const now = new Date();
+    const ouverture = new Date(act.date_ouverture_inscriptions);
+    const fermeture = new Date(act.date_fermeture_inscriptions);
+    const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
+
+    if (act.separable) {
+      // Activité sécable - boutons par séance
+      const seancesContainer = actCard.querySelector('.activity-seances');
+      act.seances?.forEach(seance => {
+        const seanceDate = new Date(seance.date_heure);
+        const seancePassee = seanceDate < now;
+
+        const seanceItem = document.createElement('div');
+        seanceItem.className = 'seance-item-eleve';
+
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'seance-date';
+        dateSpan.textContent = formatDateLocal(seance.date_heure);
+
+        const btn = document.createElement('button');
+        btn.className = 'seance-btn';
+
+        // TODO: Logique d'inscription par séance
+        // Pour l'instant, utiliser la logique globale
+        const estInscrit = inscriptionsEleve;
+
+        if (seancePassee) {
+          btn.textContent = 'Passée';
+          btn.className += ' ferme';
+          btn.disabled = true;
+        } else if (!inscriptionsOuvertes) {
+          btn.textContent = 'Fermée';
+          btn.className += ' ferme';
+          btn.disabled = true;
+        } else if (estInscrit) {
+          btn.textContent = 'Inscrit';
+          btn.className += ' inscrit';
+          btn.onclick = () => desinscrireSeance(act.id, seance.id);
+        } else {
+          btn.textContent = 'Inscrire';
+          btn.className += ' libre';
+          btn.onclick = () => inscrireSeance(act.id, seance.id);
+        }
+
+        seanceItem.appendChild(dateSpan);
+        seanceItem.appendChild(btn);
+        seancesContainer.appendChild(seanceItem);
+        });
+      } else {
+        // Activité non sécable - bouton global
+        const btnContainer = document.createElement('div');
+        btnContainer.style.marginTop = '8px';
+        btnContainer.style.paddingTop = '8px';
+        btnContainer.style.borderTop = '1px solid #e2e8f0';
+
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.style.width = '100%';
+
+        if (!inscriptionsOuvertes) {
+          btn.textContent = 'Inscriptions fermées';
+          btn.disabled = true;
+          btn.classList.add('ghost');
+        } else if (inscriptionsEleve) {
+          btn.textContent = 'Se désinscrire';
+          btn.classList.add('secondary');
+          btn.onclick = () => desinscrireActivite(act.id);
+        } else {
+          btn.textContent = "S'inscrire";
+          btn.onclick = () => inscrireActivite(act.id);
+        }
+
+        btnContainer.appendChild(btn);
+        actCard.appendChild(btnContainer);
+      }
+
+      // Click pour voir détails (pour élève)
+      actCard.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') {
+          showActivityDetailsEleve(act);
+        }
+      });
+
+      container.appendChild(actCard);
+  });
+
+  $('#stat-act-eleve').textContent = totalAct;
+  $('#stat-insc-eleve').textContent = totalIns;
+}
+
+function showActivityDetailsEleve(activite) {
+  const modal = $('#activity-modal');
+  const title = $('#modal-title');
+  const body = $('#modal-body');
+
+  title.textContent = activite.titre;
+
+  const classesText = activite.classe_ids
+    .map(id => classes.find(c => c.id === id)?.nom || '')
+    .join(', ');
+
+  const animateur = getUserName(activite.animateur_id || activite.prof_id);
+  const inscriptions = activite.inscriptions || [];
+  const isInscrit = inscriptions.includes(currentUser.id);
+
+  body.innerHTML = `
+    <div class="detail-row">
+      <span class="detail-label">Description:</span>
+      <span class="detail-value">${activite.description || '—'}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Salle:</span>
+      <span class="detail-value">${activite.salle}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Animateur:</span>
+      <span class="detail-value">${animateur}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Classes:</span>
+      <span class="detail-value">${classesText}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Places:</span>
+      <span class="detail-value">${inscriptions.length}/${activite.effectif_max} inscrit(s)</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Type:</span>
+      <span class="detail-value">${activite.separable ? 'Sécable' : 'Non sécable'}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Ouverture:</span>
+      <span class="detail-value">${formatDateLocal(activite.date_ouverture_inscriptions)}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Fermeture:</span>
+      <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Mes séances:</span>
+      <span class="detail-value">
+        ${isInscrit
+          ? (activite.seances || []).map(s => formatDateLocal(s.date_heure)).join('<br>')
+          : '<em class="muted">Non inscrit(e)</em>'
+        }
+      </span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Statut:</span>
+      <span class="detail-value">
+        ${isInscrit
+          ? '<span style="color: var(--primary); font-weight: 600;">✓ Inscrit(e)</span>'
+          : '<span style="color: var(--muted);">Non inscrit(e)</span>'
+        }
+      </span>
+    </div>
+  `;
+
+  modal.classList.add('visible');
+}
+
+// Fonctions d'inscription élève
+async function inscrireActivite(activiteId) {
+  try {
+    await apiPost('/inscriptions', {activite_id: activiteId});
+    await fetchAllData();
+    majListeActivitesEleve();
+    updateEmploiDuTempsEleve();
+  } catch(e) {
+    alert('Erreur: ' + e.message);
+  }
+}
+
+async function desinscrireActivite(activiteId) {
+  if(!confirm('Veux-tu te désinscrire de cette activité ?')) return;
+  try {
+    await apiDelete('/inscriptions', {activite_id: activiteId});
+    await fetchAllData();
+    majListeActivitesEleve();
+    updateEmploiDuTempsEleve();
+  } catch(e) {
+    alert('Erreur: ' + e.message);
+  }
+}
+
+async function inscrireSeance(activiteId, seanceId) {
+  // TODO: API pour inscription par séance
+  // Pour l'instant, utiliser l'inscription globale
+  await inscrireActivite(activiteId);
+}
+
+async function desinscrireSeance(activiteId, seanceId) {
+  // TODO: API pour désinscription par séance
+  // Pour l'instant, utiliser la désinscription globale
+  await desinscrireActivite(activiteId);
 }
 
 /* ===========================
-   Table prof
+   Interface Professeur
    =========================== */
 function majListeActivitesProf() {
   const container = $('#liste-activites-prof');
@@ -1563,136 +1508,226 @@ function majListeActivitesProf() {
 
   container.innerHTML = '';
 
-  // Filtrer les activités du prof connecté
   const mesActivites = activites.filter(act =>
     act.prof_id === currentUser?.id || act.animateur_id === currentUser?.id
   );
 
   if (mesActivites.length === 0) {
-    container.innerHTML = '<p class="muted" style="text-align: center; padding: 20px;">Aucune activité</p>';
+    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucune activité</p>';
     return;
   }
 
   mesActivites.forEach(act => {
-    // Inscrits count et classes
     const inscritsCount = act.inscriptions?.length || 0;
     const classesText = act.classe_ids
       .map(id => classes.find(c => c.id === id)?.nom || '')
       .join(', ');
 
-    // Card pour chaque activité
     const actCard = document.createElement('div');
-    actCard.style.cssText = `
-      background: white;
-      border-radius: 8px;
-      border: 1px solid #e2e8f0;
-      padding: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    `;
+    actCard.className = 'activity-card';
 
     actCard.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-        <h5 style="margin: 0; color: var(--primary); font-size: 14px; font-weight: 600;">${act.titre}</h5>
-        <span style="background: var(--glass); color: var(--primary); padding: 2px 6px; border-radius: 4px; font-size: 11px;">${act.salle}</span>
+      <div class="activity-card-header">
+        <h5 class="activity-title">${act.titre}</h5>
+        <span class="activity-room">${act.salle}</span>
       </div>
-      <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">
-        Classes: ${classesText}
-      </div>
-      <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
-        Inscrits: ${inscritsCount}/${act.effectif_max}
-      </div>
-      <div style="font-size: 11px; color: var(--muted);">
+      <div class="activity-details">Classes: ${classesText}</div>
+      <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
+      <div class="activity-meta">
         ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
       </div>
     `;
 
-    // Hover effect
-    actCard.onmouseenter = () => {
-      actCard.style.borderColor = 'var(--primary)';
-      actCard.style.boxShadow = '0 4px 12px rgba(11,114,255,0.1)';
-    };
-    actCard.onmouseleave = () => {
-      actCard.style.borderColor = '#e2e8f0';
-      actCard.style.boxShadow = 'none';
-    };
-
-    // Click pour sélectionner l'activité dans l'emploi du temps
+    // Click pour détails et mise en avant dans l'emploi du temps
     actCard.onclick = () => {
       // Désélectionner les autres
-      document.querySelectorAll('.activite-selected').forEach(el => {
-        el.classList.remove('activite-selected');
-        el.style.borderColor = '#e2e8f0';
-        el.style.backgroundColor = 'white';
+      container.querySelectorAll('.activity-card').forEach(el => {
+        el.classList.remove('selected');
       });
 
       // Sélectionner celle-ci
-      actCard.classList.add('activite-selected');
-      actCard.style.borderColor = 'var(--primary)';
-      actCard.style.backgroundColor = 'var(--glass)';
+      actCard.classList.add('selected');
 
-      // Mettre à jour l'emploi du temps
-      highlightActiviteInSchedule(act);
+      // Mettre en avant dans l'emploi du temps
+      highlightActiviteInScheduleProf(act);
+
+      // Afficher détails
+      showActivityDetails(act);
     };
 
     container.appendChild(actCard);
   });
 }
 
-/* ===========================
-   Gestion de l'emploi du temps
-   =========================== */
-let currentWeekOffset = 0; // 0 = semaine courante
+function showActivityDetails(activite) {
+  const modal = $('#activity-modal');
+  const title = $('#modal-title');
+  const body = $('#modal-body');
 
-function initEmploiDuTemps() {
-  updateWeekDisplay();
+  title.textContent = activite.titre;
 
-  // Navigation semaines
-  $('#prev-week').onclick = () => {
-    currentWeekOffset--;
-    updateWeekDisplay();
-    updateScheduleView();
-  };
+  const classesText = activite.classe_ids
+    .map(id => classes.find(c => c.id === id)?.nom || '')
+    .join(', ');
 
-  $('#next-week').onclick = () => {
-    currentWeekOffset++;
-    updateWeekDisplay();
-    updateScheduleView();
-  };
+  const animateur = getUserName(activite.animateur_id || activite.prof_id);
+  const inscriptions = activite.inscriptions || [];
 
-  updateScheduleView();
+  body.innerHTML = `
+    <div class="detail-row">
+      <span class="detail-label">Description:</span>
+      <span class="detail-value">${activite.description || '—'}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Salle:</span>
+      <span class="detail-value">${activite.salle}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Animateur:</span>
+      <span class="detail-value">${animateur}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Classes:</span>
+      <span class="detail-value">${classesText}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Effectif:</span>
+      <span class="detail-value">${inscriptions.length}/${activite.effectif_max}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Type:</span>
+      <span class="detail-value">${activite.separable ? 'Sécable' : 'Non sécable'}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Ouverture:</span>
+      <span class="detail-value">${formatDateLocal(activite.date_ouverture_inscriptions)}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Fermeture:</span>
+      <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Séances:</span>
+      <span class="detail-value">
+        ${(activite.seances || []).map(s => formatDateLocal(s.date_heure)).join('<br>')}
+      </span>
+    </div>
+    <div class="detail-row" style="align-items: flex-start;">
+      <span class="detail-label">Inscrits:</span>
+      <div class="detail-value">
+        <div class="inscriptions-list">
+          ${inscriptions.length > 0
+            ? inscriptions.map(eleveId => {
+              const eleve = getUserById(eleveId);
+              return `<div class="inscription-item">${eleve ? getUserNameWithClass(eleveId) : `ID: ${eleveId}`}</div>`;
+              }).join('')
+            : '<div class="inscription-item muted">Aucune inscription</div>'
+          }
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.classList.add('visible');
 }
 
-function updateWeekDisplay() {
+function closeActivityModal() {
+  $('#activity-modal').classList.remove('visible');
+}
+
+/* ===========================
+   Emploi du temps Professeur
+   =========================== */
+function initEmploiDuTempsProf() {
+  updateWeekDisplayProf();
+
+  $('#prev-week-prof').onclick = () => {
+    currentWeekOffsetProf--;
+    updateWeekDisplayProf();
+    updateScheduleViewProf();
+  };
+
+  $('#next-week-prof').onclick = () => {
+    currentWeekOffsetProf++;
+    updateWeekDisplayProf();
+    updateScheduleViewProf();
+  };
+
+  updateScheduleViewProf(); // Changé de createScheduleGridProf() + updateScheduleViewProf()
+}
+
+function updateWeekDisplayProf() {
   const today = new Date();
   const monday = getMonday(today);
-  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
 
-  const friday = new Date(monday);
-  friday.setDate(friday.getDate() + 4);
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
 
-  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${friday.getDate().toString().padStart(2,'0')}/${(friday.getMonth()+1).toString().padStart(2,'0')}`;
-  $('#current-week').textContent = weekText;
+  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${sunday.getDate().toString().padStart(2,'0')}/${(sunday.getMonth()+1).toString().padStart(2,'0')}`;
+  $('#current-week-prof').textContent = weekText;
 }
 
-function getMonday(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff));
+function createScheduleGridProf() {
+  const container = $('#emploi-du-temps-prof');
+  container.innerHTML = '';
+
+  // Calculer le lundi de la semaine affichée
+  const today = new Date();
+  const monday = getMonday(today);
+  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
+
+  // En-têtes avec dates et mise en avant du jour actuel
+  const headers = [''];
+  const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
+  const todayDate = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const currentDay = new Date(monday);
+    currentDay.setDate(currentDay.getDate() + i);
+
+    const dayNum = currentDay.getDate();
+    const dayName = dayNames[i];
+
+    const isToday = currentDay.toDateString() === todayDate.toDateString();
+
+    const header = document.createElement('div');
+    header.className = `schedule-cell schedule-header-cell ${isToday ? 'today' : ''}`;
+    header.innerHTML = `<div>${dayName}</div><div style="font-size:10px;opacity:0.8">${dayNum}</div>`;
+
+    container.appendChild(header);
+  }
+
+  // Créneaux 8h-18h
+  for (let hour = 8; hour < 18; hour++) {
+    // Cellule heure
+    const hourCell = document.createElement('div');
+    hourCell.className = 'schedule-cell schedule-hour-cell';
+    hourCell.textContent = `${hour}h-${hour + 1}h`;
+    container.appendChild(hourCell);
+
+    // Cellules jours
+    const days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+    days.forEach((day, dayIndex) => {
+      const dayDate = new Date(monday);
+      dayDate.setDate(dayDate.getDate() + dayIndex);
+      const isToday = dayDate.toDateString() === todayDate.toDateString();
+
+      const slot = document.createElement('div');
+      slot.className = `schedule-cell schedule-slot ${isToday ? 'today-column' : ''}`;
+      slot.id = `slot-prof-${day}-${hour}`;
+      container.appendChild(slot);
+    });
+  }
 }
 
-function updateScheduleView() {
-  // Vider tous les créneaux
-  document.querySelectorAll('.time-slot').forEach(slot => {
-    slot.innerHTML = '';
-    slot.style.backgroundColor = 'white';
-  });
+function updateScheduleViewProf() {
+  // Recréer la grille avec les nouvelles dates
+  createScheduleGridProf();
 
   // Afficher les séances de la semaine courante
   const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
 
   activites.forEach(act => {
     if (act.prof_id !== currentUser?.id && act.animateur_id !== currentUser?.id) return;
@@ -1701,29 +1736,17 @@ function updateScheduleView() {
       const seanceDate = new Date(seance.date_heure);
       const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
 
-      if (daysDiff >= 0 && daysDiff < 7) {
+      if (daysDiff >= 0 && daysDiff < 7) { // 7 jours maintenant
         const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
         const hour = seanceDate.getHours();
 
-        if (daysDiff < 5) { // Seulement lun-ven
-          const slotId = `slot-${dayName}-${hour}`;
+        if (hour >= 8 && hour < 18) {
+          const slotId = `slot-prof-${dayName}-${hour}`;
           const slot = document.getElementById(slotId);
 
           if (slot) {
             const seanceDiv = document.createElement('div');
-            seanceDiv.style.cssText = `
-              background: linear-gradient(135deg, var(--primary), var(--accent));
-              color: white;
-              padding: 2px 4px;
-              border-radius: 4px;
-              font-size: 10px;
-              font-weight: 600;
-              margin-bottom: 2px;
-              cursor: pointer;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
-            `;
+            seanceDiv.className = 'seance-block';
             seanceDiv.textContent = act.titre;
             seanceDiv.title = `${act.titre}\n${act.salle}\n${formatDateLocal(seance.date_heure)}`;
 
@@ -1735,30 +1758,159 @@ function updateScheduleView() {
   });
 }
 
-function highlightActiviteInSchedule(activite) {
+function highlightActiviteInScheduleProf(activite) {
   // Reset highlighting
-  document.querySelectorAll('.time-slot').forEach(slot => {
-    slot.style.backgroundColor = 'white';
+  document.querySelectorAll('#emploi-du-temps-prof .schedule-slot').forEach(slot => {
+      slot.classList.remove('highlighted');
   });
 
   // Highlight les créneaux de cette activité
   const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + (currentWeekOffset * 7));
+  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
 
   activite.seances?.forEach(seance => {
     const seanceDate = new Date(seance.date_heure);
     const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
 
-    if (daysDiff >= 0 && daysDiff < 5) {
-      const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven'][daysDiff];
+    if (daysDiff >= 0 && daysDiff < 7) {
+      const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
       const hour = seanceDate.getHours();
-      const slotId = `slot-${dayName}-${hour}`;
-      const slot = document.getElementById(slotId);
 
-      if (slot) {
-        slot.style.backgroundColor = 'rgba(11,114,255,0.1)';
+      if (hour >= 8 && hour < 18) {
+        const slotId = `slot-prof-${dayName}-${hour}`;
+        const slot = document.getElementById(slotId);
+
+        if (slot) {
+          slot.classList.add('highlighted');
+        }
       }
     }
+  });
+}
+
+/* ===========================
+   Emploi du temps Élève
+   =========================== */
+function initEmploiDuTempsEleve() {
+  updateWeekDisplayEleve();
+
+  $('#prev-week-eleve').onclick = () => {
+    currentWeekOffsetEleve--;
+    updateWeekDisplayEleve();
+    updateEmploiDuTempsEleve();
+  };
+
+  $('#next-week-eleve').onclick = () => {
+    currentWeekOffsetEleve++;
+    updateWeekDisplayEleve();
+    updateEmploiDuTempsEleve();
+  };
+
+  updateEmploiDuTempsEleve(); // Changé de createScheduleGridEleve() + updateEmploiDuTempsEleve()
+}
+
+function updateWeekDisplayEleve() {
+  const today = new Date();
+  const monday = getMonday(today);
+  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
+
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+
+  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${sunday.getDate().toString().padStart(2,'0')}/${(sunday.getMonth()+1).toString().padStart(2,'0')}`;
+  $('#current-week-eleve').textContent = weekText;
+}
+
+function createScheduleGridEleve() {
+  const container = $('#emploi-du-temps-eleve');
+  container.innerHTML = '';
+
+  // Calculer le lundi de la semaine affichée
+  const today = new Date();
+  const monday = getMonday(today);
+  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
+
+  // En-têtes avec dates et mise en avant du jour actuel
+  const headers = [''];
+  const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
+  const todayDate = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const currentDay = new Date(monday);
+    currentDay.setDate(currentDay.getDate() + i);
+
+    const dayNum = currentDay.getDate();
+    const dayName = dayNames[i];
+
+    const isToday = currentDay.toDateString() === todayDate.toDateString();
+
+    const header = document.createElement('div');
+    header.className = `schedule-cell schedule-header-cell ${isToday ? 'today' : ''}`;
+    header.innerHTML = `<div>${dayName}</div><div style="font-size:10px;opacity:0.8">${dayNum}</div>`;
+
+    container.appendChild(header);
+  }
+
+  // Créneaux 8h-18h
+  for (let hour = 8; hour < 18; hour++) {
+    // Cellule heure
+    const hourCell = document.createElement('div');
+    hourCell.className = 'schedule-cell schedule-hour-cell';
+    hourCell.textContent = `${hour}h-${hour + 1}h`;
+    container.appendChild(hourCell);
+
+    // Cellules jours
+    const days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+    days.forEach((day, dayIndex) => {
+      const dayDate = new Date(monday);
+      dayDate.setDate(dayDate.getDate() + dayIndex);
+      const isToday = dayDate.toDateString() === todayDate.toDateString();
+
+      const slot = document.createElement('div');
+      slot.className = `schedule-cell schedule-slot ${isToday ? 'today-column' : ''}`;
+      slot.id = `slot-eleve-${day}-${hour}`;
+      container.appendChild(slot);
+    });
+  }
+}
+
+function updateEmploiDuTempsEleve() {
+  if (!currentUser) return;
+
+  // Recréer la grille avec les nouvelles dates
+  createScheduleGridEleve();
+
+  // Afficher seulement les séances où l'élève est inscrit
+  const monday = getMonday(new Date());
+  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
+
+  activites.forEach(act => {
+    // Vérifier que l'élève est inscrit à cette activité
+    if (!act.inscriptions?.includes(currentUser.id)) return;
+
+    act.seances?.forEach(seance => {
+      const seanceDate = new Date(seance.date_heure);
+      const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
+
+      if (daysDiff >= 0 && daysDiff < 7) { // 7 jours maintenant
+        const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
+        const hour = seanceDate.getHours();
+
+        if (hour >= 8 && hour < 18) {
+          const slotId = `slot-eleve-${dayName}-${hour}`;
+          const slot = document.getElementById(slotId);
+
+          if (slot) {
+            const seanceDiv = document.createElement('div');
+            seanceDiv.className = 'seance-block';
+            seanceDiv.textContent = act.titre;
+            seanceDiv.title = `${act.titre}\n${act.salle}\n${formatDateLocal(seance.date_heure)}`;
+
+            slot.appendChild(seanceDiv);
+          }
+        }
+      }
+    });
   });
 }
 
@@ -1848,11 +2000,6 @@ async function creerActivite(){
 
   if (hasError) {
     alert('Veuillez remplir tous les champs obligatoires');
-    // Retirer l'erreur dès que l'utilisateur modifie le champ
-    $all('input, select').forEach(el => {
-      el.oninput = () => el.classList.remove('error');
-      el.onchange = () => el.classList.remove('error');
-    });
     return;
   }
 
@@ -1877,19 +2024,15 @@ async function creerActivite(){
     exclusives_ids: exclusives
   };
 
-  console.log('Création activité:', newAct);
-
   try {
     const result = await apiPost('/activites', newAct);
-    console.log('[OK] Activité créée:', result);
     await fetchAllData();
-    majListeActivitesProf(); // Changé
+    majListeActivitesProf();
     majListeExclusives();
-    updateScheduleView(); // Nouveau
+    updateScheduleViewProf();
     resetForm();
     alert('Activité créée et enregistrée en base!');
   } catch(e) {
-    console.error('Erreur création:', e);
     alert('Erreur lors de la création : ' + e.message);
   }
 }
@@ -1909,10 +2052,8 @@ function ajouterSeanceHebdo(){
     return;
   }
 
-  const seriesId = Date.now();
   const serieDiv = document.createElement('div');
   serieDiv.className='serie-hebdo';
-  serieDiv.dataset.seriesId = seriesId;
 
   const sup = document.createElement('div');
   sup.style.textAlign='right';
@@ -1938,47 +2079,12 @@ function ajouterSeanceHebdo(){
     const del = document.createElement('button');
     del.className='btn ghost';
     del.textContent='✖';
-    del.onclick = ()=>{
-      d.remove();
-      majLabels(serieDiv);
-      // Si plus de séance dans cette série supprimer le conteneur
-      if(serieDiv.querySelectorAll('.seance-item').length === 0){
-        serieDiv.remove();
-      }
-    };
+    del.onclick = ()=> d.remove();
     d.appendChild(span);
     d.appendChild(inp);
     d.appendChild(del);
     serieDiv.appendChild(d);
   }
-
-  // Fonction pour recalculer labels et dates
-  function majLabels(serieDiv){
-    const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
-    if(items.length === 0) return;
-
-    // Séance pivot : la plus proche
-    const pivotInput = items.reduce((minInp, item) => {
-      const inp = item.querySelector('.seance-input');
-      return new Date(inp.value) < new Date(minInp.value) ? inp : minInp;
-    }, items[0].querySelector('.seance-input'));
-
-    const baseDate = new Date(pivotInput.value);
-
-    items.forEach((item, idx) => {
-      const inp = item.querySelector('.seance-input');
-      const span = item.querySelector('div.small');
-      if(inp !== pivotInput){
-        inp.value = formatDateInputLocal(new Date(baseDate.getTime() + idx*7*24*3600*1000));
-      }
-      span.textContent = idx === 0 ? 'Séance 1 (début)' : `+${idx} semaine(s)`;
-    });
-  }
-
-  // Gestion du changement de date
-  serieDiv.querySelectorAll('.seance-input').forEach(inp => {
-    inp.onchange = ()=> majLabels(serieDiv);
-  });
 
   container.appendChild(serieDiv);
 }
@@ -1997,78 +2103,65 @@ function ajouterSeanceManuelle(){
   const del = document.createElement('button');
   del.className='btn ghost';
   del.textContent='✖';
-  del.onclick = ()=> {
-    d.remove();
-    majManual();
-  };
+  del.onclick = ()=> d.remove();
   d.appendChild(span);
   d.appendChild(inp);
   d.appendChild(del);
   container.appendChild(d);
-
-  inp.onchange = ()=> majManual();
-  majManual(); // mise à jour immédiate
-
-  // Fonction pour trier les séances manuelles et mettre labels correctement
-  function majManual(){
-    const manualItems = Array.from(container.querySelectorAll('.seance-item.manual'));
-
-    //trier par date croissante
-    manualItems.sort((a, b)=>{
-      const da = new Date(a.querySelector('.seance-input').value);
-      const db = new Date(b.querySelector('.seance-input').value);
-      return da - db;
-    });
-
-    // Enlever tous les items manuels du DOM
-    manualItems.forEach(item => container.removeChild(item));
-
-    //remettre les éléments triés en tête
-    const firstNonManual = container.querySelector(':not(.manual)');
-    manualItems.forEach((item, idx)=>{
-      container.insertBefore(item, firstNonManual); // prepend pour que le plus proche soit en premier
-      const span = item.querySelector('div.small');
-      span.textContent = `Ajout manuel ${idx+1}`;
-    })
-  }
 }
 
 /* ===========================
    Sidebar panels
    =========================== */
 function updateSidePanels(){
-  // Raccourcis (mode dev seulement)
   const raccourcis = $('#sidebar-raccourcis');
   if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
 
-  // Statut (mode dev seulement)
   const statut = $('#sidebar-statut');
   if (statut) statut.style.display = MODE === 'dev' ? 'block' : 'none';
 
-  // Aide rapide (uniquement si prof connecté)
   const aideRapide = $('#sidebar-aide');
-  if (aideRapide) aideRapide.style.display = (currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')) ? 'block' : 'none';
+  if (aideRapide) {
+    aideRapide.style.display = (currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')) ? 'block' : 'none';
+  }
 }
 
 /* ===========================
-   Gestion des erreurs et événements
+   Event Listeners
    =========================== */
-// Gestion des erreurs globales
+document.addEventListener('DOMContentLoaded', function() {
+  // Enter key pour login
+  $('#username')?.addEventListener('keypress', (e) => {
+    if(e.key === 'Enter') login();
+  });
+  $('#password')?.addEventListener('keypress', (e) => {
+    if(e.key === 'Enter') login();
+  });
+
+  // Fermer modal avec Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeActivityModal();
+    }
+  });
+
+  // Fermer modal en cliquant à côté
+  $('#activity-modal')?.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal-overlay')) {
+      closeActivityModal();
+    }
+  });
+});
+
+/* ===========================
+   Gestion des erreurs
+   =========================== */
 window.addEventListener('error', (e) => {
   console.error('Erreur JavaScript:', e.error);
 });
 
-// Gestion des erreurs de promesses non catchées
 window.addEventListener('unhandledrejection', (e) => {
   console.error('Promise rejetée:', e.reason);
-});
-
-// Enter key pour login
-$('#username').addEventListener('keypress', (e) => {
-  if(e.key === 'Enter') login();
-});
-$('#password').addEventListener('keypress', (e) => {
-  if(e.key === 'Enter') login();
 });
 
 /* ===========================
@@ -2078,7 +2171,6 @@ $('#password').addEventListener('keypress', (e) => {
   try{
     console.log('[START] Initialisation de l\'application...');
 
-    // Vérifier d'abord si une session existe
     const hasValidSession = await checkAuthStatus();
 
     if (hasValidSession) {
@@ -2086,7 +2178,6 @@ $('#password').addEventListener('keypress', (e) => {
       await fetchAllData();
     } else {
       console.log('[INFO] Aucune session active, affichage du login');
-      // NE PAS récupérer les classes si pas connecté (elles nécessitent l'auth)
       classes = [];
       users = [];
       activites = [];
@@ -2094,16 +2185,13 @@ $('#password').addEventListener('keypress', (e) => {
 
     onAuthChange();
     updateSidePanels();
-    console.log('✅ Application initialisée');
+    console.log('[OK] Application initialisée');
   } catch(e){
-    console.error('❌ Erreur lors de l\'initialisation:', e);
-    // Afficher un message d'erreur à l'utilisateur
+    console.error('[KO] Erreur lors de l\'initialisation:', e);
     const loginMsg = $('#login-msg');
     if(loginMsg) {
       loginMsg.textContent = 'Erreur de connexion au serveur';
-      loginMsg.style.color = '#dd1738';
     }
-    // S'assurer que le login est visible en cas d'erreur
     currentUser = null;
     classes = [];
     users = [];
