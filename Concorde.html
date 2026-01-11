@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE prototype v9(UI upgraded + modals enchanced)<title>
+  <title>PROTOTYPE alpha v0.1</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -457,16 +457,6 @@
 
     <!-- RIGHT: SIDE PANEL -->
     <aside class="side">
-
-      <div id="sidebar-raccourcis" class="card fade-in" aria-hidden="true">
-        <h4>Raccourcis</h4>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-          <button class="btn secondary" onclick="demoLogin('prof1')">Se connecter (prof1)</button>
-          <button class="btn secondary" onclick="demoLogin('eleve1')">Se connecter (eleve1)</button>
-          <button class="btn secondary" onclick="demoLogin('eleve2')">Se connecter (eleve2)</button>
-        </div>
-      </div>
-
       <div id="sidebar-statut" class="card fade-in">
         <h4>Statut</h4>
         <div class="stats" style="margin-top:8px">
@@ -486,119 +476,157 @@
 
   </div>
 
+
+
+
+
 <script>
 /* ===========================
-   Données (simulées) & util
+   Helpers & Utils
    =========================== */
-const classes = [
-  { id: 1, nom: '3A' },
-  { id: 2, nom: '2B' },
-  { id: 3, nom: '1C' }
-];
-
-const users = [
-  { id: 1, username: 'prof1', password: '123', role: 'prof', nom: 'Dupont', prenom: 'Alain', email: 'a.dupont@school.fr' },
-  { id: 2, username: 'eleve1', password: '123', role: 'eleve', nom: 'Leroy', prenom: 'Emma', classe_id: 1 },
-  { id: 3, username: 'eleve2', password: '123', role: 'eleve', nom: 'Dubois', prenom: 'Lucas', classe_id: 2 },
-  { id: 4, username: 'admin', password: '123', role: 'admin', nom: 'Admin', prenom: 'Root' }
-];
-
-let activites = [
-  {
-    id: 1,
-    titre: 'Atelier Théâtre',
-    prof_id: 1,
-    animateur_id: 1,            // <-- animateur choisi (peut être différent du prof_id)
-    visible_avant: false,       // <-- flag visible avant ouverture
-    classe_ids: [1,2],
-    salle: 'LM19C',
-    separable: false,
-    effectif_max: 10,
-    inscriptions: [],
-    seances: [
-      { id: 1, date_heure: "2025-09-30T14:00", presences: [] },
-      { id: 2, date_heure: "2025-09-29T14:00", presences: [] }
-    ],
-    ouverture_inscription: "2025-09-20T14:00",
-    fermeture_inscription: "2025-09-30T14:00",
-    exclusives_ids: []
-  }
-];
-
-let currentUser = null;
 const MODE = 'reel';
+let currentUser = null;
+let users = [];
+let classes = [];
+let activites = [];
 
-/* ---------------------------
-   Helpers
-   --------------------------- */
-function $(s){return document.querySelector(s)}
-function $all(s){return Array.from(document.querySelectorAll(s))}
+function $(s){ return document.querySelector(s); }
+function $all(s){ return Array.from(document.querySelectorAll(s)); }
+
 function formatDateLocal(str){
   if(!str) return '—';
-  try {
+  try{
     const d = new Date(str);
     return d.toLocaleString('fr-FR', {hour12:false});
-  } catch(e){ return str }
+  } catch(e){ return str; }
 }
+
 function formatDateInputLocal(date){
   const pad = n => n.toString().padStart(2,'0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
-function getUserById(id){ return users.find(u=>u.id === id) || null; }
-function getUserName(id){ const u = getUserById(id); return u ? `${u.prenom} ${u.nom || ''}` : '—'; }
 
+function getUserById(id){ return users.find(u=>u.id===id)||null; }
+function getUserName(id){ const u=getUserById(id); return u ? `${u.prenom} ${u.nom||''}` : '—'; }
 
-/* ============================
-   Connexion / Deconnexion
-   ============================ */
-function login(){
+/* ===========================
+   API helpers
+   =========================== */
+async function apiGet(url){
+  const res = await fetch(url, {credentials:'same-origin'});
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+async function apiPost(url, data){
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body: JSON.stringify(data)
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+async function apiDelete(url, data){
+  const res = await fetch(url, {
+    method:'DELETE',
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body: JSON.stringify(data)
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/* ===========================
+   Connexion / Déconnexion
+   =========================== */
+async function login(){
   const username = $('#username').value.trim();
   const password = $('#password').value.trim();
-  const user = users.find(u => u.username === username && u.password === password);
-  if(!user){ $('#login-msg').textContent = "Nom d'utilisateur ou mot de passe incorrect"; return; }
-  currentUser = user;
-  $('#login-msg').textContent = '';
-  $('#username').value = '';
-  $('#password').value = '';
-  onAuthChange();
-}
-function demoLogin(name){
-  const u = users.find(x=>x.username===name);
-  if(u){ currentUser = u; onAuthChange() }
+  try{
+    const data = await apiPost('/login', {username,password});
+    if(!data.success) { $('#login-msg').textContent = data.error; return; }
+    currentUser = data;
+    $('#login-msg').textContent='';
+    $('#username').value=''; $('#password').value='';
+    await fetchAllData();
+    onAuthChange();
+  } catch(e){
+    $('#login-msg').textContent = 'Erreur connexion';
+    console.error(e);
+  }
 }
 
-/* logout */
-function logout(){
-  currentUser = null;
-  onAuthChange();
+async function logout(){
+  try{
+    await apiPost('/logout',{});
+    currentUser = null;
+    onAuthChange();
+  } catch(e){ console.error(e); }
+}
+
+/* ===========================
+   Initial fetch data
+   =========================== */
+async function fetchAllData() {
+  // récupérer les données brutes
+  users = await apiGet('/users');
+  classes = await apiGet('/classes');
+
+  if(!currentUser) return; // éviter enrichissement si pas connecté
+
+  const rawActivites = await apiGet('/activites');
+  const rawActiviteClasses = await apiGet('/activite_classes');
+  const rawSeances = await apiGet('/seances');
+  const rawInscriptions = await apiGet('/inscriptions');
+
+
+
+  // enrichir chaque activité
+  activites = rawActivites.map(act => {
+    // classes liées
+    act.classe_ids = rawActiviteClasses
+      .filter(ac => ac.activite_id === act.id)
+      .map(ac => Number(ac.classe_id));
+
+    // séances liées
+    act.seances = rawSeances
+      .filter(s => s.activite_id === act.id)
+      .map(s => ({ id: s.id, date_heure: s.date_heure }));
+
+    // inscriptions liées
+    act.inscriptions = rawInscriptions
+      .filter(i => i.activite_id === act.id)
+      .map(i => i.eleve_id);
+
+    return act;
+  });
+
+  console.log("[OK] Activités enrichies :", activites);
 }
 
 
 /* ===========================
-   Mise à jour de l'UI
+   UI update on auth change
    =========================== */
-/* update UI on auth change */
 function onAuthChange(){
-  // show badge / logout
   if(currentUser){
-    $('#user-badge').style.display = 'inline-flex';
-    $('#user-name').textContent = `${currentUser.prenom} ${currentUser.nom || ''}`;
+    $('#user-badge').style.display='inline-flex';
+    $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
     $('#logout-btn').classList.remove('hidden');
-    // hide login card, show relevant dashboard
     $('#login-card').classList.add('hidden');
     afficherPageRole(currentUser.role);
   } else {
-    $('#user-badge').style.display = 'none';
+    $('#user-badge').style.display='none';
     $('#logout-btn').classList.add('hidden');
     $('#login-card').classList.remove('hidden');
     cacherToutesPages();
   }
-  // update counts
-  $('#count-acts').textContent = activites.length;
-  $('#count-users').textContent = users.length;
+  $('#count-acts').textContent=activites.length;
+  $('#count-users').textContent=users.length;
   updateSidePanels();
 }
-
 
 /* ===========================
    Navigation
@@ -607,84 +635,79 @@ function cacherToutesPages(){
   $('#eleve-page').classList.add('hidden');
   $('#prof-page').classList.add('hidden');
 }
-
 function afficherPageRole(role){
   cacherToutesPages();
-  if(role === 'prof'){
+  if(role==='prof' || role==='admin'){
     $('#prof-page').classList.remove('hidden');
     populateSelects();
     majTableProf();
     majListeExclusives();
-  }
-  else if(role === 'eleve'){
+  } else if(role==='eleve'){
     $('#eleve-page').classList.remove('hidden');
     majTableEleve();
   }
-  else {
-    $('#prof-page').classList.remove('hidden'); // par défaut admin → vue prof
-    populateSelects();
-    majTableProf();
-    majListeExclusives();
-  }
 }
 
-
-/* ============================
-   Fill selects
-   ============================ */
+/* ===========================
+   Populate selects
+   =========================== */
 function populateSelects(){
-  // classes
-  const select = $('#classe-select'); if(select){ select.innerHTML = ''; }
-  classes.forEach(cl=>{
-    const opt = document.createElement('option'); opt.value = cl.id; opt.textContent = cl.nom;
-    select.appendChild(opt);
-  });
-
-  // animateur-select (liste des profs)
+  const select = $('#classe-select');
+  if(select){
+    select.innerHTML='';
+    classes.forEach(cl=>{
+      const opt=document.createElement('option');
+      opt.value=cl.id;
+      opt.textContent=cl.nom;
+      select.appendChild(opt);
+    });
+  }
   const animSelect = $('#animateur-select');
   if(animSelect){
-    animSelect.innerHTML = '';
-    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin'); // inclure admin si besoin
+    animSelect.innerHTML='';
+    const profs = users.filter(u=>u.role==='prof'||u.role==='admin');
     profs.forEach(p=>{
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = `${p.prenom} ${p.nom || ''}`;
+      const opt=document.createElement('option');
+      opt.value=p.id;
+      opt.textContent=`${p.prenom} ${p.nom||''}`;
       animSelect.appendChild(opt);
     });
-    // valeur par défaut: si connecté prof -> lui, sinon premier prof
-    const defaultId = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
-    if(defaultId) animSelect.value = defaultId;
+    const defaultId = (currentUser && currentUser.role==='prof') ? currentUser.id : (profs[0]?.id||'');
+    if(defaultId) animSelect.value=defaultId;
   }
 }
 
-
-/* ============================
+/* ===========================
    Eleve table
-   ============================ */
-function majTableEleve() {
-  const tbody = $('#table-eleve tbody'); tbody.innerHTML = '';
-  if (!currentUser) return;
+   =========================== */
+function majTableEleve(){
+  const tbody = $('#table-eleve tbody');
+  tbody.innerHTML = '';
+  if(!currentUser) return;
 
-  const classeId = currentUser.classe_id;
-  let totalAct = 0; let totalIns = 0; // compteur inscriptions de l'élève
-
+  const classeId = Number(currentUser.classe_id);
   const now = new Date();
+  let totalAct = 0, totalIns = 0;
 
   activites.forEach(act => {
-    const debut = new Date(act.ouverture_inscription || 0);
-    const fin = new Date(act.fermeture_inscription || 0);
-    const allPassed = act.seances.every(s => new Date(s.date_heure) < now);
+    // Filtrer selon visibilité et dates
+    const ouverture = new Date(act.date_ouverture_inscriptions);
+    const fermeture = new Date(act.date_fermeture_inscriptions);
+    const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
 
-    // Vérification visibilité
-    if (!act.visible_avant && now < debut) return;       // avant ouverture et non visible
-    if (!act.classe_ids.includes(classeId)) return;     // classe non concernée
-    if (now > fin && allPassed) return;                 // après fermeture et toutes séances passées
+    //if(!(act.visible_avant*1) && now < ouverture) return;  // pas encore visible
+    //if(!act.classe_ids.includes(classeId)) return;    // classe non autorisée
+    //if(now > fermeture && allPassed) return;          // activité terminée
 
     totalAct++;
 
-    const seancesText = act.seances.map(s => formatDateLocal(s.date_heure)).join(', ');
-    const inscritsCount = act.inscriptions.length;
+    // Préparer le texte des séances
+    const seancesText = (act.seances || []).map(s => formatDateLocal(s.date_heure)).join(', ');
 
+    // Nombre d'inscrits
+    const inscritsCount = act.inscriptions?.length || 0;
+
+    // Créer ligne
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${act.titre}</td>
@@ -695,55 +718,46 @@ function majTableEleve() {
       <td></td>
     `;
 
+    // Bouton inscription / désinscription
     const tdAction = tr.querySelector('td:last-child');
+    const estInscrit = act.inscriptions?.includes(currentUser.id);
+    const inscriptionsOuvertes = now >= ouverture && now <= fermeture && !allPassed;
+
     const btn = document.createElement('button');
     btn.className = 'btn';
 
-    const estInscrit = act.inscriptions.includes(currentUser.id);
-    const inscriptionsOuvertes = now >= debut && now <= fin && !allPassed;
-
-    if (now < debut) {
-      // avant ouverture
+    if(now < ouverture){
       btn.textContent = 'Inscriptions non ouvertes';
       btn.disabled = true;
       btn.classList.add('ghost');
-    } else if (now > fin && !inscriptionsOuvertes) {
-      // période passée mais séances non terminées -> fermée
+    } else if(now > fermeture && !inscriptionsOuvertes){
       btn.textContent = 'Inscriptions fermées';
       btn.disabled = true;
       btn.classList.add('ghost');
-    } else if (allPassed) {
-      // toutes les séances passées
+    } else if(allPassed){
       btn.textContent = 'Activité terminée';
       btn.disabled = true;
       btn.classList.add('ghost');
-    } else if (estInscrit) {
-      totalIns++; // compter l'inscription
+    } else if(estInscrit){
+      totalIns++;
       btn.textContent = 'Se désinscrire';
-      btn.onclick = () => {
-        if (!inscriptionsOuvertes) {
-          alert('Les inscriptions sont fermées, impossible de se désinscrire.');
-          return;
-        }
-        if (confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)) {
-          act.inscriptions = act.inscriptions.filter(id => id !== currentUser.id);
+      btn.onclick = async () => {
+        if(!inscriptionsOuvertes){ alert('Les inscriptions sont fermées'); return; }
+        if(confirm(`Veux-tu te désinscrire de "${act.titre}" ?`)){
+          await apiDelete('/inscriptions', {activite_id: act.id});
+          await fetchAllData();
           majTableEleve();
           majTableProf();
         }
       };
     } else {
       btn.textContent = 'S’inscrire';
-      btn.onclick = () => {
-        if (!inscriptionsOuvertes) {
-          alert('Inscriptions non ouvertes ou terminées');
-          return;
-        }
-        if (act.inscriptions.length >= act.effectif_max) {
-          alert('Effectif maximum atteint !');
-          return;
-        }
-        if (confirm(`Veux-tu t’inscrire à "${act.titre}" ?`)) {
-          act.inscriptions.push(currentUser.id);
+      btn.onclick = async () => {
+        if(!inscriptionsOuvertes){ alert('Inscriptions non ouvertes'); return; }
+        if(act.inscriptions?.length >= act.effectif_max){ alert('Effectif max atteint'); return; }
+        if(confirm(`Veux-tu t’inscrire à "${act.titre}" ?`)){
+          await apiPost('/inscriptions', {activite_id: act.id});
+          await fetchAllData();
           majTableEleve();
           majTableProf();
         }
@@ -754,8 +768,148 @@ function majTableEleve() {
     tbody.appendChild(tr);
   });
 
+  // Mettre à jour stats
   $('#stat-act').textContent = totalAct;
   $('#stat-insc').textContent = totalIns;
+}
+
+/* ===========================
+   Prof table / Création Activité
+   =========================== */
+function majTableProf() {
+  const tbody = $('#table-prof tbody');
+  tbody.innerHTML = '';
+
+  activites.forEach(act => {
+    if (act.prof_id !== currentUser?.id) return;
+
+    // Inscrits : Prénom Nom (Classe)
+    const inscrits = (act.inscriptions || []).map(id => {
+      const u = getUserById(id);
+      if (!u) return '';
+      const classeNom = classes.find(c => c.id === u.classe_id)?.nom || '—';
+      return `${u.prenom} ${u.nom} (${classeNom})`;
+    });
+
+    const inscritsCount = inscrits.length;
+    const inscritsText = inscrits.length > 0 ? inscrits.join(', ') : '—';
+
+    // Classes liées
+    const classesText = act.classe_ids
+      .map(id => classes.find(c => c.id === id)?.nom || '')
+      .join(', ');
+
+    // Séances liées
+    const seancesText = (act.seances || [])
+      .map(s => formatDateLocal(s.date_heure))
+      .join(', ');
+
+    // Animateur
+    const animateur = getUserName(act.animateur_id);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${act.titre}</td>
+      <td>${act.salle}</td>
+      <td>${act.effectif_max}</td>
+      <td>${animateur}</td>
+      <td>[${inscritsCount}/${act.effectif_max}] ${inscritsText}</td>
+      <td>${classesText}</td>
+      <td>${act.separable ? 'Oui' : 'Non'}</td>
+      <td>${act.visible_avant ? 'Oui' : 'Non'}</td>
+      <td>${formatDateLocal(act.date_ouverture_inscriptions)}</td>
+      <td>${formatDateLocal(act.date_fermeture_inscriptions)}</td>
+      <td>${seancesText}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+
+function majListeExclusives(){
+  const select = $('#exclusives-select'); select.innerHTML='';
+  activites.forEach(act=>{
+    const opt = document.createElement('option'); opt.value=act.id; opt.textContent=act.titre; select.appendChild(opt);
+  });
+}
+
+
+
+/* reset form */
+function resetForm(){
+  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML='';
+  $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
+  // remettre animateur par défaut et visible_avant à false
+  if($('#animateur-select')){
+    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
+    $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
+  }
+  if($('#visible-avant')) $('#visible-avant').checked = false;
+}
+
+
+/* creare Activite */
+async function creerActivite(){
+  const titre = $('#titre').value.trim();
+  const salle = $('#salle').value.trim();
+  const effectif = parseInt($('#effectif').value) || 10;
+  const separable = $('#separable').checked;
+  const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
+  const seances = Array.from(document.querySelectorAll('.seance-input'))
+    .map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []}))
+    .filter(s=>s.date_heure);
+  const ouverture = $('#ouverture').value;
+  const fermeture = $('#fermeture').value;
+  const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
+  const seancesContainer = $('#seances-container');
+
+  // retirer anciennes erreurs
+  let hasError = false;
+  ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
+    $(sel).classList.remove('error');
+  });
+  $all('.seance-input').forEach(inp => inp.classList.remove('error'));
+  seancesContainer.classList.remove('error'); // container des séances
+
+  // validation des champs obligatoires
+  if (!titre) { $('#titre').classList.add('error'); hasError = true; }
+  if (!salle) { $('#salle').classList.add('error'); hasError = true; }
+  if (!effectif || effectif < 1) { $('#effectif').classList.add('error'); hasError = true; }
+  if (selectedClasses.length === 0) { $('#classe-select').classList.add('error'); hasError = true; }
+  if (!ouverture) { $('#ouverture').classList.add('error'); hasError = true; }
+  if (!fermeture) { $('#fermeture').classList.add('error'); hasError = true; }
+  if (seances.length === 0) {seancesContainer.classList.add('error'); hasError = true;}
+
+  if (hasError) {
+    // retirer l'erreur dès que l'utilisateur modifie le champ
+    $all('input, select').forEach(el => {
+      el.oninput = () => el.classList.remove('error');
+    });
+    // sur les séances
+    seancesContainer.onchange = () => seancesContainer.classList.remove('error');
+    return; // bloquer la création tant que les champs obligatoires ne sont pas remplis
+  }
+
+  // récupération animateur + visible_avant
+  const animateurId = $('#animateur-select') ? parseInt($('#animateur-select').value) : currentUser.id;
+  const visibleAvant = $('#visible-avant') ? !!$('#visible-avant').checked : false;
+
+  // tout est bon → création de l'activité
+  const newAct = {
+    titre, prof_id: currentUser.id, animateur_id: animateurId, visible_avant: visibleAvant, classe_ids: selectedClasses, salle, separable,
+    effectif_max: effectif, inscriptions: [], seances, date_ouverture_inscriptions: ouverture, date_fermeture_inscriptions: fermeture, exclusives_ids: exclusives
+  };
+
+  try {
+    await apiPost('/activites', newAct);
+    await fetchAllData();
+    majTableProf();
+    majListeExclusives();
+    resetForm();
+    alert('Activité créee et enregistrée en base!');
+  } catch(e) {
+    alert('Erreur lors de la création : ' + e.message);
+  }
 }
 
 /* ============================
@@ -869,138 +1023,28 @@ function ajouterSeanceManuelle(){
   }
 }
 
-/* reset form */
-function resetForm(){
-  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML='';
-  $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
-  // remettre animateur par défaut et visible_avant à false
-  if($('#animateur-select')){
-    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
-    $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
-  }
-  if($('#visible-avant')) $('#visible-avant').checked = false;
-}
-
-/* creare Activite */
-function creerActivite(){
-  const titre = $('#titre').value.trim();
-  const salle = $('#salle').value.trim();
-  const effectif = parseInt($('#effectif').value) || 10;
-  const separable = $('#separable').checked;
-  const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
-  const seances = Array.from(document.querySelectorAll('.seance-input'))
-    .map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []}))
-    .filter(s=>s.date_heure);
-  const ouverture = $('#ouverture').value;
-  const fermeture = $('#fermeture').value;
-  const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
-  const seancesContainer = $('#seances-container');
-
-  // retirer anciennes erreurs
-  let hasError = false;
-  ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
-    $(sel).classList.remove('error');
-  });
-  $all('.seance-input').forEach(inp => inp.classList.remove('error'));
-  seancesContainer.classList.remove('error'); // container des séances
-
-  // validation des champs obligatoires
-  if (!titre) { $('#titre').classList.add('error'); hasError = true; }
-  if (!salle) { $('#salle').classList.add('error'); hasError = true; }
-  if (!effectif || effectif < 1) { $('#effectif').classList.add('error'); hasError = true; }
-  if (selectedClasses.length === 0) { $('#classe-select').classList.add('error'); hasError = true; }
-  if (!ouverture) { $('#ouverture').classList.add('error'); hasError = true; }
-  if (!fermeture) { $('#fermeture').classList.add('error'); hasError = true; }
-  if (seances.length === 0) {seancesContainer.classList.add('error'); hasError = true;}
-
-  if (hasError) {
-    // retirer l'erreur dès que l'utilisateur modifie le champ
-    $all('input, select').forEach(el => {
-      el.oninput = () => el.classList.remove('error');
-    });
-    // sur les séances
-    seancesContainer.onchange = () => seancesContainer.classList.remove('error');
-    return; // bloquer la création tant que les champs obligatoires ne sont pas remplis
-  }
-
-  // récupération animateur + visible_avant
-  const animateurId = $('#animateur-select') ? parseInt($('#animateur-select').value) : currentUser.id;
-  const visibleAvant = $('#visible-avant') ? !!$('#visible-avant').checked : false;
-
-  // tout est bon → création de l'activité
-  const newAct = {
-    id: activites.length + 1,
-    titre, prof_id: currentUser.id, animateur_id: animateurId, visible_avant: visibleAvant, classe_ids: selectedClasses, salle, separable,
-    effectif_max: effectif, inscriptions: [], seances, ouverture_inscription: ouverture, fermeture_inscription: fermeture, exclusives_ids: exclusives
-  };
-  activites.push(newAct);
-  majTableProf(); majListeExclusives(); resetForm();
-  alert('Activité créée !');
-}
-
-/* prof table update */
-function majTableProf(){
-  const tbody = $('#table-prof tbody'); tbody.innerHTML = '';
-  activites.forEach(act=>{
-    if(act.prof_id !== currentUser?.id) return;
-    const inscritsText = act.inscriptions.map(id=> users.find(u=>u.id===id)?.prenom || '').join(', ') || '—';
-    const classesText = act.classe_ids.map(id=> classes.find(c=>c.id===id)?.nom || '').join(', ');
-    const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
-    const tr = document.createElement('tr');
-
-    tr.innerHTML = `
-      <td>${act.titre}</td>
-      <td>${act.salle}</td>
-      <td>${act.effectif_max}</td>
-      <td>${getUserName(act.animateur_id)}</td>
-      <td>${act.inscriptions.length} : ${inscritsText}</td>
-      <td>${classesText}</td>
-      <td>${act.separable ? 'Oui' : 'Non'}</td>
-      <td>${act.visible_avant ? 'Oui' : 'Non'}</td>
-      <td>${formatDateLocal(act.ouverture_inscription)}</td>
-      <td>${formatDateLocal(act.fermeture_inscription)}</td>
-      <td>${seancesText}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-/* exclusives list */
-function majListeExclusives(){
-  const select = $('#exclusives-select'); select.innerHTML='';
-  activites.forEach(act=>{
-    const opt = document.createElement('option'); opt.value=act.id; opt.textContent=act.titre;
-    select.appendChild(opt);
-  });
-}
 
 
 /* ===========================
-   Sidebar panels visibility
+   Sidebar panels
    =========================== */
-function updateSidePanels() {
-  // raccourcis (mode dev seulement)
-  const raccourcis = $('#sidebar-raccourcis');
-  if (raccourcis) raccourcis.classList.toggle('hidden', MODE != 'dev');
-
-  // statut (mode dev seulement)
-  const statut = $('#sidebar-statut');
-  if (statut) statut.classList.toggle('hidden', MODE !== 'dev');
-
-  // aide rapide (uniquement si prof connecté)
-  const aideRapide = $('#sidebar-aide');
-  if (aideRapide) aideRapide.classList.toggle('hidden', !(currentUser && currentUser.role === 'prof'));
+function updateSidePanels(){
+    if($('#sidebar-raccourcis')) $('#sidebar-raccourcis').classList.toggle('hidden', MODE!='dev');
+    if($('#sidebar-statut')) $('#sidebar-statut').classList.toggle('hidden', MODE!='dev');
+    if($('#sidebar-aide')) $('#sidebar-aide').classList.toggle('hidden',!(currentUser && currentUser.role==='prof'));
 }
 
-
-/* initial UI populate */
-(function init(){
-  populateSelects();
-  majListeExclusives();
-  $('#count-acts').textContent = activites.length;
-  $('#count-users').textContent = users.length;
-  updateSidePanels();
-  //demoLogin('eleve1'); // décommenter pour debug
+/* ===========================
+   Init
+   =========================== */
+(async function init(){
+    try{
+        await fetchAllData();
+        onAuthChange();
+        updateSidePanels()
+    } catch(e){
+        console.error(e);
+    }
 })();
 </script>
 </body>
