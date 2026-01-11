@@ -127,10 +127,6 @@ class MultiSelect {
                     selected = false;
                 }
                 this._updateHeader();
-                if (this.options.search) {
-                    this.element.querySelector('.multi-select-search').value = '';
-                    this.element.querySelectorAll('.multi-select-option').forEach(opt => opt.style.display = 'flex');
-                }
                 if (this.options.closeListOnItemSelect) {
                     toggleDropdown(true);
                 }
@@ -158,14 +154,42 @@ class MultiSelect {
             selectAllButton.onclick = (e) => {
                 e.stopPropagation();
                 if (this.element.classList.contains('disabled')) return;
-                let allSelected = selectAllButton.classList.contains('multi-select-selected');
-                this.element.querySelectorAll('.multi-select-option').forEach(option => {
-                    let dataItem = this.data.find(data => data.value == option.dataset.value);
-                    if (dataItem && ((allSelected && dataItem.selected) || (!allSelected && !dataItem.selected))) {
-                        option.click();
+                
+                let visibleOptions = Array.from(this.element.querySelectorAll('.multi-select-option'))
+                    .filter(option => option.style.display !== 'none');
+                
+                let allVisibleSelected = visibleOptions.every(option => 
+                    option.classList.contains('multi-select-selected')
+                );
+                if (allVisibleSelected) {
+                    visibleOptions.forEach(option => {
+                        if (option.classList.contains('multi-select-selected')) {
+                            option.click();
+                        }
+                    });
+                } else {
+                    let visibleUnselectedOptions = visibleOptions.filter(option => 
+                        !option.classList.contains('multi-select-selected')
+                    );
+                    
+                    if (this.options.max) {
+                        const availableSlots = this.options.max - this.selectedValues.length;
+                        visibleUnselectedOptions = visibleUnselectedOptions.slice(0, availableSlots);
                     }
-                });
-                selectAllButton.classList.toggle('multi-select-selected');
+                    visibleUnselectedOptions.forEach(option => {
+                        option.click();
+                    });
+                }
+                let visibleOptionsAfter = Array.from(this.element.querySelectorAll('.multi-select-option'))
+                    .filter(option => option.style.display !== 'none');
+                let allVisibleSelectedAfter = visibleOptionsAfter.every(option => 
+                    option.classList.contains('multi-select-selected')
+                );
+                if (allVisibleSelectedAfter && visibleOptionsAfter.length > 0) {
+                    selectAllButton.classList.add('multi-select-selected');
+                } else {
+                    selectAllButton.classList.remove('multi-select-selected');
+                }
             };
         }
         if (this.selectElement.id && document.querySelector('label[for="' + this.selectElement.id + '"]')) {
@@ -246,6 +270,10 @@ class MultiSelect {
             if (headerElement.classList.contains('multi-select-header-active')) {
                 headerElement.classList.remove('multi-select-header-active');
                 this.element.setAttribute('aria-expanded', 'false');
+                if (this.options.search) {
+                    this.element.querySelector('.multi-select-search').value='';
+                    this.element.querySelectorAll('.multi-select-option').forEach(opt => opt.style.display = 'flex');
+                }
             }
         }
     }
