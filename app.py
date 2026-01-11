@@ -9,12 +9,43 @@ import secrets
 import functools
 import os
 import logging
+import pytz
 
+from colorama import init
+from dotenv import load_dotenv
+import smtplib
+from email.message import EmailMessage
+
+from validators import (
+  InputValidator,
+  ValidationError,
+  ValidatorConfig,
+  safe_string,
+  safe_int,
+  safe_email
+)
+
+init()
 app = Flask(__name__)
 
 # ========================
 # CONFIGURATION SÉCURISÉE
 # ========================
+load_dotenv()
+EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS')
+EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5000')
+TIMEZONE = pytz.timezone('Europe/Paris')
+
+def now_local():
+  """Retourne l'heure actuelle en heure locale française"""
+  return datetime.now(TIMEZONE).replace(tzinfo=None)
+
+def now_local_str():
+  """Retourne l'heure actuelle en heure locale au format ISO"""
+  return datetime.now(TIMEZONE).replace(tzinfo=None).isoformat()
+
+
 app.config.update(
   SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
   SESSION_COOKIE_HTTPONLY=True,
@@ -26,14 +57,23 @@ DB = "essaie.db"
 
 # Configuration logging sécurisé
 logging.basicConfig(
-  level=logging.INFO,
-  format='%(asctime)s - %(levelname)s - %(message)s',
+  level=logging.DEBUG,
+  format='{asctime} - {levelname:<8} - {message}',
   handlers=[
     logging.FileHandler('security.log'),
     logging.StreamHandler()
-  ]
+  ],
+  style="{"
 )
 logger = logging.getLogger(__name__)
+
+# ============= CONFIGURATION VALIDATEUR =============
+# Configuration personnalisée pour le validateur
+validator_config = ValidatorConfig(
+  max_email_length=100,
+  default_max_string_length=255
+)
+InputValidator.configure(validator_config)
 
 # ========================
 # DÉCORATEURS DE SÉCURITÉ
@@ -110,6 +150,32 @@ def validate_integer(value, min_val=None, max_val=None):
     return int_val
   except (ValueError, TypeError):
     raise ValueError("Valeur entière requise")
+
+# ========================
+# FONCTION D'ENVOI D'EMAIL
+# ========================
+def send_email(to_email, subject, html_content, text_content):
+  """Envoie un email"""
+  if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+    logger.error("EMAIL_ADDRESS ou EMAIL_PASSWORD non configuré")
+    return False, "Configuration email manquante"
+
+  msg = EmailMessage()
+  msg['Subject'] = subject
+  msg['From'] = f"CONCORDE <{EMAIL_ADDRESS}>"
+  msg['To'] = to_email
+  msg.set_content(text_content)
+  msg.add_alternative(html_content, subtype='html')
+
+  try:
+    with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+      smtp.starttls()
+      smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+      smtp.send_message(msg)
+    return True, "Email envoyé"
+  except Exception as e:
+    logger.error(f"Erreur envoi email : {str(e)}")
+    return False, f"Erreur : {str(e)}"
 
 # ========================
 # AUTHENTIFICATION
@@ -227,28 +293,40 @@ def get_activites():
         conn.close()
         return jsonify({"error": "Classe non définie"}), 400
 
-      # Élèves : seulement les activités de leur classe
       rows = conn.execute("""
         SELECT DISTINCT a.id, a.titre, a.description, a.prof_id, a.salle, a.separable,
               a.effectif_max, a.date_ouverture_inscriptions, a.date_fermeture_inscriptions,
               COALESCE(a.animateur_id, a.prof_id) as animateur_id,
-              COALESCE(a.visible_avant, 0) as visible_avant, a.groupe_id
+              COALESCE(a.visible_avant, 0) as visible_avant, a.groupe_id,
+                    u.prenom AS animateur_prenom,
+                    u.nom AS animateur_nom
         FROM activites a
         JOIN activite_classes ac ON a.id = ac.activite_id
+        LEFT JOIN users u ON u.id = COALESCE(a.animateur_id, a.prof_id)
         WHERE ac.classe_id = ?
         ORDER BY a.titre
       """, (classe_id,)).fetchall()
     else:
-      # Prof/Admin : toutes les activités
       rows = conn.execute("""
-          SELECT a.id, a.titre, a.description, a.prof_id, a.salle, a.separable,
-                a.effectif_max, a.date_ouverture_inscriptions, a.date_fermeture_inscriptions,
-                COALESCE(a.animateur_id, a.prof_id) as animateur_id,
-                COALESCE(a.visible_avant, 0) as visible_avant, a.groupe_id
-          FROM activites a
-          WHERE a.prof_id = ? OR a.animateur_id = ?
-          ORDER BY a.titre
-      """, (session["user_id"], session["user_id"])).fetchall()
+        SELECT
+              a.id, a.titre, a.description, a.prof_id, a.salle, a.separable,
+              a.effectif_max, a.date_ouverture_inscriptions, a.date_fermeture_inscriptions,
+              COALESCE(a.animateur_id, a.prof_id) AS animateur_id,
+              COALESCE(a.visible_avant, 0) AS visible_avant, a.groupe_id,
+              u.prenom AS animateur_prenom,
+              u.nom AS animateur_nom
+        FROM activites a
+        LEFT JOIN users u ON u.id = COALESCE(a.animateur_id, a.prof_id)
+        ORDER BY a.titre
+      """).fetchall()
+
+    # Pour les élèves, récupérer la liste des activités auxquelles ils sont inscrits
+    inscriptions_eleve = set()
+    if role == "eleve":
+      inscriptions = conn.execute("""
+        SELECT activite_id FROM inscriptions WHERE eleve_id = ?
+      """, (user_id,)).fetchall()
+      inscriptions_eleve = {ins["activite_id"] for ins in inscriptions}
 
     conn.close()
 
@@ -258,15 +336,19 @@ def get_activites():
     for a in rows:
       act = dict(a)
 
-      # Filtres spécifiques aux élèves
       if role == "eleve":
         ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
         fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
-        if not act["visible_avant"] and now < ouverture:
-          continue
-        if now > fermeture:
-          continue
+        est_inscrit = act["id"] in inscriptions_eleve
+
+        if not est_inscrit:
+          # Si non inscrit, appliquer les filtres de visibilité
+          if not act["visible_avant"] and now < ouverture:
+            continue
+          if now > fermeture:
+            continue
+        # Si inscrit, toujours afficher l'activité
 
       result.append(act)
 
@@ -275,6 +357,8 @@ def get_activites():
   except Exception as e:
     logger.error(f"Erreur /activites: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
+
+
 
 @app.route("/activites", methods=["POST"])
 @role_required('prof', 'admin')
@@ -285,7 +369,6 @@ def create_activite():
     if not valid:
       return jsonify({"error": error}), 400
 
-    # Validation sécurisée des données
     titre = sanitize_string(data.get("titre"), 100)
     description = sanitize_string(data.get("description", ""), 500)
     salle = sanitize_string(data.get("salle"), 50)
@@ -298,7 +381,6 @@ def create_activite():
     if not isinstance(classe_ids, list) or len(classe_ids) == 0:
       return jsonify({"error": "Classes requises"}), 400
 
-    # Valider les classe_ids
     for cid in classe_ids:
       validate_integer(cid, min_val=1)
 
@@ -306,27 +388,42 @@ def create_activite():
     if not isinstance(seances, list) or len(seances) == 0:
       return jsonify({"error": "Séances requises"}), 400
 
-    # Valider les dates
     ouverture = data.get("date_ouverture_inscriptions")
     fermeture = data.get("date_fermeture_inscriptions")
 
     try:
-      datetime.fromisoformat(ouverture)
-      datetime.fromisoformat(fermeture)
+      date_ouverture = datetime.fromisoformat(ouverture)
+      date_fermeture = datetime.fromisoformat(fermeture)
     except ValueError:
       return jsonify({"error": "Format de date invalide"}), 400
 
+    # Vérifier que fermeture > ouverture
+    if date_fermeture <= date_ouverture:
+      return jsonify({"error": "La date de fermeture doit être après la date d'ouverture"}), 400
+
+    # Vérifier que la première séance est après la fermeture des inscriptions
+    seances_dates = [datetime.fromisoformat(s['date_heure']) for s in seances if 'date_heure' in s]
+    if seances_dates:
+      premiere_seance = min(seances_dates)
+      if premiere_seance <= date_fermeture:
+        return jsonify({"error": "La première séance doit être après la date de fermeture des inscriptions"}), 400
+
     animateur_id = validate_integer(data.get("animateur_id", session["user_id"]), min_val=1)
 
-    # Gestion du groupe d'exclusivité
+    # Vérifier que l'animateur existe
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    animateur_exists = cur.execute("SELECT 1 FROM users WHERE id=?", (animateur_id,)).fetchone()
+    if not animateur_exists:
+      conn.rollback()
+      conn.close()
+      return jsonify({"error": f"Animateur invalide: {animateur_id}"}), 400
+
     groupe_id = data.get("groupe_id", None)
     if groupe_id is not None and groupe_id != "":
       groupe_id = validate_integer(groupe_id, min_val=1)
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    # Vérifier que le groupe existe si spécifié
     if groupe_id:
       groupe_exists = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
       if not groupe_exists:
@@ -334,7 +431,6 @@ def create_activite():
         conn.close()
         return jsonify({"error": f"Groupe invalide: {groupe_id}"}), 400
 
-    # Insertion de l'activité
     cur.execute("""
       INSERT INTO activites
       (titre, description, prof_id, salle, separable, effectif_max,
@@ -345,9 +441,7 @@ def create_activite():
 
     act_id = cur.lastrowid
 
-    # Liaison classes (vérifier que les classes existent)
     for cid in classe_ids:
-      # Vérifier que la classe existe
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
         conn.rollback()
@@ -357,17 +451,17 @@ def create_activite():
       cur.execute("INSERT INTO activite_classes (activite_id, classe_id) VALUES (?, ?)",
                   (act_id, cid))
 
-    # Séances (valider les dates)
     for s in seances:
       if 'date_heure' in s and s['date_heure']:
-          try:
-            datetime.fromisoformat(s['date_heure'])
-            cur.execute("INSERT INTO seances (activite_id, date_heure) VALUES (?, ?)",
-                      (act_id, s["date_heure"]))
-          except ValueError:
-            conn.rollback()
-            conn.close()
-            return jsonify({"error": "Format de date séance invalide"}), 400
+        try:
+          datetime.fromisoformat(s['date_heure'])
+          duree = int(s.get('duree', 60))
+          cur.execute("INSERT INTO seances (activite_id, date_heure, duree) VALUES (?, ?, ?)",
+                      (act_id, s["date_heure"], duree))
+        except ValueError:
+          conn.rollback()
+          conn.close()
+          return jsonify({"error": "Format de date séance invalide"}), 400
 
     conn.commit()
     conn.close()
@@ -402,7 +496,6 @@ def inscrire():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Vérifier que l'activité est accessible à cette classe
     act = cur.execute("""
       SELECT a.* FROM activites a
       JOIN activite_classes ac ON a.id = ac.activite_id
@@ -413,12 +506,10 @@ def inscrire():
       conn.close()
       return jsonify({"error": "Activité non accessible à votre classe"}), 403
 
-    # Vérifier que l'activité est NON sécable
     if act["separable"]:
       conn.close()
       return jsonify({"error": "Cette activité est sécable, inscrivez-vous séance par séance"}), 400
 
-    # Vérifier les dates
     now = datetime.now()
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
@@ -427,7 +518,6 @@ def inscrire():
       conn.close()
       return jsonify({"error": "Période d'inscription fermée"}), 400
 
-    # VÉRIFICATION D'EXCLUSIVITÉ DE GROUPE
     if act["groupe_id"]:
       conflits = cur.execute("""
         SELECT DISTINCT a.titre
@@ -446,14 +536,12 @@ def inscrire():
           "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
         }), 400
 
-    # Récupérer toutes les séances de l'activité
     seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
 
     if not seances:
       conn.close()
       return jsonify({"error": "Aucune séance pour cette activité"}), 400
 
-    # Vérifier si déjà inscrit à une séance
     existing = cur.execute("""
       SELECT 1 FROM presences
       WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
@@ -463,7 +551,6 @@ def inscrire():
       conn.close()
       return jsonify({"error": "Déjà inscrit"}), 400
 
-    # Vérifier l'effectif pour chaque séance
     for seance in seances:
       count = cur.execute("""
         SELECT COUNT(*) FROM presences WHERE seance_id=?
@@ -473,14 +560,12 @@ def inscrire():
         conn.close()
         return jsonify({"error": f"Effectif complet pour au moins une séance"}), 400
 
-    # Inscrire à TOUTES les séances
     for seance in seances:
       cur.execute("""
         INSERT INTO presences (seance_id, eleve_id, present, commentaire)
         VALUES (?, ?, 0, '')
       """, (seance["id"], user_id))
 
-    # Garder l'ancienne table inscriptions pour compatibilité
     cur.execute("""
       INSERT INTO inscriptions (eleve_id, activite_id, date_inscription)
       VALUES (?, ?, ?)
@@ -498,7 +583,6 @@ def inscrire():
     logger.error(f"Erreur inscription: {str(e)}")
     return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
-
 @app.route("/inscriptions", methods=["DELETE"])
 @role_required('eleve')
 def desinscrire():
@@ -513,13 +597,11 @@ def desinscrire():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Supprimer de presences (toutes les séances)
     cur.execute("""
       DELETE FROM presences
       WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
     """, (user_id, activite_id))
 
-    # Supprimer de inscriptions
     result = cur.execute("DELETE FROM inscriptions WHERE eleve_id=? AND activite_id=?",
                         (user_id, activite_id))
 
@@ -539,8 +621,6 @@ def desinscrire():
     logger.error(f"Erreur désinscription: {str(e)}")
     return jsonify({"error": "Erreur lors de la désinscription"}), 500
 
-
-# Inscription à UNE séance (activité sécable)
 @app.route("/inscriptions/seance", methods=["POST"])
 @role_required('eleve')
 def inscrire_seance():
@@ -559,7 +639,6 @@ def inscrire_seance():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Récupérer l'activité via la séance
     seance = cur.execute("SELECT * FROM seances WHERE id=?", (seance_id,)).fetchone()
     if not seance:
       conn.close()
@@ -567,7 +646,6 @@ def inscrire_seance():
 
     activite_id = seance["activite_id"]
 
-    # Vérifier accès à l'activité
     act = cur.execute("""
       SELECT a.* FROM activites a
       JOIN activite_classes ac ON a.id = ac.activite_id
@@ -578,12 +656,10 @@ def inscrire_seance():
       conn.close()
       return jsonify({"error": "Activité non accessible"}), 403
 
-    # Vérifier que l'activité est sécable
     if not act["separable"]:
       conn.close()
       return jsonify({"error": "Cette activité n'est pas sécable"}), 400
 
-    # Vérifier dates
     now = datetime.now()
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
@@ -592,7 +668,6 @@ def inscrire_seance():
       conn.close()
       return jsonify({"error": "Période d'inscription fermée"}), 400
 
-    # VÉRIFICATION D'EXCLUSIVITÉ DE GROUPE
     if act["groupe_id"]:
       conflits = cur.execute("""
         SELECT DISTINCT a.titre
@@ -611,22 +686,18 @@ def inscrire_seance():
           "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
         }), 400
 
-
-    # Vérifier effectif de la séance
     count = cur.execute("SELECT COUNT(*) FROM presences WHERE seance_id=?",
                         (seance_id,)).fetchone()[0]
     if count >= act["effectif_max"]:
       conn.close()
       return jsonify({"error": "Séance complète"}), 400
 
-    # Vérifier si déjà inscrit à cette séance
     existing = cur.execute("SELECT 1 FROM presences WHERE eleve_id=? AND seance_id=?",
                           (user_id, seance_id)).fetchone()
     if existing:
       conn.close()
       return jsonify({"error": "Déjà inscrit à cette séance"}), 400
 
-    # Inscription
     cur.execute("""
       INSERT INTO presences (seance_id, eleve_id, present, commentaire)
       VALUES (?, ?, 0, '')
@@ -644,7 +715,6 @@ def inscrire_seance():
     logger.error(f"Erreur inscription séance: {str(e)}")
     return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
-# Désinscription d'UNE séance
 @app.route("/inscriptions/seance", methods=["DELETE"])
 @role_required('eleve')
 def desinscrire_seance():
@@ -677,8 +747,6 @@ def desinscrire_seance():
     logger.error(f"Erreur désinscription séance: {str(e)}")
     return jsonify({"error": "Erreur lors de la désinscription"}), 500
 
-
-
 # ========================
 # DONNÉES ENRICHIES
 # ========================
@@ -692,7 +760,6 @@ def get_seances():
     conn = get_db_connection()
 
     if role == "eleve" and classe_id:
-      # Élèves : seulement les séances de leur classe
       rows = conn.execute("""
         SELECT DISTINCT s.* FROM seances s
         JOIN activites a ON s.activite_id = a.id
@@ -701,7 +768,6 @@ def get_seances():
         ORDER BY s.date_heure
       """, (classe_id,)).fetchall()
     else:
-      # Prof/Admin : toutes les séances
       rows = conn.execute("SELECT * FROM seances ORDER BY date_heure").fetchall()
 
     conn.close()
@@ -715,28 +781,22 @@ def get_seances():
 def get_inscriptions():
   try:
     conn = get_db_connection()
-
     rows = conn.execute("SELECT * FROM inscriptions ORDER BY date_inscription").fetchall()
-
     conn.close()
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /inscriptions: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
 
-# Nouvelle route pour récupérer les inscriptions par séance (manquante)
 @app.route("/inscriptions/seances")
 @login_required
 def get_inscriptions_seances():
   try:
     conn = get_db_connection()
-
-    # TOUJOURS retourner TOUTES les inscriptions (pour tous les rôles sinon les comptes ne sont pas bons)
     rows = conn.execute("""
-        SELECT seance_id, eleve_id
-        FROM presences
+      SELECT seance_id, eleve_id
+      FROM presences
     """).fetchall()
-
     conn.close()
     return jsonify([dict(r) for r in rows])
   except Exception as e:
@@ -753,11 +813,9 @@ def get_activite_classes():
     conn = get_db_connection()
 
     if role == "eleve" and classe_id:
-      # Élèves : seulement les relations de leur classe
       rows = conn.execute("SELECT * FROM activite_classes WHERE classe_id = ?",
                           (classe_id,)).fetchall()
     else:
-      # Prof/Admin : toutes les relations
       rows = conn.execute("SELECT * FROM activite_classes").fetchall()
 
     conn.close()
@@ -766,14 +824,225 @@ def get_activite_classes():
     logger.error(f"Erreur /activite_classes: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
 
+# ========================
+# GROUPES D'EXCLUSIVITÉ - ÉLÈVES NON INSCRITS
+# ========================
 
+@app.route("/groupes/<int:groupe_id>/eleves-non-inscrits", methods=["GET"])
+@role_required('prof', 'admin')
+def get_eleves_non_inscrits(groupe_id):
+  """Récupère la liste des élèves non inscrits à un groupe d'activités"""
+  try:
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Vérifier que le groupe existe
+    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    if not groupe:
+      conn.close()
+      return jsonify({"error": "Groupe introuvable"}), 404
+
+    # Récupérer toutes les activités du groupe
+    activites = cur.execute("""
+      SELECT id FROM activites WHERE groupe_id = ?
+    """, (groupe_id,)).fetchall()
+
+    if not activites:
+      conn.close()
+      return jsonify({"eleves": []})
+
+    activite_ids = [a["id"] for a in activites]
+
+    # Récupérer toutes les classes concernées par ces activités
+    classes_ids = cur.execute("""
+      SELECT DISTINCT classe_id
+      FROM activite_classes
+      WHERE activite_id IN ({})
+    """.format(','.join('?' * len(activite_ids))), activite_ids).fetchall()
+
+    if not classes_ids:
+      conn.close()
+      return jsonify({"eleves": []})
+
+    classe_ids_list = [c["classe_id"] for c in classes_ids]
+
+    # Récupérer tous les élèves de ces classes
+    eleves_concernes = cur.execute("""
+      SELECT u.id, u.prenom, u.nom, u.email, u.classe_id, c.nom as classe_nom
+      FROM users u
+      LEFT JOIN classes c ON u.classe_id = c.id
+      WHERE u.role = 'eleve'
+      AND u.classe_id IN ({})
+      ORDER BY u.nom, u.prenom
+    """.format(','.join('?' * len(classe_ids_list))), classe_ids_list).fetchall()
+
+    # Pour chaque élève, vérifier s'il est inscrit à au moins une activité du groupe
+    eleves_non_inscrits = []
+
+    for eleve in eleves_concernes:
+      # Vérifier s'il existe une inscription
+      inscription = cur.execute("""
+        SELECT 1
+        FROM presences p
+        JOIN seances s ON p.seance_id = s.id
+        JOIN activites a ON s.activite_id = a.id
+        WHERE p.eleve_id = ?
+        AND a.groupe_id = ?
+        LIMIT 1
+      """, (eleve["id"], groupe_id)).fetchone()
+
+      if not inscription:
+        eleve_dict = dict(eleve)
+        # Vérifier si un mail a déjà été envoyé récemment (dans les 7 derniers jours)
+        mail_recent = cur.execute("""
+          SELECT date_envoi
+          FROM rappels_inscription
+          WHERE eleve_id = ? AND groupe_id = ?
+          AND datetime(date_envoi) > datetime('now', '-7 days')
+          ORDER BY date_envoi DESC
+          LIMIT 1
+        """, (eleve["id"], groupe_id)).fetchone()
+
+        eleve_dict["dernier_mail"] = mail_recent["date_envoi"] if mail_recent else None
+        eleves_non_inscrits.append(eleve_dict)
+
+    conn.close()
+
+    return jsonify({
+      "groupe": dict(groupe),
+      "eleves": eleves_non_inscrits
+    })
+
+  except Exception as e:
+    logger.error(f"Erreur get_eleves_non_inscrits: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/groupes/<int:groupe_id>/rappel-inscription", methods=["POST"])
+@role_required('prof', 'admin')
+def envoyer_rappel_inscription(groupe_id):
+  """Envoie un mail de rappel d'inscription à un élève"""
+  try:
+    data = request.json
+    if not data or 'eleve_id' not in data:
+      return jsonify({"error": "Données manquantes"}), 400
+
+    eleve_id = validate_integer(data.get("eleve_id"), min_val=1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Récupérer le groupe
+    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    if not groupe:
+      conn.close()
+      return jsonify({"error": "Groupe introuvable"}), 404
+
+    # Récupérer l'élève
+    eleve = cur.execute("""
+      SELECT u.*, c.nom as classe_nom
+      FROM users u
+      LEFT JOIN classes c ON u.classe_id = c.id
+      WHERE u.id = ? AND u.role = 'eleve'
+    """, (eleve_id,)).fetchone()
+
+    if not eleve:
+      conn.close()
+      return jsonify({"error": "Élève introuvable"}), 404
+
+    if not eleve["email"]:
+      conn.close()
+      return jsonify({"error": "Cet élève n'a pas d'adresse email"}), 400
+
+    # Récupérer le prof qui envoie
+    prof = cur.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
+
+    # Préparer l'email
+    subject = f"Rappel d'inscription - Groupe {groupe['nom']}"
+
+    html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+body{{font-family: 'Arial', sans-serif;line-height: 1.6;color: #222;background: #f6f8fb;margin: 0;padding: 20px;}}
+.container{{max-width: 600px;margin: 0 auto;background: white;border-radius: 12px;overflow: hidden;box-shadow: 0 8px 24px rgba(20, 30, 60, 0.1);border: 1px solid #e2e8f0;}}
+.header{{background: linear-gradient(135deg, #0b72ff, #d63384);padding: 35px 20px;text-align: center;}}
+.header h1{{color: white;margin: 0;font-size: 28px;font-weight: 700;}}
+.content{{padding: 40px 30px;font-size: 15px;color: #333;}}
+.content p{{margin-bottom: 20px;}}
+.warning{{background: #fff5f7;border-left: 5px solid #dd1738;padding: 20px 15px;margin: 20px 0;border-radius: 8px;font-weight: 600;color: #9b1c31;}}
+.btn{{display: inline-block;background: linear-gradient(135deg, #0b72ff, #0052cc );color: #fff !important;padding: 14px 32px;text-decoration: none;border-radius: 10px;font-weight: 600;font-size: 16px;box-shadow: 0 6px 16px rgba(11, 114, 255, 0.3);transition: all 0.3s ease;}}
+.btn:hover{{transform: translateY(-2px);box-shadow: 0 10px 20px rgba(11, 114, 255, 0.4);}}
+.footer{{background: #f8fafc;padding: 20px;text-align: center;color: #666;font-size: 12px;}}
+.footer p{{margin: 5px 0;}}
+.highlight{{font-weight: 700;color: #0b72ff;}}
+a {{color: inherit;}}
+</style></head><body>
+<div class="container">
+<div class="header">
+<h1>Rappel D'inscription</h1>
+</div>
+<div class="content">
+<p>Bonjour <strong>{eleve['prenom']} {eleve['nom']}</strong>,</p>
+<p>Vous recevez ce message car vous ne vous êtes pas encore inscrit(e) à une activité du groupe d'activités <strong>"{groupe['nom']}"</strong>.</p>
+<div class="warning">
+⚠️ Action requise : Ce groupe d'activités est <strong>obligatoire</strong>. Veuillez vous inscrire dans la limite des places disponibles
+</div>
+<p>Pour vous inscrire, cliquez sur le bouton ci-dessous pour accéder à la plateforme <span class="highlight">CONCORDE</span> :</p>
+<p style="text-align:center;margin:35px 0">
+<a href="{BASE_URL}" class="btn">Accéder à CONCORDE</a>
+</p>
+<p><strong>Si vous pensez qu'il s'agit d'une erreur</strong>, veuillez contacter :</p>
+<p style="margin-left:20px">{prof['prenom']} {prof['nom']}</p>
+</div>
+<div class="footer">
+<p>Cet email a été envoyé automatiquement - <strong>NE PAS RÉPONDRE</strong></p>
+<p>© 2025 CONCORDE</p>
+</div>
+</div>
+</body></html>"""
+
+    text_content = f"""Bonjour {eleve['prenom']} {eleve['nom']},
+
+Vous recevez ce message car vous ne vous êtes pas encore inscrit(e) à une activité du groupe d'activités "{groupe['nom']}".
+
+⚠️ Ce groupe d'activités est OBLIGATOIRE. Vous devez vous inscrire à une activité dans la limite des places disponibles.
+
+Pour vous inscrire, connectez-vous à : {BASE_URL}
+
+Si vous pensez que c'est une erreur, contactez : {prof['prenom']} {prof['nom']}
+
+Cet email a été envoyé automatiquement - NE PAS RÉPONDRE
+CONCORDE © 2025"""
+
+    # Envoyer l'email
+    success, message = send_email(eleve["email"], subject, html_content, text_content)
+
+    if not success:
+      conn.close()
+      return jsonify({"error": message}), 500
+
+    # Enregistrer l'envoi
+    cur.execute("""
+      INSERT INTO rappels_inscription (eleve_id, groupe_id, date_envoi, envoye_par)
+      VALUES (?, ?, ?, ?)
+    """, (eleve_id, groupe_id, now_local_str(),session["user_id"]))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Rappel inscription envoyé: groupe {groupe_id} -> élève {eleve_id}")
+    return jsonify({"success": True, "message": "Email envoyé avec succès"})
+
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur envoi rappel: {str(e)}")
+    return jsonify({"error": "Erreur lors de l'envoi"}), 500
 
 # ========================
 # GROUPES D'EXCLUSIVITÉ
 # ========================
 
 @app.route("/groupes", methods=["GET"])
-@login_required    ##@role_required('prof', 'admin')
+@login_required
 def get_groupes():
   """Récupérer tous les groupes d'exclusivité"""
   try:
@@ -788,7 +1057,7 @@ def get_groupes():
 @app.route("/groupes", methods=["POST"])
 @role_required('prof', 'admin')
 def create_groupe():
-  """Créer un nouveau groupe d'exclusivité"""
+  """Créer un nouveau groupe d'exclusivité avec classes"""
   try:
     data = request.json
     valid, error = validate_basic(data, ['nom'])
@@ -797,30 +1066,50 @@ def create_groupe():
 
     nom = sanitize_string(data.get("nom"), 100)
     description = sanitize_string(data.get("description", ""), 255)
+    classe_ids = data.get("classe_ids", [])
+
+    # Validation : au moins une classe requise
+    if not isinstance(classe_ids, list) or len(classe_ids) == 0:
+      return jsonify({"error": "Au moins une classe est requise"}), 400
+
+    for cid in classe_ids:
+      validate_integer(cid, min_val=1)
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Vérifier si le nom existe déjà
     existing = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE nom=?", (nom,)).fetchone()
     if existing:
       conn.close()
       return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
 
+    # Créer le groupe
     cur.execute("INSERT INTO groupes_exclusivite (nom, description) VALUES (?, ?)",
-              (nom, description))
+                (nom, description))
     groupe_id = cur.lastrowid
+
+    # Associer les classes
+    for cid in classe_ids:
+      classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
+      if not classe_exists:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": f"Classe invalide: {cid}"}), 400
+
+      cur.execute("INSERT INTO groupe_classes (groupe_id, classe_id) VALUES (?, ?)",
+                  (groupe_id, cid))
 
     conn.commit()
     conn.close()
 
-    logger.info(f"Groupe créé: {nom} (ID: {groupe_id})")
+    logger.info(f"Groupe créé: {nom} (ID: {groupe_id}) avec {len(classe_ids)} classe(s)")
     return jsonify({"success": True, "id": groupe_id})
 
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
   except Exception as e:
     logger.error(f"Erreur création groupe: {str(e)}")
     return jsonify({"error": "Erreur lors de la création"}), 500
-
 
 @app.route("/groupes/<int:groupe_id>", methods=["DELETE"])
 @role_required('prof', 'admin')
@@ -830,7 +1119,6 @@ def delete_groupe(groupe_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Vérifier si des activités utilisent ce groupe
     activites_count = cur.execute(
       "SELECT COUNT(*) FROM activites WHERE groupe_id=?",
       (groupe_id,)
@@ -841,6 +1129,9 @@ def delete_groupe(groupe_id):
       return jsonify({
         "error": f"Impossible de supprimer : {activites_count} activité(s) utilisent ce groupe"
       }), 400
+
+    # Supprimer les associations classe (CASCADE devrait le faire, mais soyons explicites)
+    cur.execute("DELETE FROM groupe_classes WHERE groupe_id=?", (groupe_id,))
 
     result = cur.execute("DELETE FROM groupes_exclusivite WHERE id=?", (groupe_id,))
 
@@ -859,6 +1150,562 @@ def delete_groupe(groupe_id):
     return jsonify({"error": "Erreur lors de la suppression"}), 500
 
 
+@app.route("/groupes/<int:groupe_id>", methods=["PUT"])
+@role_required('prof', 'admin')
+def update_groupe(groupe_id):
+  """Modifier un groupe d'exclusivité"""
+  try:
+    data = request.json
+    valid, error = validate_basic(data, ['nom'])
+    if not valid:
+      return jsonify({"error": error}), 400
+
+    nom = sanitize_string(data.get("nom"), 100)
+    description = sanitize_string(data.get("description", ""), 255)
+    classe_ids = data.get("classe_ids", [])
+
+    # Validation : au moins une classe requise
+    if not isinstance(classe_ids, list) or len(classe_ids) == 0:
+      return jsonify({"error": "Au moins une classe est requise"}), 400
+
+    for cid in classe_ids:
+      validate_integer(cid, min_val=1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Vérifier que le groupe existe
+    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    if not groupe:
+      conn.close()
+      return jsonify({"error": "Groupe introuvable"}), 404
+
+    # Vérifier unicité du nom (sauf pour le groupe actuel)
+    existing = cur.execute(
+      "SELECT 1 FROM groupes_exclusivite WHERE nom=? AND id!=?",
+      (nom, groupe_id)
+    ).fetchone()
+    if existing:
+      conn.close()
+      return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
+
+    # Mettre à jour le groupe
+    cur.execute(
+      "UPDATE groupes_exclusivite SET nom=?, description=? WHERE id=?",
+      (nom, description, groupe_id)
+    )
+
+    # Supprimer les anciennes associations
+    cur.execute("DELETE FROM groupe_classes WHERE groupe_id=?", (groupe_id,))
+
+    # Ajouter les nouvelles associations
+    for cid in classe_ids:
+      classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
+      if not classe_exists:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": f"Classe invalide: {cid}"}), 400
+
+      cur.execute("INSERT INTO groupe_classes (groupe_id, classe_id) VALUES (?, ?)",
+                (groupe_id, cid))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Groupe modifié: {nom} (ID: {groupe_id})")
+    return jsonify({"success": True})
+
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur modification groupe: {str(e)}")
+    return jsonify({"error": "Erreur lors de la modification"}), 500
+
+
+@app.route("/groupe_classes", methods=["GET"])
+@login_required
+def get_groupe_classes():
+  """Récupérer toutes les associations groupe-classe"""
+  try:
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM groupe_classes ORDER BY groupe_id").fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+  except Exception as e:
+    logger.error(f"Erreur /groupe_classes: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+# ========================
+# GESTION DE L'APPEL
+# ========================
+
+@app.route("/seances/<int:seance_id>/appel", methods=["GET"])
+@role_required('prof', 'admin')
+def get_appel_info(seance_id):
+  """Récupère les infos pour faire l'appel d'une séance"""
+  try:
+    conn = get_db_connection()
+
+    seance = conn.execute("""
+      SELECT s.*, a.titre, a.salle, a.prof_id, a.animateur_id
+      FROM seances s
+      JOIN activites a ON s.activite_id = a.id
+      WHERE s.id = ?
+    """, (seance_id,)).fetchone()
+
+    if not seance:
+      conn.close()
+      return jsonify({"error": "Séance introuvable"}), 404
+
+    if seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    presences = conn.execute("""
+      SELECT p.*, u.prenom, u.nom, u.classe_id, c.nom as classe_nom
+      FROM presences p
+      JOIN users u ON p.eleve_id = u.id
+      LEFT JOIN classes c ON u.classe_id = c.id
+      WHERE p.seance_id = ?
+      ORDER BY u.nom, u.prenom
+    """, (seance_id,)).fetchall()
+
+    conn.close()
+
+    return jsonify({
+      "seance": dict(seance),
+      "presences": [dict(p) for p in presences]
+    })
+
+  except Exception as e:
+    logger.error(f"Erreur get_appel_info: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/seances/<int:seance_id>/appel", methods=["POST"])
+@role_required('prof', 'admin')
+def save_appel(seance_id):
+  """Enregistre l'appel d'une séance"""
+  try:
+    data = request.json
+    if not data or 'presences' not in data:
+      return jsonify({"error": "Données manquantes"}), 400
+
+    presences_data = data['presences']
+    if not isinstance(presences_data, list):
+      return jsonify({"error": "Format invalide"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    seance = cur.execute("""
+      SELECT a.prof_id, a.animateur_id
+      FROM seances s
+      JOIN activites a ON s.activite_id = a.id
+      WHERE s.id = ?
+    """, (seance_id,)).fetchone()
+
+    if not seance:
+      conn.close()
+      return jsonify({"error": "Séance introuvable"}), 404
+
+    if seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    for presence in presences_data:
+      eleve_id = validate_integer(presence.get('eleve_id'), min_val=1)
+      present = 1 if presence.get('present') else 0
+      commentaire = sanitize_string(presence.get('commentaire', ''), 500)
+
+      cur.execute("""
+        UPDATE presences
+        SET present = ?, commentaire = ?
+        WHERE seance_id = ? AND eleve_id = ?
+      """, (present, commentaire, seance_id, eleve_id))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Appel enregistré pour séance {seance_id} par user {session['user_id']}")
+    return jsonify({"success": True})
+
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur save_appel: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/seances/<int:seance_id>/appel-status", methods=["GET"])
+@role_required('prof', 'admin')
+def get_appel_status(seance_id):
+  """Vérifie si l'appel a été fait pour une séance"""
+  try:
+    conn = get_db_connection()
+
+    seance = conn.execute("""
+      SELECT s.*, a.prof_id, a.animateur_id
+      FROM seances s
+      JOIN activites a ON s.activite_id = a.id
+      WHERE s.id = ?
+    """, (seance_id,)).fetchone()
+
+    if not seance:
+      conn.close()
+      return jsonify({"error": "Séance introuvable"}), 404
+
+    animateur_id = seance["animateur_id"] if seance["animateur_id"] else seance["prof_id"]
+
+    if seance["prof_id"] != session["user_id"] and animateur_id != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    result = conn.execute("""
+      SELECT COUNT(*) as total,
+            SUM(CASE WHEN present = 1 THEN 1 ELSE 0 END) as presents
+      FROM presences
+      WHERE seance_id = ?
+    """, (seance_id,)).fetchone()
+
+    conn.close()
+
+    presents = result["presents"] if result and result["presents"] else 0
+    appel_fait = presents > 0
+
+    return jsonify({
+      "appel_fait": appel_fait,
+      "total": result["total"] if result else 0,
+      "presents": presents
+    })
+
+  except Exception as e:
+    logger.error(f"Erreur get_appel_status: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+# ========================
+# INVITATIONS PROFESSEURS
+# ========================
+
+def send_invitation_email(to_email, token):
+  """Envoie un email d'invitation avec un lien one-time"""
+  if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+    logger.error("EMAIL_ADDRESS ou EMAIL_PASSWORD non configuré")
+    return False, "Configuration email manquante"
+
+  subject = "🎓 Invitation à rejoindre CONCORDE"
+  signup_url = f"{BASE_URL}/inscription?token={token}"
+
+  html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{{font-family:Arial,sans-serif;line-height:1.6;color:#222;background:#f6f8fb;margin:0;padding:20px}}
+.container{{max-width:600px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 6px 20px rgba(20,30,60,0.1)}}
+.header{{background:linear-gradient(135deg,#0b72ff,#d63384);padding:30px;text-align:center}}
+.logo{{width:60px;height:60px;background:white;border-radius:12px;margin:0 auto 15px;font-size:30px;line-height:60px}}
+.header h1{{color:white;margin:0;font-size:24px}}
+.content{{padding:40px 30px}}
+.content h2{{color:#0b72ff;margin-top:0}}
+.btn{{display:inline-block;background:linear-gradient(135deg,#0b72ff,#0052cc);color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;box-shadow:0 4px 12px rgba(11,114,255,0.3)}}
+.info-box{{background:#f8fafc;border-left:4px solid #0b72ff;padding:15px;margin:20px 0;border-radius:6px}}
+.warning{{background:#fff5f7;border-left-color:#dd1738;color:#666;font-size:14px;margin-top:30px}}
+.footer{{background:#f8fafc;padding:20px;text-align:center;color:#666;font-size:12px}}
+.link{{color:#0b72ff;word-break:break-all}}
+</style></head><body>
+<div class="container">
+<div class="header"><div class="logo">📚</div><h1>CONCORDE</h1></div>
+<div class="content">
+<h2>Vous êtes invité(e) à rejoindre CONCORDE !</h2>
+<p>Bonjour,</p>
+<p>Vous avez été invité(e) à rejoindre la plateforme <strong>CONCORDE</strong> en tant que professeur.</p>
+<div class="info-box">
+<strong>✔</strong> Créer et gérer vos activités<br>
+<strong>✔</strong> Suivre les inscriptions des élèves<br>
+<strong>✔</strong> Gérer votre emploi du temps<br>
+<strong>✔</strong> Faire l'appel et suivre les présences
+</div>
+<p>Pour créer votre compte, cliquez sur le bouton ci-dessous :</p>
+<p style="text-align:center;margin:35px 0">
+<a href="{signup_url}" class="btn">🔐 Créer mon compte professeur</a>
+</p>
+<p>Si le bouton ne fonctionne pas, copiez ce lien :</p>
+<p class="link">{signup_url}</p>
+<div class="warning">
+<strong>⚠️ Important :</strong><br>
+• Ce lien est à usage unique et expire dans <strong>7 jours</strong><br>
+• Ne partagez pas ce lien<br>
+• Si vous n'avez pas demandé cette invitation, ignorez cet email
+</div>
+</div>
+<div class="footer">
+<p>Cet email a été envoyé automatiquement par CONCORDE</p>
+<p>© 2025 CONCORDE</p>
+</div>
+</div>
+</body></html>"""
+
+  text_content = f"""Vous êtes invité(e) à rejoindre CONCORDE !
+
+Bonjour,
+
+Pour créer votre compte professeur, visitez ce lien :
+{signup_url}
+
+⚠️ Important :
+- Ce lien est à usage unique et expire dans 7 jours
+- Ne partagez pas ce lien
+
+CONCORDE © 2025"""
+
+  return send_email(to_email, subject, html_content, text_content)
+
+@app.route("/admin/invitations", methods=["POST"])
+@role_required('admin')
+def create_invitation():
+  """Crée et envoie une invitation professeur"""
+  try:
+    data = request.json
+    valid, error = validate_basic(data, ['email'])
+    if not valid:
+      return jsonify({"error": error}), 400
+
+    email = sanitize_string(data.get("email"), 100).lower()
+
+    if '@' not in email or '.' not in email:
+      return jsonify({"error": "Format d'email invalide"}), 400
+
+    conn = get_db_connection()
+
+    existing = conn.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone()
+    if existing:
+      conn.close()
+      return jsonify({"error": "Un compte existe déjà avec cet email"}), 400
+
+    existing_token = conn.execute("""
+      SELECT 1 FROM invitation_tokens
+      WHERE email=? AND used=0 AND datetime(expires_at) > ?
+    """, (email, now_local_str())).fetchone()
+
+    if existing_token:
+      conn.close()
+      return jsonify({"error": "Une invitation est déjà en attente pour cet email"}), 400
+
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+
+    cur = conn.cursor()
+    cur.execute("""
+      INSERT INTO invitation_tokens (token, email, expires_at, created_by)
+      VALUES (?, ?, ?, ?)
+    """, (token, email, expires_at, session["user_id"]))
+
+    conn.commit()
+    conn.close()
+
+    success, message = send_invitation_email(email, token)
+
+    if not success:
+      return jsonify({"error": message}), 500
+
+    logger.info(f"Invitation créée pour {email}")
+    return jsonify({"success": True, "message": "Invitation envoyée"})
+
+  except Exception as e:
+    logger.error(f"Erreur création invitation : {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/admin/invitations", methods=["GET"])
+@role_required('admin')
+def list_invitations():
+  """Liste toutes les invitations"""
+  try:
+    conn = get_db_connection()
+    invitations = conn.execute("""
+      SELECT
+        it.*,
+        u.prenom || ' ' || u.nom as created_by_name,
+        uu.username as used_by_username
+      FROM invitation_tokens it
+      LEFT JOIN users u ON it.created_by = u.id
+      LEFT JOIN users uu ON it.used_by_user_id = uu.id
+      ORDER BY it.created_at DESC
+    """).fetchall()
+    conn.close()
+
+    return jsonify([dict(inv) for inv in invitations])
+  except Exception as e:
+    logger.error(f"Erreur liste invitations : {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/admin/invitations/<int:invitation_id>", methods=["DELETE"])
+@role_required('admin')
+def delete_invitation(invitation_id):
+  """Supprime une invitation non utilisée"""
+  try:
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    invitation = cur.execute(
+      "SELECT * FROM invitation_tokens WHERE id=? AND used=0",
+      (invitation_id,)
+    ).fetchone()
+
+    if not invitation:
+      conn.close()
+      return jsonify({"error": "Invitation introuvable ou déjà utilisée"}), 404
+
+    cur.execute("DELETE FROM invitation_tokens WHERE id=?", (invitation_id,))
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Invitation {invitation_id} supprimée")
+    return jsonify({"success": True})
+
+  except Exception as e:
+    logger.error(f"Erreur suppression invitation : {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/api/invitation-info")
+def get_invitation_info():
+  """Retourne les infos d'une invitation"""
+  try:
+    token = request.args.get('token')
+    if not token:
+      return jsonify({"error": "Token manquant"}), 400
+
+    conn = get_db_connection()
+    invitation = conn.execute("""
+      SELECT email
+      FROM invitation_tokens
+      WHERE token=? AND used=0 AND datetime(expires_at) > ?
+    """, (token, now_local_str())).fetchone()
+    conn.close()
+
+    if not invitation:
+      return jsonify({"error": "Token invalide ou expiré"}), 404
+
+    return jsonify(dict(invitation))
+
+  except Exception as e:
+    logger.error(f"Erreur info invitation : {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/inscription")
+def signup_form():
+  """Affiche le formulaire d'inscription"""
+  token = request.args.get('token')
+
+  if not token:
+    return "Token manquant", 400
+
+  conn = get_db_connection()
+  invitation = conn.execute("""
+    SELECT * FROM invitation_tokens
+    WHERE token=? AND used=0 AND datetime(expires_at) > ?
+  """, (token, now_local_str())).fetchone()
+  conn.close()
+
+  if not invitation:
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Lien expiré</title>
+<style>body{font-family:Arial;text-align:center;padding:50px}h1{color:#dd1738}</style>
+</head><body>
+<h1>❌ Lien d'invitation expiré ou invalide</h1>
+<p>Ce lien a expiré ou a déjà été utilisé.</p>
+<p>Contactez l'administrateur pour obtenir une nouvelle invitation.</p>
+</body></html>""", 404
+
+  return send_from_directory(".", "signup.html")
+
+@app.route("/inscription", methods=["POST"])
+def process_signup():
+  """Traite l'inscription d'un nouveau professeur"""
+  try:
+    data = request.json
+
+    required_fields = ['token', 'username', 'prenom', 'nom', 'matiere', 'password']
+    valid, error = validate_basic(data, required_fields)
+    if not valid:
+      return jsonify({"error": error}), 400
+
+    token = data.get("token")
+    username = sanitize_string(data.get("username"), 50)
+    prenom = sanitize_string(data.get("prenom"), 50)
+    nom = sanitize_string(data.get("nom"), 50)
+    matiere = sanitize_string(data.get("matiere"), 100)
+    password = data.get("password")
+    classe_id = data.get("classe_id")
+
+    if len(password) < 8:
+      return jsonify({"error": "Mot de passe trop court (min 8 caractères)"}), 400
+
+    if len(password) > 200:
+      return jsonify({"error": "Mot de passe trop long"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    invitation = cur.execute("""
+      SELECT * FROM invitation_tokens
+      WHERE token=? AND used=0 AND datetime(expires_at) > ?
+    """, (token, now_local_str())).fetchone()
+
+    if not invitation:
+      conn.close()
+      return jsonify({"error": "Token invalide ou expiré"}), 400
+
+    existing = cur.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
+    if existing:
+      conn.close()
+      return jsonify({"error": "Ce nom d'utilisateur existe déjà"}), 400
+
+    existing_email = cur.execute("SELECT 1 FROM users WHERE email=?", (invitation["email"],)).fetchone()
+    if existing_email:
+      conn.close()
+      return jsonify({"error": "Un compte existe déjà avec cet email"}), 400
+
+    if classe_id:
+      try:
+        classe_id = validate_integer(classe_id, min_val=1)
+        classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (classe_id,)).fetchone()
+        if not classe_exists:
+          conn.close()
+          return jsonify({"error": "Classe invalide"}), 400
+      except ValueError:
+        conn.close()
+        return jsonify({"error": "Classe invalide"}), 400
+    else:
+      classe_id = None
+
+    password_hash = generate_password_hash(password)
+
+    cur.execute("""
+      INSERT INTO users (prenom, nom, username, password_hash, role, email, classe_id)
+      VALUES (?, ?, ?, ?, 'prof', ?, ?)
+    """, (prenom, nom, username, password_hash, invitation["email"], classe_id))
+
+    user_id = cur.lastrowid
+
+    cur.execute("""
+      INSERT INTO professeurs (id, matiere)
+      VALUES (?, ?)
+    """, (user_id, matiere))
+
+    cur.execute("""
+      UPDATE invitation_tokens
+      SET used=1, used_at=?, used_by_user_id=?,
+        prenom=?, nom=?
+      WHERE token=?
+    """, (now_local_str(), user_id, prenom, nom, token))
+
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Nouveau professeur inscrit : {username} ({prenom} {nom}) - Matière: {matiere}")
+    return jsonify({"success": True, "message": "Compte créé avec succès"})
+
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur inscription : {str(e)}")
+    return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
 # ========================
 # SERVIR LE FRONT
@@ -867,13 +1714,20 @@ def delete_groupe(groupe_id):
 def index():
   return send_from_directory(".", "Concorde.html")
 
-@app.route("/styles.css")
-def styles():
-  return send_from_directory(".", "styles.css")
+@app.route("/<path:filename>")
+def serve_static(filename):
+  # Liste blanche des fichiers autorisés pour la sécurité
+  allowed_files = [
+    "styles.css",
+    "MultiSelect.css",
+    "script.js",
+    "MultiSelect.js"
+  ]
 
-@app.route("/script.js")
-def script():
-  return send_from_directory(".", "script.js")
+  if filename in allowed_files:
+    return send_from_directory(".", filename)
+  else:
+    return "File not found", 404
 
 # ========================
 # GESTION ERREURS
@@ -890,10 +1744,9 @@ def internal_error(error):
 
 if __name__ == "__main__":
   logger.info("Démarrage de l'application en mode production")
-  # Version sécurisée pour production
   app.run(
     debug=False,
-    host='0.0.0.0',  # Accessible sur le réseau local
+    host='0.0.0.0',
     port=5000,
     threaded=True
   )
