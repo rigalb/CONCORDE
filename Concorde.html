@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CONCORDE Prototype 6 (UI upgraded)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CONCORDE Prototype 7(UI upgraded)</title>
+  <link rel="author" href="#" />
 <style>
   :root{
     --bg:#f6f8fb;
@@ -121,6 +122,19 @@
   }
   input:focus, select:focus{outline:none;border-color:var(--primary); box-shadow:0 6px 18px rgba(11,114,255,0.08); transform:translateY(-1px);}
 
+  input.error, select.error {
+    border-color: #dd1738;
+    color: #dd1738;
+  }
+
+  .error {
+    border-color: #dd1738 !important; /* contour rouge */
+    color: #dd1738; /* texte rouge */
+  }
+  #seances-container.error {
+    border: 2px solid #dd1738;
+  }
+
   .login-cta{
     display:flex;flex-direction:column;gap:8px;align-items:stretch;
   }
@@ -168,10 +182,28 @@
 
   /* Seances list */
   #seances-container{min-height:80px;border:1px dashed #e6eef8;padding:12px;border-radius:8px;background:linear-gradient(180deg,#fff,#fcfdff)}
-  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid #f0f6fd;background:#fff}
-  .seance-item.small{font-size:13px;color:var(--muted)}
-  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #eef6ff}
 
+  .serie-hebdo{
+    background-color: rgba(11, 114, 255, 0.06);
+    border: 1px solid rgba(11, 114, 255, 0.2);
+    border-radius: var(--radius);
+    padding: 8px;
+    margin-bottom: 8px;
+    transition: box-shadow 0.2s ease;
+  }
+  .serie-hebdo:hover {
+    box-shadow: 0 4px 12px rgba(11,114,255,0.12); /* mise en avant au hover */
+  }
+
+  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:var(--radius);border:1px solid rgba(0,0,0,0.15);background:#fff;transition: border-color 0.2s ease, box-shadow 0.2s ease;}
+  .seance-item:hover{border-color: var(--primary);box-shadow: 0 4px 10px rgba(11,114,255,0.08)}
+
+  .seance-item.small{font-size:13px;color:var(--muted)}
+  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #dfe8f1;transition: border-color 0.2s ease, box-shadow 0.2s ease}
+  .seance-item input:focus{border-color: var(--primary);box-shadow: 0 4px 12px rgba(11,114,255,0.08);}
+
+
+  /* Pill / badges */
   .pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:13px;background:var(--glass);color:var(--primary);font-weight:600}
 
   /* Buttons */
@@ -330,7 +362,7 @@
             </div>
             <div>
               <label class="small">Sécable</label><br>
-              <input id="separable" type="checkbox" checked> <span class="muted">Permet répartition par sous-groupes</span>
+              <input id="separable" type="checkbox" checked> <span class="muted">Oblige l'inscription à toutes les séances en un clic</span>
             </div>
 
             <div class="full">
@@ -469,6 +501,11 @@ function formatDateLocal(str){
     return d.toLocaleString('fr-FR', {hour12:false});
   } catch(e){ return str }
 }
+function formatDateInputLocal(date){
+  const pad = n => n.toString().padStart(2,'0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 
 /* ============================
    Connexion / Deconnexion
@@ -635,7 +672,7 @@ function ajouterSeanceHebdo(){
     const d = document.createElement('div'); d.className='seance-item';
     const inp = document.createElement('input'); inp.type='datetime-local';
     const seanceDate = new Date(start.getTime() + i*7*24*3600*1000);
-    inp.value = seanceDate.toISOString().slice(0,16);
+    inp.value = formatDateInputLocal(seanceDate);
     inp.className='seance-input';
     const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px';
     span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
@@ -644,6 +681,7 @@ function ajouterSeanceHebdo(){
     del.textContent='✖';
     del.onclick = ()=>{
       d.remove();
+      majLabels(serieDiv);
       // si plus de séance dans cette série supprimer le contenuer
       if(serieDiv.querySelectorAll('.seance-item').length === 0){
         serieDiv.remove();
@@ -652,38 +690,75 @@ function ajouterSeanceHebdo(){
     d.appendChild(span); d.appendChild(inp); d.appendChild(del);
     serieDiv.appendChild(d);
   }
-  // gestion de pivot pour le recalcul automatique
+  // fonction pour recalculer labels et dates
+  function majLabels(serieDiv){
+    const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
+    if(items.length === 0) return;
+
+    // séance pivot : la plus proche
+    const pivotInput = items.reduce((minInp, item) => {
+      const inp = item.querySelector('.seance-input');
+      return new Date(inp.value) < new Date(minInp.value) ? inp : minInp;
+    }, items[0].querySelector('.seance-input'));
+
+    const baseDate = new Date(pivotInput.value);
+
+    items.forEach((item, idx) => {
+      const inp = item.querySelector('.seance-input');
+      const span = item.querySelector('div.small');
+      if(inp !== pivotInput){
+        inp.value = formatDateInputLocal(new Date(baseDate.getTime() + idx*7*24*3600*1000));
+      }
+      span.textContent = idx === 0 ? 'Séance 1 (début)' : `+${idx} semaine(s)`;
+    });
+  }
+
+  // gestion du changement de date
   serieDiv.querySelectorAll('.seance-input').forEach(inp => {
-    inp.onchange = () => {
-      const allInputs = Array.from(serieDiv.querySelectorAll('.seance-input'));
-      if(allInputs.length === 0) return;
-
-      //trouver la séance avec la dte la plus proche
-      const referenceInput = allInputs.reduce((minInp, curInp) => {
-        return new Date(curInp.value) < new Date(minInp.value) ? curInp : minInp;
-      }, allInputs[0]);
-
-      const baseDate = new Date(referenceInput.value);
-
-      allInputs.forEach((inpEl, idx) => {
-        if(inpEl !== referenceInput){
-          inpEl.value = new Date(baseDate.getTime() + idx*7*24*3600*1000).toISOString().slice(0,16);
-        }
-      });
-    };
+    inp.onchange = ()=> majLabels(serieDiv);
   });
+
   container.appendChild(serieDiv);
 }
 
 function ajouterSeanceManuelle(){
   const container = $('#seances-container');
-  const d = document.createElement('div'); d.className='seance-item';
+  const d = document.createElement('div'); d.className='seance-item manual';
   const inp = document.createElement('input'); inp.type='datetime-local'; inp.className='seance-input';
   const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px'; span.textContent='Ajout manuel';
   const del = document.createElement('button'); del.className='btn ghost'; del.textContent='✖';
-  del.onclick = ()=> d.remove();
+  del.onclick = ()=> {
+    d.remove();
+    majManual();
+  };
   d.appendChild(span); d.appendChild(inp); d.appendChild(del);
   container.appendChild(d);
+
+  inp.onchange = ()=> majManual();
+  majManual(); // mise à jour immédiate
+
+  // fonction pour trier les séances manuelles et mettre labels correctement
+  function majManual(){
+    const manualItems = Array.from(container.querySelectorAll('.seance-item.manual'));
+
+    //trier par date croissante
+    manualItems.sort((a, b)=>{
+      const da = new Date(a.querySelector('.seance-input').value);
+      const db = new Date(b.querySelector('.seance-input').value);
+      return da - db;
+    });
+
+    // enlever tous les items manuels du DOM
+    manualItems.forEach(item => container.removeChild(item));
+
+    //remettre les éléments triés en tête
+    const firstNonManual = container.querySelector(':not(.manual)');
+    manualItems.forEach((item, idx)=>{
+      container.insertBefore(item, firstNonManual); // prepend pour que le plus proche soit en premier
+      const span = item.querySelector('div.small');
+      span.textContent = `Ajout manuel ${idx+1}`;
+    })
+  }
 }
 
 /* reset form */
@@ -698,11 +773,42 @@ function creerActivite(){
   const effectif = parseInt($('#effectif').value) || 10;
   const separable = $('#separable').checked;
   const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
-  const seances = Array.from(document.querySelectorAll('.seance-input')).map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []})).filter(s=>s.date_heure);
-  const ouverture = $('#ouverture').value; const fermeture = $('#fermeture').value;
-  if(!titre || !salle || selectedClasses.length===0 || seances.length===0 || !ouverture || !fermeture){ alert('Veuillez remplir les champs requis et ajouter au moins une séance'); return; }
+  const seances = Array.from(document.querySelectorAll('.seance-input'))
+    .map((input, idx)=>({ id: idx+1, date_heure: input.value, presences: []}))
+    .filter(s=>s.date_heure);
+  const ouverture = $('#ouverture').value;
+  const fermeture = $('#fermeture').value;
   const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
+  const seancesContainer = $('#seances-container');
 
+  // retirer anciennes erreurs
+  ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
+    $(sel).classList.remove('error');
+  });
+  $all('.seance-input').forEach(inp => inp.classList.remove('error'));
+  seancesContainer.classList.remove('error'); // container des séances
+
+  let hasError = false;
+
+  // validation des champs obligatoires
+  if (!titre) { $('#titre').classList.add('error'); hasError = true; }
+  if (!salle) { $('#salle').classList.add('error'); hasError = true; }
+  if (!effectif || effectif < 1) { $('#effectif').classList.add('error'); hasError = true; }
+  if (selectedClasses.length === 0) { $('#classe-select').classList.add('error'); hasError = true; }
+  if (!ouverture) { $('#ouverture').classList.add('error'); hasError = true; }
+  if (!fermeture) { $('#fermeture').classList.add('error'); hasError = true; }
+  if (seances.length === 0) {seancesContainer.classList.add('error'); hasError = true;}
+  if (hasError) {
+    // retirer l'erreur dès que l'utilisateur modifie le champ
+    $all('input, select').forEach(el => {
+      el.oninput = () => el.classList.remove('error');
+    });
+    // sur les séances
+    seancesContainer.onchange = () => seancesContainer.classList.remove('error');
+    return; // bloquer la création tant que les champs obligatoires ne sont pas remplis
+  }
+
+  // tout est bon → création de l'activité
   const newAct = {
     id: activites.length + 1,
     titre, prof_id: currentUser.id, classe_ids: selectedClasses, salle, separable,
