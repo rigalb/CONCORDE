@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE Prototype 7(UI upgraded)</title>
-  <link rel="author" href="#" />
+  <title>CONCORDE prototype v8(UI upgraded)</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -125,6 +124,16 @@
   input.error, select.error {
     border-color: #dd1738;
     color: #dd1738;
+  }
+
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    margin: 6px;
+    margin-top: 6px;
+    vertical-align: middle;
   }
 
   .error {
@@ -347,6 +356,7 @@
         <div class="mb" style="margin-top:12px;">
           <h4 style="margin-bottom:8px">Créer / modifier une activité</h4>
           <div class="form-grid">
+
             <div>
               <label class="small">Titre <span class="muted">*</span></label>
               <input id="titre" type="text" placeholder="Titre de l'activité">
@@ -358,11 +368,24 @@
 
             <div>
               <label class="small">Effectif max</label>
-              <input id="effectif" type="number" min="1" value="10">
+              <input id="effectif" type="number" min="1" value="30">
             </div>
             <div>
-              <label class="small">Sécable</label><br>
-              <input id="separable" type="checkbox" checked> <span class="muted">Oblige l'inscription à toutes les séances en un clic</span>
+              <label class="small">Animateur</label>
+              <select id="animateur-select"></select>
+            </div>
+
+            <div style="display: flex; gap: 20px; align-items: center;" class="full">
+              <div>
+                <label class="small">Sécable</label>
+                <input id="separable" type="checkbox" checked>
+                <span class="muted">Oblige l'inscription à toutes les séances en un clic</span>
+              </div>
+              <div>
+                <label class="small">Visible avant ouverture</label>
+                <input id="visible-avant" type="checkbox">
+                <span class="muted">Permet aux élèves de voir l’activité avant l’ouverture</span>
+              </div>
             </div>
 
             <div class="full">
@@ -408,8 +431,22 @@
         <div>
           <h4 style="margin-bottom:8px">Liste des activités</h4>
           <table id="table-prof" aria-describedby="prof-desc">
-            <caption id="prof-desc" class="muted small">Activités que vous avez créées</caption>
-            <thead><tr><th>Titre</th><th>Salle</th><th>Effectif</th><th>Inscrits</th><th>Classes</th><th>Sécable</th><th>Ouverte</th><th>Fermeture</th><th>Séances</th></tr></thead>
+            <caption id="prof-desc" class="muted small">Activités que vous avez créées ou dont vous êtes l'animateur</caption>
+            <thead>
+              <tr>
+                <th>Titre</th>
+                <th>Salle</th>
+                <th>Effectif</th>
+                <th>Animateur</th>
+                <th>Inscrits</th>
+                <th>Classes</th>
+                <th>Sécable</th>
+                <th>Visible avant</th>
+                <th>Ouverte</th>
+                <th>Fermeture</th>
+                <th>Séances</th>
+              </tr>
+            </thead>
             <tbody></tbody>
           </table>
         </div>
@@ -471,17 +508,19 @@ let activites = [
     id: 1,
     titre: 'Atelier Théâtre',
     prof_id: 1,
+    animateur_id: 1,            // <-- animateur choisi (peut être différent du prof_id)
+    visible_avant: false,       // <-- flag visible avant ouverture
     classe_ids: [1,2],
     salle: 'LM19C',
     separable: false,
     effectif_max: 10,
     inscriptions: [],
     seances: [
-      { id: 1, date_heure: "2025-09-10T14:00", presences: [] },
-      { id: 2, date_heure: "2025-09-12T14:00", presences: [] }
+      { id: 1, date_heure: "2025-09-30T14:00", presences: [] },
+      { id: 2, date_heure: "2025-09-29T14:00", presences: [] }
     ],
-    ouverture_inscription: "2025-09-10T14:00",
-    fermeture_inscription: "2025-09-12T14:00",
+    ouverture_inscription: "2025-09-20T14:00",
+    fermeture_inscription: "2025-09-30T14:00",
     exclusives_ids: []
   }
 ];
@@ -505,6 +544,8 @@ function formatDateInputLocal(date){
   const pad = n => n.toString().padStart(2,'0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+function getUserById(id){ return users.find(u=>u.id === id) || null; }
+function getUserName(id){ const u = getUserById(id); return u ? `${u.prenom} ${u.nom || ''}` : '—'; }
 
 
 /* ============================
@@ -586,26 +627,54 @@ function afficherPageRole(role){
     majListeExclusives();
   }
 }
+
+
 /* ============================
    Fill selects
    ============================ */
 function populateSelects(){
-  const select = $('#classe-select'); select.innerHTML = '';
+  // classes
+  const select = $('#classe-select'); if(select){ select.innerHTML = ''; }
   classes.forEach(cl=>{
     const opt = document.createElement('option'); opt.value = cl.id; opt.textContent = cl.nom;
     select.appendChild(opt);
   });
+
+  // animateur-select (liste des profs)
+  const animSelect = $('#animateur-select');
+  if(animSelect){
+    animSelect.innerHTML = '';
+    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin'); // inclure admin si besoin
+    profs.forEach(p=>{
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.prenom} ${p.nom || ''}`;
+      animSelect.appendChild(opt);
+    });
+    // valeur par défaut: si connecté prof -> lui, sinon premier prof
+    const defaultId = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
+    if(defaultId) animSelect.value = defaultId;
+  }
 }
+
 
 /* ============================
    Eleve table
    ============================ */
 function majTableEleve(){
-  const tbody = $('#table-eleve tbody'); tbody.innerHTML = '';
+  const tbody = $('#table-eleve tbody');tbody.innerHTML = '';
   if(!currentUser) return;
+
   const classeId = currentUser.classe_id;
   let totalAct = 0, totalIns = 0;
+
+
   activites.forEach(act=>{
+    // si activité est masquée avant ouverture et qu'on est avant ouverture -> ne pas afficher (sauf si visible_avant true)
+    const now = new Date();
+    const debut = new Date(act.ouverture_inscription || 0);
+    if(!act.visible_avant && now < debut) return;
+
     if(!act.classe_ids.includes(classeId)) return;
     totalAct++;
     const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
@@ -621,8 +690,6 @@ function majTableEleve(){
     `;
     const tdAction = tr.querySelector('td:last-child');
     const btn = document.createElement('button'); btn.className='btn';
-    const now = new Date();
-    const debut = new Date(act.ouverture_inscription || 0);
     const fin = new Date(act.fermeture_inscription || 0);
     const allPassed = act.seances.every(s=> new Date(s.date_heure) < now);
 
@@ -763,7 +830,14 @@ function ajouterSeanceManuelle(){
 
 /* reset form */
 function resetForm(){
-  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML=''; $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
+  $('#titre').value=''; $('#salle').value=''; $('#effectif').value=''; $('#seances-container').innerHTML='';
+  $('#first-hebdoseance').value=''; $('#nb-seances').value=4; $('#ouverture').value=''; $('#fermeture').value='';
+  // remettre animateur par défaut et visible_avant à false
+  if($('#animateur-select')){
+    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
+    $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
+  }
+  if($('#visible-avant')) $('#visible-avant').checked = false;
 }
 
 /* creare Activite */
@@ -782,13 +856,12 @@ function creerActivite(){
   const seancesContainer = $('#seances-container');
 
   // retirer anciennes erreurs
+  let hasError = false;
   ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
     $(sel).classList.remove('error');
   });
   $all('.seance-input').forEach(inp => inp.classList.remove('error'));
   seancesContainer.classList.remove('error'); // container des séances
-
-  let hasError = false;
 
   // validation des champs obligatoires
   if (!titre) { $('#titre').classList.add('error'); hasError = true; }
@@ -798,6 +871,7 @@ function creerActivite(){
   if (!ouverture) { $('#ouverture').classList.add('error'); hasError = true; }
   if (!fermeture) { $('#fermeture').classList.add('error'); hasError = true; }
   if (seances.length === 0) {seancesContainer.classList.add('error'); hasError = true;}
+
   if (hasError) {
     // retirer l'erreur dès que l'utilisateur modifie le champ
     $all('input, select').forEach(el => {
@@ -808,10 +882,14 @@ function creerActivite(){
     return; // bloquer la création tant que les champs obligatoires ne sont pas remplis
   }
 
+  // récupération animateur + visible_avant
+  const animateurId = $('#animateur-select') ? parseInt($('#animateur-select').value) : currentUser.id;
+  const visibleAvant = $('#visible-avant') ? !!$('#visible-avant').checked : false;
+
   // tout est bon → création de l'activité
   const newAct = {
     id: activites.length + 1,
-    titre, prof_id: currentUser.id, classe_ids: selectedClasses, salle, separable,
+    titre, prof_id: currentUser.id, animateur_id: animateurId, visible_avant: visibleAvant, classe_ids: selectedClasses, salle, separable,
     effectif_max: effectif, inscriptions: [], seances, ouverture_inscription: ouverture, fermeture_inscription: fermeture, exclusives_ids: exclusives
   };
   activites.push(newAct);
@@ -828,13 +906,16 @@ function majTableProf(){
     const classesText = act.classe_ids.map(id=> classes.find(c=>c.id===id)?.nom || '').join(', ');
     const seancesText = act.seances.map(s=> formatDateLocal(s.date_heure)).join(', ');
     const tr = document.createElement('tr');
+
     tr.innerHTML = `
       <td>${act.titre}</td>
       <td>${act.salle}</td>
       <td>${act.effectif_max}</td>
+      <td>${getUserName(act.animateur_id)}</td>
       <td>${act.inscriptions.length} : ${inscritsText}</td>
       <td>${classesText}</td>
       <td>${act.separable ? 'Oui' : 'Non'}</td>
+      <td>${act.visible_avant ? 'Oui' : 'Non'}</td>
       <td>${formatDateLocal(act.ouverture_inscription)}</td>
       <td>${formatDateLocal(act.fermeture_inscription)}</td>
       <td>${seancesText}</td>
@@ -859,21 +940,15 @@ function majListeExclusives(){
 function updateSidePanels() {
   // raccourcis (mode dev seulement)
   const raccourcis = $('#sidebar-raccourcis');
-  if (raccourcis) {
-    raccourcis.classList.toggle('hidden', MODE != 'dev');
-  }
+  if (raccourcis) raccourcis.classList.toggle('hidden', MODE != 'dev');
 
   // statut (mode dev seulement)
   const statut = $('#sidebar-statut');
-  if (statut) {
-    statut.classList.toggle('hidden', MODE !== 'dev');
-  }
+  if (statut) statut.classList.toggle('hidden', MODE !== 'dev');
 
   // aide rapide (uniquement si prof connecté)
   const aideRapide = $('#sidebar-aide');
-  if (aideRapide) {
-    aideRapide.classList.toggle('hidden', !(currentUser && currentUser.role === 'prof'));
-  }
+  if (aideRapide) aideRapide.classList.toggle('hidden', !(currentUser && currentUser.role === 'prof'));
 }
 
 
@@ -884,8 +959,7 @@ function updateSidePanels() {
   $('#count-acts').textContent = activites.length;
   $('#count-users').textContent = users.length;
   updateSidePanels();
-  // if you want to pre-open a demo user uncomment:
-  // demoLogin('prof1');
+  //demoLogin('eleve1'); // décommenter pour debug
 })();
 </script>
 </body>
