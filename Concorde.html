@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE alpha v0.2</title>
+  <title>CONCORDE alpha v0.3</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -707,12 +707,16 @@ function onAuthChange(){
   if(currentUser){
     $('#user-badge').style.display='inline-flex';
     $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
-    $('#logout-btn').classList.remove('hidden');
+    const logoutBtn = $('#logout-btn');
+    logoutBtn.classList.remove('hidden');
+    logoutBtn.removeAttribute('aria-hidden');
     $('#login-card').classList.add('hidden');
     afficherPageRole(currentUser.role);
   } else {
     $('#user-badge').style.display='none';
-    $('#logout-btn').classList.add('hidden');
+    const logoutBtn = $('#logout-btn');
+    logoutBtn.classList.add('hidden');
+    logoutBtn.setAttribute('aria-hidden', 'true');
     $('#login-card').classList.remove('hidden');
     cacherToutesPages();
   }
