@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CONCORDE Prototype 5</title>
+  <title>CONCORDE Prototype 6 (UI upgraded)</title>
 <style>
   :root{
     --bg:#f6f8fb;
@@ -79,7 +79,7 @@
   .logo svg{width: 26px; height: 26px; fill: white;}
   .brand h1{font-size: 18px; color: var(--text); margin-bottom: 2px;}
   .brand p{font-size: 12px; color: var(--muted); margin-top: 0;}
-  
+
   /* header actions */
   .header-actions{margin-left:auto; display:flex; gap:12px; align-items:center}
   .role-badge{
@@ -94,7 +94,7 @@
     box-shadow: var(--shadow);
     border: 1px solid var(--glass-2);
   }
-  
+
   /* Left column: main */
   .main{
     display: flex;
@@ -189,7 +189,7 @@
   /* Tiny utilities */
   .muted{color:var(--muted);font-size:13px}
   .mb{margin-bottom:12px}
-  .hidden{display:none}
+  .hidden{display:none !important;}
   .right{margin-left:auto}
 
   /* Footer (small) */
@@ -620,13 +620,17 @@ function ajouterSeanceHebdo(){
   const container = $('#seances-container');
   const startInput = $('#first-hebdoseance'); const nbInput = $('#nb-seances');
   const start = new Date(startInput.value); const nb = parseInt(nbInput.value);
+
   if(isNaN(start.getTime()) || !nb || nb<1){ alert('Choisissez une date et un nombre valide'); return; }
+
   const seriesId = Date.now();
   const serieDiv = document.createElement('div'); serieDiv.className='serie-hebdo'; serieDiv.dataset.seriesId = seriesId;
+
   const sup = document.createElement('div'); sup.style.textAlign='right';
   const supBtn = document.createElement('button'); supBtn.className='btn secondary'; supBtn.textContent='Supprimer série';
   supBtn.onclick = ()=> serieDiv.remove();
   sup.appendChild(supBtn); serieDiv.appendChild(sup);
+
   for(let i=0;i<nb;i++){
     const d = document.createElement('div'); d.className='seance-item';
     const inp = document.createElement('input'); inp.type='datetime-local';
@@ -635,22 +639,39 @@ function ajouterSeanceHebdo(){
     inp.className='seance-input';
     const span = document.createElement('div'); span.className='small muted'; span.style.minWidth='110px';
     span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
-    const del = document.createElement('button'); del.className='btn ghost'; del.textContent='✖';
-    del.onclick = ()=> d.remove();
+    const del = document.createElement('button');
+    del.className='btn ghost';
+    del.textContent='✖';
+    del.onclick = ()=>{
+      d.remove();
+      // si plus de séance dans cette série supprimer le contenuer
+      if(serieDiv.querySelectorAll('.seance-item').length === 0){
+        serieDiv.remove();
+      }
+    };
     d.appendChild(span); d.appendChild(inp); d.appendChild(del);
     serieDiv.appendChild(d);
   }
-  // keep behavior: if first changes update the following
-  const firstInput = serieDiv.querySelector('.seance-input');
-  firstInput.onchange = ()=>{
-    const all = Array.from(serieDiv.querySelectorAll('.seance-item'));
-    const base = new Date(firstInput.value);
-    all.forEach((el, idx) => {
-      const iInput = el.querySelector('.seance-input');
-      const next = new Date(base.getTime() + idx*7*24*3600*1000);
-      iInput.value = next.toISOString().slice(0,16);
-    });
-  };
+  // gestion de pivot pour le recalcul automatique
+  serieDiv.querySelectorAll('.seance-input').forEach(inp => {
+    inp.onchange = () => {
+      const allInputs = Array.from(serieDiv.querySelectorAll('.seance-input'));
+      if(allInputs.length === 0) return;
+
+      //trouver la séance avec la dte la plus proche
+      const referenceInput = allInputs.reduce((minInp, curInp) => {
+        return new Date(curInp.value) < new Date(minInp.value) ? curInp : minInp;
+      }, allInputs[0]);
+
+      const baseDate = new Date(referenceInput.value);
+
+      allInputs.forEach((inpEl, idx) => {
+        if(inpEl !== referenceInput){
+          inpEl.value = new Date(baseDate.getTime() + idx*7*24*3600*1000).toISOString().slice(0,16);
+        }
+      });
+    };
+  });
   container.appendChild(serieDiv);
 }
 
