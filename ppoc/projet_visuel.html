@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emploi du Temps - CONCORDE</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+        background: #f0f0f0;
+        overflow: hidden;
+    }
+
+    .schedule-header {
+        background: white;
+        padding: 12px 20px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .schedule-view-tabs {
+        display: flex;
+        gap: 0;
+    }
+
+    .schedule-view-tab {
+        padding: 6px 18px;
+        border: 1px solid #0b72ff;
+        background: white;
+        cursor: pointer;
+        font-size: 13px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .schedule-view-tab:first-child {
+        border-radius: 3px 0 0 3px;
+    }
+
+    .schedule-view-tab:last-child {
+        border-radius: 0 3px 3px 0;
+        border-left: none;
+    }
+
+    .schedule-view-tab.active {
+        background: #0b72ff;
+        color: white;
+    }
+
+    .schedule-header-center {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .schedule-week {
+        font-size: 15px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .schedule-week-number {
+        color: #666;
+        font-size: 13px;
+        font-weight: normal;
+    }
+
+    .schedule-header-right {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .schedule-today-btn {
+        padding: 6px 14px;
+        border: 1px solid #0b72ff;
+        background: white;
+        color: #0b72ff;
+        cursor: pointer;
+        border-radius: 3px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .schedule-today-btn:hover {
+        background: #f0f8ff;
+    }
+
+    .schedule-nav-btn {
+        width: 30px;
+        height: 30px;
+        border: 1px solid #ccc;
+        background: white;
+        cursor: pointer;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: #666;
+    }
+
+    .schedule-nav-btn:hover {
+        background: #f5f5f5;
+    }
+
+    .btn-download {
+        width: 30px;
+        height: 30px;
+        background: #0b72ff;
+        color: white;
+        border: none;
+        cursor: pointer;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-download:hover {
+        background: #0052cc;
+    }
+
+    .schedule-grid {
+        height: calc(100vh - 54px);
+        overflow: hidden;
+        background: white;
+    }
+
+    .schedule-table {
+        display: flex;
+        height: 100%;
+        overflow: auto;
+    }
+
+    .schedule-hour-cell {
+        width: 45px;
+        background: white;
+        border-right: 1px solid #e0e0e0;
+        flex-shrink: 0;
+        position: sticky;
+        left: 0;
+        z-index: 20;
+    }
+
+    .day-header-spacer {
+        height: 40px;
+        background: white;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .schedule-cell {
+        height: 60px;
+        border-bottom: 1px solid #e8e8e8;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 3px;
+        font-size: 11px;
+        color: #666;
+        background: white;
+    }
+
+    .days-grid {
+        display: flex;
+        flex: 1;
+    }
+
+    .day-column {
+        flex: 1;
+        border-right: 1px solid #e0e0e0;
+        min-width: 180px;
+        position: relative;
+    }
+
+    .day-column:last-child {
+        border-right: none;
+    }
+
+    .schedule-header-cell {
+        height: 40px;
+        background: white;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: #333;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .day-content {
+        position: relative;
+        height: 1500px;
+    }
+
+    .hour-line {
+        position: absolute;
+        width: 100%;
+        height: 60px;
+        border-bottom: 1px solid #e8e8e8;
+        background: white;
+    }
+
+    .seance-block-prof {
+        position: absolute;
+        left: 3px;
+        right: 3px;
+        padding: 6px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: opacity 0.2s, box-shadow 0.2s;
+        border: 1px solid rgba(0,0,0,0.08);
+    }
+
+    .seance-block-prof:hover {
+        opacity: 0.95;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        z-index: 5;
+    }
+
+    .seance-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 3px;
+    }
+
+    .seance-time {
+        font-weight: 600;
+        font-size: 10px;
+        line-height: 1.2;
+    }
+
+    .seance-room {
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .seance-title {
+        font-weight: 600;
+        margin-bottom: 2px;
+        line-height: 1.3;
+    }
+
+    .seance-animateur {
+        font-size: 10px;
+        opacity: 0.85;
+        line-height: 1.2;
+    }
+
+    /* Couleurs exactes */
+    .activity-color-0 { background: #ffeb3b; color: #000; }
+    .activity-color-1 { background: #26c6da; color: #000; }
+    .activity-color-2 { background: #90a4ae; color: #000; }
+    .activity-color-3 { background: #ec407a; color: #fff; }
+    .activity-color-4 { background: #f48fb1; color: #000; }
+    .activity-color-5 { background: #ffab91; color: #000; }
+    .activity-color-6 { background: #b0bec5; color: #000; }
+    .activity-color-7 { background: #4db6ac; color: #000; }
+
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-overlay.visible {
+        display: flex;
+    }
+
+    .modal-content {
+        background: white;
+        padding: 0;
+        border-radius: 6px;
+        max-width: 450px;
+        width: 90%;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h2 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .modal-close {
+        font-size: 24px;
+        cursor: pointer;
+        background: none;
+        border: none;
+        color: #666;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+    }
+
+    .modal-close:hover {
+        background: #f0f0f0;
+    }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    .detail-row {
+        margin-bottom: 18px;
+        display: flex;
+        align-items: flex-start;
+    }
+
+    .detail-label {
+        font-weight: 600;
+        color: #666;
+        font-size: 13px;
+        width: 100px;
+        flex-shrink: 0;
+    }
+
+    .detail-value {
+        color: #333;
+        font-size: 14px;
+    }
+
+    .detail-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .form-group {
+        margin-bottom: 16px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .form-group input, .form-group select, .form-group textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+
+    .form-group textarea {
+        resize: vertical;
+        min-height: 80px;
+    }
+
+    .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .btn.primary {
+        background: #0b72ff;
+        color: white;
+    }
+
+    .btn.primary:hover {
+        background: #0052cc;
+    }
+
+    .btn.secondary {
+        background: white;
+        color: #666;
+        border: 1px solid #ddd;
+    }
+
+    .btn.secondary:hover {
+        background: #f5f5f5;
+    }
+
+    .btn.danger {
+        background: #f44336;
+        color: white;
+    }
+
+    .btn.danger:hover {
+        background: #da190b;
+    }
+
+    .fab {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 56px;
+        height: 56px;
+        background: #0b72ff;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .fab:hover {
+        background: #0052cc;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    }
+
+    .color-badge {
+        display: inline-block;
+        width: 60px;
+        height: 24px;
+        border-radius: 3px;
+        border: 1px solid rgba(0,0,0,0.1);
+    }
+</style>
+</head>
+<body>
+    <div class="schedule-header">
+        <div class="schedule-view-tabs">
+            <button class="schedule-view-tab active" data-view="week">Semaine</button>
+            <button class="schedule-view-tab" data-view="month">Mois</button>
+        </div>
+        
+        <div class="schedule-header-center">
+            <button class="schedule-nav-btn" onclick="prevWeek()">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div>
+                <span class="schedule-week" id="currentWeekDisplay"></span>
+                <span class="schedule-week-number" id="weekNumberDisplay">(Semaine ?)</span>
+            </div>
+            <button class="schedule-nav-btn" onclick="nextWeek()">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="schedule-header-right">
+            <button class="schedule-today-btn" onclick="goToday()">Aujourd'hui</button>
+        </div>
+    </div>
+
+    <div class="schedule-grid">
+        <div class="schedule-table" id="scheduleContainer">
+            <div class="schedule-hour-cell">
+                <div class="day-header-spacer"></div>
+                <div id="timeSlots"></div>
+            </div>
+            <div class="days-grid" id="daysGrid"></div>
+        </div>
+    </div>
+
+    <button class="fab" onclick="openAddActivityModal()">+</button>
+
+    <!-- Modal d'information -->
+    <div class="modal-overlay" id="activityModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Détails de l'activité</h2>
+                <button class="modal-close" onclick="closeActivityModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-row">
+                    <div class="detail-label">Titre</div>
+                    <div class="detail-value" id="modalTitre"></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Animateur</div>
+                    <div class="detail-value" id="modalAnimateur"></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Salle</div>
+                    <div class="detail-value" id="modalSalle"></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Horaire</div>
+                    <div class="detail-value" id="modalHoraire"></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Jour</div>
+                    <div class="detail-value" id="modalJour"></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Couleur</div>
+                    <div class="detail-value"><span class="color-badge" id="modalColorBadge"></span></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="closeActivityModal()">Fermer</button>
+                <button class="btn primary" onclick="editFromModal()">Modifier</button>
+                <button class="btn danger" onclick="deleteFromModal()">Supprimer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal d'édition -->
+    <div class="modal-overlay" id="editActivityModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="editModalTitle">Ajouter une activité</h2>
+                <button class="modal-close" onclick="closeEditModal()">×</button>
+            </div>
+            <form id="activityForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Titre *</label>
+                        <input type="text" id="inputTitre" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Animateur</label>
+                        <input type="text" id="inputAnimateur">
+                    </div>
+                    <div class="form-group">
+                        <label>Salle</label>
+                        <input type="text" id="inputSalle">
+                    </div>
+                    <div class="form-group">
+                        <label>Jour *</label>
+                        <select id="inputDay" required>
+                            <option value="0">Lundi</option>
+                            <option value="1">Mardi</option>
+                            <option value="2">Mercredi</option>
+                            <option value="3">Jeudi</option>
+                            <option value="4">Vendredi</option>
+                            <option value="5">Samedi</option>
+                            <option value="6">Dimanche</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Heure de début *</label>
+                        <input type="time" id="inputStart" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Heure de fin *</label>
+                        <input type="time" id="inputEnd" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Couleur</label>
+                        <select id="inputColor">
+                            <option value="0">Jaune</option>
+                            <option value="1">Cyan</option>
+                            <option value="2">Gris</option>
+                            <option value="3">Rose</option>
+                            <option value="4">Rose clair</option>
+                            <option value="5">Orange</option>
+                            <option value="6">Gris clair</option>
+                            <option value="7">Vert</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn secondary" onclick="closeEditModal()">Annuler</button>
+                    <button type="submit" class="btn primary">Enregistrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const dayLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+        let activites = [
+            {id: 1, titre: 'ESPAGNOL LV2', animateur: 'HUBERT M.', salle: 'En LM 26', day: 0, start: '08:15', end: '09:10', color: 5},
+            {id: 2, titre: 'ED.PHYSIQUE & SPORT', animateur: 'THEBAULT S.', salle: 'En EPSM', day: 1, start: '08:15', end: '10:08', color: 1},
+            {id: 3, titre: 'ANGLAIS LV1', animateur: 'HERVE G.', salle: 'En LM 28', day: 0, start: '09:13', end: '10:08', color: 0},
+            {id: 4, titre: 'ENS. SCIENTIFIQUE', animateur: 'SERRAND M.', salle: 'En Lab 05', day: 2, start: '09:13', end: '10:08', color: 2},
+            {id: 5, titre: 'NUMERIQUE SC.INFORM.', animateur: 'GIARD J.', salle: '', day: 3, start: '08:15', end: '10:08', color: 2},
+            {id: 6, titre: 'ENS. MORAL & CIVIQUE', animateur: 'RAIMBAULT T.', salle: 'En LM 28', day: 4, start: '09:13', end: '10:08', color: 3},
+            {id: 7, titre: 'HISTOIRE-GEOGRAPHIE', animateur: 'VALLEE S.', salle: 'En LM 28', day: 4, start: '08:15', end: '09:10', color: 3},
+            {id: 8, titre: 'NUMERIQUE SC.INFORM.', animateur: 'GIARD J.', salle: '', day: 0, start: '10:23', end: '12:16', color: 2},
+            {id: 9, titre: 'ANGLAIS LV1', animateur: 'HERVE G.', salle: 'En LM 28', day: 1, start: '10:23', end: '11:18', color: 0},
+            {id: 10, titre: 'NUMERIQUE SC.INFORM.', animateur: 'GIARD J.', salle: '', day: 2, start: '10:23', end: '12:16', color: 2},
+            {id: 11, titre: 'MATHEMATIQUES', animateur: 'HEDE C.', salle: 'En LM 29C', day: 3, start: '10:23', end: '12:16', color: 0},
+            {id: 12, titre: 'HISTOIRE-GEOGRAPHIE', animateur: 'VALLEE S.', salle: 'En LM 33', day: 4, start: '10:23', end: '11:18', color: 3},
+            {id: 13, titre: 'HISTOIRE-GEOGRAPHIE', animateur: 'VALLEE S.', salle: '', day: 1, start: '11:21', end: '12:16', color: 4},
+            {id: 14, titre: 'MATHEMATIQUES', animateur: 'HEDE C.', salle: 'En LM 29C', day: 0, start: '13:42', end: '15:35', color: 0},
+            {id: 15, titre: 'MATHS EXPERTES', animateur: 'MACE N.', salle: 'En LM 29C', day: 1, start: '13:15', end: '14:37', color: 6},
+            {id: 16, titre: 'ESPAGNOL LV2', animateur: 'HUBERT M.', salle: 'En LM 22', day: 3, start: '13:42', end: '14:37', color: 5},
+            {id: 17, titre: 'MATHEMATIQUES', animateur: 'HEDE C.', salle: 'En LM 29C', day: 4, start: '13:42', end: '15:35', color: 0},
+            {id: 18, titre: 'PHILOSOPHIE', animateur: 'LE QUINTREC J.', salle: 'En LM 27', day: 1, start: '14:40', end: '15:35', color: 7},
+            {id: 19, titre: 'PHILOSOPHIE', animateur: 'LE QUINTREC J.', salle: 'En LM 18', day: 0, start: '15:50', end: '17:40', color: 7},
+            {id: 20, titre: 'PHILOSOPHIE', animateur: 'LE QUINTREC J.', salle: 'En LM 28', day: 3, start: '15:50', end: '16:45', color: 7},
+            {id: 21, titre: 'ENS. SCIENTIFIQUE', animateur: 'WAENDENDRIES M.', salle: 'En Lab 05', day: 1, start: '16:45', end: '17:40', color: 2},
+            {id: 22, titre: 'MATHS EXPERTES', animateur: 'MACE N.', salle: 'En LM 29b', day: 4, start: '15:50', end: '17:15', color: 6}
+        ];
+        
+        let currentWeekStart = new Date(2025, 8, 29);
+        let editingActivityId = null;
+        let viewingActivityId = null;
+
+        function initSchedule() {
+            const timeSlotsDiv = document.getElementById('timeSlots');
+            for (let hour = 7; hour <= 18; hour++) {
+                const slot = document.createElement('div');
+                slot.className = 'schedule-cell';
+                slot.textContent = `${hour.toString().padStart(2, '0')}:00`;
+                timeSlotsDiv.appendChild(slot);
+            }
+
+            const daysGrid = document.getElementById('daysGrid');
+            dayLabels.forEach((label, index) => {
+                const dayCol = document.createElement('div');
+                dayCol.className = 'day-column';
+                
+                const header = document.createElement('div');
+                header.className = 'schedule-header-cell';
+                header.textContent = label;
+                dayCol.appendChild(header);
+                
+                const content = document.createElement('div');
+                content.className = 'day-content';
+                content.dataset.day = index;
+                
+                for (let i = 0; i < 25; i++) {
+                    const line = document.createElement('div');
+                    line.className = 'hour-line';
+                    line.style.top = (i * 60) + 'px';
+                    content.appendChild(line);
+                }
+                
+                dayCol.appendChild(content);
+                daysGrid.appendChild(dayCol);
+            });
+
+            renderActivites();
+            scrollToCurrentTime('08:00');
+        }
+
+        function timeToMinutes(time) {
+            const [hours, minutes] = time.split(':').map(Number);
+            return (hours - 7) * 60 + minutes;
+        }
+
+        function scrollToCurrentTime(time) {
+            const minutes = timeToMinutes(time);
+            const container = document.getElementById('scheduleContainer');
+            container.scrollTop = Math.max(0, minutes - 120);
+        }
+
+        function renderActivites() {
+            document.querySelectorAll('.seance-block-prof').forEach(el => el.remove());
+            
+            activites.forEach(activite => {
+                const dayContent = document.querySelector(`[data-day="${activite.day}"]`);
+                const seanceEl = document.createElement('div');
+                seanceEl.className = `seance-block-prof activity-color-${activite.color}`;
+                seanceEl.dataset.id = activite.id;
+                
+                const startMinutes = timeToMinutes(activite.start);
+                const endMinutes = timeToMinutes(activite.end);
+                const duration = endMinutes - startMinutes;
+                
+                seanceEl.style.top = startMinutes + 'px';
+                seanceEl.style.height = duration + 'px';
+                
+                seanceEl.innerHTML = `
+                    <div class="seance-header">
+                        <div class="seance-time">${activite.start} - ${activite.end}</div>
+                        ${activite.salle ? `<div class="seance-room">${activite.salle}</div>` : ''}
+                    </div>
+                    <div class="seance-title">${activite.titre}</div>
+                    <div class="seance-animateur">${activite.animateur}</div>
+                `;
+                
+                seanceEl.onclick = () => showActivityDetails(activite.id);
+                dayContent.appendChild(seanceEl);
+            });
+        }
+
+        function showActivityDetails(id) {
+            const activite = activites.find(a => a.id === id);
+            if (!activite) return;
+            
+            viewingActivityId = id;
+            document.getElementById('modalTitre').textContent = activite.titre;
+            document.getElementById('modalAnimateur').textContent = activite.animateur || '-';
+            document.getElementById('modalSalle').textContent = activite.salle || '-';
+            document.getElementById('modalHoraire').textContent = `${activite.start} - ${activite.end}`;
+            document.getElementById('modalJour').textContent = getDayLabel(activite.day);
+            
+            const badge = document.getElementById('modalColorBadge');
+            badge.className = `color-badge activity-color-${activite.color}`;
+            
+            document.getElementById('activityModal').classList.add('visible');
+        }
+
+        function closeActivityModal() {
+            document.getElementById('activityModal').classList.remove('visible');
+            viewingActivityId = null;
+        }
+
+        function editFromModal() {
+            closeActivityModal();
+            editActivity(viewingActivityId);
+        }
+
+        function deleteFromModal() {
+            if (confirm('Êtes-vous sûr de vouloir supprimer cette activité ?')) {
+                activites = activites.filter(a => a.id !== viewingActivityId);
+                renderActivites();
+                closeActivityModal();
+            }
+        }
+
+        function openAddActivityModal() {
+            editingActivityId = null;
+            document.getElementById('editModalTitle').textContent = 'Ajouter une activité';
+            document.getElementById('activityForm').reset();
+            document.getElementById('editActivityModal').classList.add('visible');
+        }
+
+        function editActivity(id) {
+            const activite = activites.find(a => a.id === id);
+            if (!activite) return;
+            
+            editingActivityId = id;
+            document.getElementById('editModalTitle').textContent = 'Modifier l\'activité';
+            document.getElementById('inputTitre').value = activite.titre;
+            document.getElementById('inputAnimateur').value = activite.animateur;
+            document.getElementById('inputSalle').value = activite.salle;
+            document.getElementById('inputDay').value = activite.day;
+            document.getElementById('inputStart').value = activite.start;
+            document.getElementById('inputEnd').value = activite.end;
+            document.getElementById('inputColor').value = activite.color;
+            document.getElementById('editActivityModal').classList.add('visible');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editActivityModal').classList.remove('visible');
+            editingActivityId = null;
+        }
+
+        document.getElementById('activityForm').onsubmit = (e) => {
+            e.preventDefault();
+            
+            const activiteData = {
+                titre: document.getElementById('inputTitre').value,
+                animateur: document.getElementById('inputAnimateur').value,
+                salle: document.getElementById('inputSalle').value,
+                day: parseInt(document.getElementById('inputDay').value),
+                start: document.getElementById('inputStart').value,
+                end: document.getElementById('inputEnd').value,
+                color: parseInt(document.getElementById('inputColor').value)
+            };
+            
+            if (editingActivityId) {
+                const activite = activites.find(a => a.id === editingActivityId);
+                Object.assign(activite, activiteData);
+            } else {
+                activiteData.id = Math.max(...activites.map(a => a.id), 0) + 1;
+                activites.push(activiteData);
+            }
+            
+            renderActivites();
+            closeEditModal();
+        };
+
+        function formatDateDisplay(date) {
+            const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+            return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+        }
+
+        function getWeekNumber(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+            return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+        }
+
+        function updateWeekDisplay() {
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            
+            document.getElementById('currentWeekDisplay').textContent = 
+                `${formatDateDisplay(currentWeekStart)} – ${formatDateDisplay(weekEnd)}`;
+            document.getElementById('weekNumberDisplay').textContent = 
+                `(Semaine ${getWeekNumber(currentWeekStart)})`;
+            
+            const dayHeaders = document.querySelectorAll('.schedule-header-cell');
+            const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+            dayHeaders.forEach((header, index) => {
+                const date = new Date(currentWeekStart);
+                date.setDate(date.getDate() + index);
+                header.textContent = `${dayLabels[index]} ${date.getDate()} ${months[date.getMonth()]}`;
+            });
+        }
+
+        function prevWeek() {
+            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+            updateWeekDisplay();
+        }
+
+        function nextWeek() {
+            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+            updateWeekDisplay();
+        }
+
+        function goToday() {
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            currentWeekStart = new Date(today);
+            currentWeekStart.setDate(today.getDate() + diff);
+            updateWeekDisplay();
+        }
+
+        function getDayLabel(dayIndex) {
+            const date = new Date(currentWeekStart);
+            date.setDate(date.getDate() + dayIndex);
+            const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+            return `${dayLabels[dayIndex]} ${date.getDate()} ${months[date.getMonth()]}`;
+        }
+
+        function downloadScheduleData() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Titre,Animateur,Salle,Jour,Début,Fin,Couleur\n";
+            
+            activites.forEach(activite => {
+                csvContent += `"${activite.titre}","${activite.animateur}","${activite.salle}","${getDayLabel(activite.day)}","${activite.start}","${activite.end}","${activite.color}"\n`;
+            });
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "emploi_du_temps_concorde.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Fermer les modals en cliquant à l'extérieur
+        document.getElementById('activityModal').onclick = (e) => {
+            if (e.target.id === 'activityModal') closeActivityModal();
+        };
+        
+        document.getElementById('editActivityModal').onclick = (e) => {
+            if (e.target.id === 'editActivityModal') closeEditModal();
+        };
+
+        // Initialiser le calendrier
+        initSchedule();
+        goToday();
+    </script>
+</body>
+</html>
