@@ -3,614 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONCORDE alpha v0.5</title>
-  <link rel="author" href="#" />
-<style>
-  :root{
-    --bg:#f6f8fb;
-    --card:#ffffff;
-    --text:#222;
-    --muted:#6b7280;
-    --primary:#0b72ff;
-    --accent:#d63384;
-    --warm:#ff8a00;
-    --cool:#00b5cc;
-    --glass: rgba(11,114,255,0.06);
-    --radius:12px;
-    --shadow: 0 6px 20px rgba(20,30,60,0.06);
-    --glass-2: rgba(0,0,0,0.03);
-    --max-width:1400px; /* Plus large */
-    --gap:20px; /* Plus d'espacement */
-    font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
-  }
-
-  *{box-sizing: border-box; margin: 0; padding: 0;}
-  html, body{height: 100%;}
-  body{
-    background: linear-gradient(180deg, var(--bg), #eef3fb);
-    color: var(--text);
-    padding: 20px;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-    line-height: 1.45;
-    display: flex;
-    justify-content: center;
-  }
-
-  /* Container principal plus large */
-  .wrap{
-    width: 100%;
-    max-width: var(--max-width);
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: var(--gap);
-    align-items: start;
-  }
-
-  /* Header */
-  header{
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    padding: 18px 20px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.8), var(--card));
-    border-radius: calc(var(--radius) + 4px);
-    box-shadow: var(--shadow);
-    border: 1px solid var(--glass-2);
-    position: sticky;
-    top: 18px;
-    z-index: 10;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .logo {
-    width: 46px; height: 46px;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-radius: 10px;
-    display: flex;
-    align-items: center; justify-content: center;
-    box-shadow: 0 6px 18px rgba(11,114,255,0.14), inset 0 -6px 12px rgba(255,255,255,0.08);
-  }
-
-  .logo svg{width: 26px; height: 26px; fill: white;}
-  .brand h1{font-size: 18px; color: var(--text); margin-bottom: 2px;}
-  .brand p{font-size: 12px; color: var(--muted); margin-top: 0;}
-
-  .header-actions{margin-left:auto; display:flex; gap:12px; align-items:center}
-  .role-badge{
-    display:inline-flex;align-items:center;gap:8px;background:var(--glass);padding:8px 12px;border-radius:999px;color:var(--primary);font-weight:600;font-size:13px;
-  }
-
-  /* Cards */
-  .card{
-    background: var(--card);
-    border-radius: var(--radius);
-    padding: 20px; /* Plus de padding */
-    box-shadow: var(--shadow);
-    border: 1px solid var(--glass-2);
-  }
-
-  /* Left column: main */
-  .main{
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap);
-  }
-
-  /* Login card */
-  #login-card {
-    max-width: 620px;
-    display: grid;
-    grid-template-columns: 1fr 220px;
-    gap: 18px;
-    align-items: center;
-  }
-
-  #login-card .credentials{padding-right: 6px;}
-  label.small{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
-  input[type="text"], input[type="password"], select, input[type="number"], input[type="datetime-local"]{
-    width: 100%;
-    padding: 10px 12px; border-radius: 8px; border: 1px solid #e6eef8;
-    background: linear-gradient(180deg, #fff, #fbfdff);
-    font-size: 14px; color: var(--text);
-    transition:box-shadow .18s ease, border-color .18s ease, transform .06s ease;
-  }
-
-  input:focus, select:focus{outline:none;border-color:var(--primary); box-shadow:0 6px 18px rgba(11,114,255,0.08); transform:translateY(-1px);}
-
-  input.error, select.error {
-    border-color: #dd1738;
-    color: #dd1738;
-  }
-
-  input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--primary);
-    cursor: pointer;
-    margin: 6px;
-    vertical-align: middle;
-  }
-
-  .error {
-    border-color: #dd1738 !important;
-    color: #dd1738;
-  }
-
-  #seances-container.error {
-    border: 2px solid #dd1738;
-  }
-
-  .login-cta{
-    display:flex;flex-direction:column;gap:8px;align-items:stretch;
-  }
-
-  .muted-note{font-size:12px;color:var(--muted)}
-
-  /* Right column: side */
-  .side{
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap);
-  }
-
-  /* Stats */
-  .stats{
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .stat{
-    background:linear-gradient(180deg,#fff,#fbfdff);
-    border-radius:10px;padding:10px 12px;border:1px solid var(--glass-2);flex:1;text-align:center;
-  }
-
-  .stat h4{font-size:13px;color:var(--muted);font-weight:600}
-  .stat p{font-size:16px;font-weight:700;color:var(--text)}
-
-  /* Layout pour prof/élève avec panneau latéral */
-  .dashboard-layout {
-    display: grid;
-    grid-template-columns: 320px 1fr; /* Panneau + contenu principal */
-    gap: var(--gap);
-    height: 100%;
-  }
-
-  /* Panneau des activités */
-  .activities-panel {
-    background: #f8fafc;
-    border-radius: var(--radius);
-    padding: 16px;
-    border: 1px solid #e2e8f0;
-    max-height: 600px;
-    overflow-y: auto;
-  }
-
-  .activities-panel h4 {
-    margin-bottom: 12px;
-    color: var(--text);
-    font-size: 16px;
-  }
-
-  /* Cards d'activités */
-  .activity-card {
-    background: white;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    padding: 12px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    position: relative;
-  }
-
-  .activity-card:hover {
-    border-color: var(--primary);
-    box-shadow: 0 4px 12px rgba(11,114,255,0.1);
-  }
-
-  .activity-card.selected {
-    border-color: var(--primary);
-    background: var(--glass);
-  }
-
-  .activity-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    margin-bottom: 8px;
-  }
-
-  .activity-title {
-    margin: 0;
-    color: var(--primary);
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  .activity-room {
-    background: var(--glass);
-    color: var(--primary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-  }
-
-  .activity-details {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 4px;
-  }
-
-  .activity-meta {
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  /* Seances pour élèves dans les cards d'activités */
-  .activity-seances {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid #e2e8f0;
-  }
-
-  .seance-item-eleve {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 4px 0;
-    border-bottom: 1px solid #f1f5f9;
-  }
-
-  .seance-item-eleve:last-child {
-    border-bottom: none;
-  }
-
-  .seance-date {
-    font-size: 11px;
-    color: var(--muted);
-    flex: 1;
-  }
-
-  .seance-btn {
-    padding: 2px 6px;
-    font-size: 10px;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-  }
-
-  .seance-btn.inscrit {
-    background: var(--accent);
-    color: white;
-  }
-
-  .seance-btn.libre {
-    background: var(--primary);
-    color: white;
-  }
-
-  .seance-btn.ferme {
-    background: #e2e8f0;
-    color: var(--muted);
-    cursor: not-allowed;
-  }
-
-  /* Emploi du temps plus grand et plus haut */
-  .schedule-container {
-    background: white;
-    border-radius: var(--radius);
-    border: 1px solid #e2e8f0;
-    overflow: hidden;
-    height: 600px; /* Plus haut */
-    display: flex;
-    flex-direction: column;
-  }
-
-  .schedule-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px;
-    border-bottom: 1px solid #e2e8f0;
-    background: #f8fafc;
-  }
-
-  .schedule-nav {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .schedule-nav button {
-    padding: 6px 12px;
-    font-size: 12px;
-    border-radius: 6px;
-    border: 1px solid #e2e8f0;
-    background: white;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .schedule-nav button:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-  }
-
-  .schedule-week {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--primary);
-  }
-
-  .schedule-grid {
-    flex: 1;
-    overflow: auto;
-    background: white;
-  }
-
-  .schedule-table {
-    display: grid;
-    grid-template-columns: 80px repeat(7, 1fr); /* 7 jours maintenant */
-    gap: 1px;
-    background: #e2e8f0;
-    height: 100%;
-  }
-
-  .schedule-cell {
-    background: white;
-    padding: 8px 4px;
-    min-height: 50px;
-    position: relative;
-  }
-
-  .schedule-header-cell {
-    background: #f1f5f9;
-    font-size: 12px;
-    font-weight: 600;
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-  }
-
-  /* En-têtes emploi du temps avec jour actuel */
-  .schedule-header-cell.today {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    color: white;
-    font-weight: 700;
-  }
-
-  .schedule-header-cell.today::after {
-    content: " 📍";
-    font-size: 10px;
-  }
-
-  .schedule-cell.today-column {
-    background: rgba(11,114,255,0.02);
-  }
-
-  .schedule-hour-cell {
-    background: #f1f5f9;
-    font-size: 11px;
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .schedule-slot {
-    background: white;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .schedule-slot.highlighted {
-    background: rgba(11,114,255,0.1);
-  }
-
-  .schedule-slot.today-column {
-    background: rgba(11,114,255,0.02);
-  }
-
-  .seance-block {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    color: white;
-    padding: 2px 4px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
-    margin-bottom: 2px;
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Modal pour détails activité */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.3s ease;
-  }
-
-  .modal-overlay.visible {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .modal-content {
-    background: white;
-    border-radius: var(--radius);
-    padding: 24px;
-    max-width: 600px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-    transform: scale(0.9) translateY(20px);
-    transition: transform 0.3s ease;
-  }
-
-  .modal-overlay.visible .modal-content {
-    transform: scale(1) translateY(0);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  .modal-close {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    color: var(--muted);
-    padding: 4px;
-    border-radius: 4px;
-  }
-
-  .modal-close:hover {
-    background: #f1f5f9;
-    color: var(--text);
-  }
-
-  .modal-body {
-    line-height: 1.6;
-  }
-
-  .detail-row {
-    display: flex;
-    margin-bottom: 12px;
-  }
-
-  .detail-label {
-    font-weight: 600;
-    color: var(--text);
-    min-width: 120px;
-  }
-
-  .detail-value {
-    color: var(--muted);
-    flex: 1;
-  }
-
-  .inscriptions-list {
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 8px;
-    background: #f8fafc;
-  }
-
-  .inscription-item {
-    padding: 4px 0;
-    border-bottom: 1px solid #e2e8f0;
-    font-size: 13px;
-  }
-
-  .inscription-item:last-child {
-    border-bottom: none;
-  }
-
-  /* Boutons */
-  .btn{
-    display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 0; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; font-size: 13px;
-    box-shadow: 0 4px 12px rgba(11, 114, 255, 0.2);
-    transition:transform .12s ease, box-shadow .12s ease, background .12s;
-  }
-
-  .btn:active{transform:translateY(1px);box-shadow:0 2px 8px rgba(11,114,255,0.15)}
-  .btn.secondary{background:transparent;color:var(--primary);border:1px solid rgba(11,114,255,0.2);box-shadow:none;}
-  .btn.ghost{background:transparent;color:var(--muted);border:1px dashed #eef4ff;box-shadow:none;}
-  .btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;}
-
-  .icon{width:16px;height:16px;display:inline-block;vertical-align:middle}
-
-  /* Forms pour prof */
-  .form-grid{
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-
-  .full{ grid-column: 1 / -1;}
-
-  #seances-container{min-height:80px;border:1px dashed #e6eef8;padding:12px;border-radius:8px;background:linear-gradient(180deg,#fff,#fcfdff)}
-
-  .serie-hebdo{
-    background-color: rgba(11, 114, 255, 0.06);
-    border: 1px solid rgba(11, 114, 255, 0.2);
-    border-radius: var(--radius);
-    padding: 8px;
-    margin-bottom: 8px;
-    transition: box-shadow 0.2s ease;
-  }
-
-  .seance-item{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.15);background:#fff;}
-  .seance-item input{max-width:240px;padding:8px;border-radius:6px;border:1px solid #dfe8f1;}
-
-  /* Utilities */
-  .muted{color:var(--muted);font-size:13px}
-  .small{font-size:12px}
-  .mb{margin-bottom:12px}
-  .hidden{display:none !important;}
-  .right{margin-left:auto}
-  .text-center{text-align:center}
-
-  /* Footer */
-  footer.small{
-    grid-column: 1 / -1;
-    margin-top: 8px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  /* Animations */
-  .fade-in { animation:fadeIn .3s ease both }
-  @keyframes fadeIn { from {opacity:0; transform: translateY(10px)} to {opacity:1; transform:none} }
-
-  /* Responsive */
-  @media (max-width:1200px){
-    .wrap{grid-template-columns: 1fr; gap:16px;}
-    .dashboard-layout{grid-template-columns: 1fr; gap:16px;}
-    .activities-panel{max-height: 300px;}
-    .schedule-container{height: 400px;}
-    .schedule-table{grid-template-columns: 60px repeat(7, 1fr);}
-  }
-
-  /* Mode DEV */
-  .dev-raccourcis { display: none; }
-  .dev-mode .dev-raccourcis { display: block; }
-
-</style>
+  <title>CONCORDE release v1.0.0</title>
+  <link href="Select_Comp.css" rel="stylesheet" type="text/css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="data:image/png;base64, iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAGMklEQVR4nOWXX2wcRx3Hv7Ozs7e7d7e+PduXu/h8ObdxmzZJqWunSakgVCCVClAR0oVIpBIqUR+qIhReqPpQ5xAPiIcKVJAID41KVCRqpEZt+Ke4Ja5a0oJIcB27xTkndurEzvns893u7f/d4YEWVUg+H2lASHxfZ/b7+8x3Z367A/y/i9zog6USKKZB1RaE+QXABcie7Yg+NYTgwBjC/wjAY8Ng1iKk2IAW2ztS7NpZjOd0DdtiEkkRRbFq69HFX/9qpqIqgf2dl1eNmwLAAXIgD1nTNOVLD+eztxYSIymNPaCq9F6mxoqSIqtSXAZRZfgRN1sN7+Rb45e+N/n63PKT4/XGDQNwgBwt9cYzcU2/f39u51adflng0UOUoKDEZazVHNSXmrCsCKGcxNbhO9F/dwZw1rA2t/Lab38x8+jFaet6eWLBuSGA0VJvorkado3s1gs9Cn6iy8JQMpfGlluzMGYr/MKbc9HV687bXgjDDzBCCe2+5+F7cd/BIQiNdVyZqx556sj4cy9U0GwHIG40UB5bMUdL8P7yV8+tVc1H7spKzyfZ4vC+/as8l5HItt3Z8y8vXT9gmaJTjPu7CgqOV149PzCwPc570yKRAvuh/m3JE7xiEALwjeoI7ejKY/CemTBrUX7LfDqnvaLKFFwQEEvIUNKJGhdk88SfjbVJL36uJyef7O0SUa8swbxaQ2S7W/L5NDs62n6fbZjAR6XTZMDFZlOOUdCYBIEJ4GEAxY8IAK6ZYpTKyEbSDyCLgFs3YQXR+txS3dOK7b3bJvChLgKQYzRijIIQgsgPELgBkTPdHAB0raV29ySH8jsy8B2XVC9V8f5s9TXXzXvl8sbxd5xA8kqFk0KOq4oIAREJvQgio5xYnrAfSHzli4Of3Vpgn7NbERZnLsN0g8vzIftlb94T0Ob9dwwAAJEfwXQC+G4AQiWImholk5707PF9Xy1sjR91m64ydWYK9Zp9pQ76xHXo1XtQaW3m2zGAQMCDMAInBKynCylJ/sQ3n+g7LVFhd3PZxOK7y8gNdgfazsLP/jg2/3Z/0Yg6ackdAVxSwAVRgCxRsBhDpHXDrdt9a5PzfXNTy3B9jswtPdh5/22i3p96+s5P7yie/Om5746WxLA8tmK2XVinCRCASIxACDzU/jSFsz+fWD/90oVTk+/Vjk9fXDvzh9/8LRj70Zu4tmBJelY+/IWvDT5lVG352GNgNwUgDCOAR+BhCF3lKO5Kj/9wSj80y7q+PcPVg2FM/JbbNJw3nptAs7IMJWwdPnTw9qHJN3pjHxvAtkE450QgAI9ChJ4HEoZRf04Mn59orN/++dbKLJVf1HU2Ti0Ti+fmIRqGqDHvwcUwatuIOgIoeCBuEMG0QwReCB5x8JAj88F4uYyo5cdcNSHOdOsMvu1xp2khaJoDsUTUtkZHAIPbt8PzQJqmD8fyQUUBnPxLi10FsoUuVtzRjXRGhbFiolW3HOh6W++OTkHT9glPcjEmAiITuKjGiMgCjg9O2bFhsHdiSPb0pfem0wzV5RaxahbWXVxIWkHUzrujBMK6QxMyUZgAcBBAEEAogeGFwn5APlFB4tFHiody+eReV1Tw/nQVS6ve6uX16HR/WmrbCzZNYLQE6YpB1HSSDolEBOEcoReCCCLbO6IlPvmN/I7biurBni72dZ8zev7VaZhrFlqC8P0ZOz6fHF5ycGpj/7Y79Mg+KC1fTX3mvkxpV058xm+5lNKQd6cIYdnudTGprYpU6BcJkS7N1vHu2XmYjZYTMuEHk7Z2rMdPrG32R9Q2Ae1BuOSM4E+9V59emI1mMzq7444swNQUV22WMq7WU9VrBpYW1rBaMwPCyOsuZT+etsWzaVdplN9qX3zTBD6cUxrWtQKtD6cYe2lXUdaMpg/fC9CwAj8IMRsRTJiU/v6azyYdGmsO0oZRnkDQgXdHp4DjlrpZnU9ODnQFL3p2eLhp+etuhBdWOD1V8+klU2CN0JEc2HV7bMbxOin8z9V1OvHQXVvid/cZD6jcf3KhET097SnvKGB+trfuPPs7eNjku/+xAUol0OzVWNELuRAQebXZ32yM/Rs3oJuix/eo2cf3qNn/atGPavQfjeuG75P/k/o7CurAknIPvHYAAAAASUVORK5CYII=">
 </head>
 <body>
   <div class="wrap">
@@ -624,8 +20,18 @@
             <path d="M2 17c0 2.76 2.24 5 5 5h10a5 5 0 005-5 1 1 0 00-1-1H3a1 1 0 00-1 1z" opacity=".12"/>
           </svg>
         </div>
-        <div>
-          <h1>TEAMAKER</h1>
+        <div class="title-container">
+          <h1 class="short-title">C.O.N.C.O.R.D.E.</h1>
+          <h1 class="long-title">
+            <span class="acronym">C</span>entre
+            d'<span class="acronym">O</span>rganisation
+            <span class="acronym">N</span>umérique pour la
+            <span class="acronym">C</span>ollaboration des
+            <span class="acronym">O</span>pérations, la
+            <span class="acronym">R</span>épartition et le
+            <span class="acronym">D</span>éploiement des
+            <span class="acronym">É</span>quipes
+          </h1>
           <p>Gestion moderne des activités & inscriptions</p>
         </div>
       </div>
@@ -635,7 +41,7 @@
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zM3 21a9 9 0 0118 0" fill="currentColor"/></svg>
           <span id="user-name">Utilisateur</span>
         </div>
-        <button id="logout-btn" class="btn secondary hidden" onclick="logout()">
+        <button id="logout-btn" class="btn secondary hidden">
           <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v12a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
           Déconnexion
         </button>
@@ -661,7 +67,7 @@
         </div>
 
         <div class="login-cta">
-          <button class="btn" onclick="login()">
+          <button class="btn">
             <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM21 3h-8v2h8v14h-8v2h8a2 2 0 002-2V5a2 2 0 00-2-2z" fill="currentColor"/></svg>
             Se connecter
           </button>
@@ -688,24 +94,41 @@
 
         <div class="dashboard-layout">
           <div class="activities-panel">
-            <h4>Activités disponibles</h4>
-            <div id="liste-activites-eleve">
-              <!-- Les activités élève seront listées ici -->
-            </div>
+            <details open class="panel-collapsible">
+              <summary class="panel-header">
+                <h4>Activités disponibles</h4>
+              </summary>
+              <div id="liste-activites-eleve">
+                <!-- Les activités élève seront listées ici -->
+              </div>
+            </details>
           </div>
 
           <div class="schedule-container">
             <div class="schedule-header">
-              <h4>Emploi du temps</h4>
-              <div class="schedule-nav">
-                <button id="prev-week-eleve">← Précédente</button>
+              <div class="schedule-header-left">
+                <div class="schedule-view-tabs">
+                  <button class="schedule-view-tab active" data-view="week">Semaine</button>
+                  <button class="schedule-view-tab" data-view="month">Mois</button>
+                </div>
+              </div>
+              <div class="schedule-header-center">
                 <span id="current-week-eleve" class="schedule-week">Semaine</span>
-                <button id="next-week-eleve">Suivante →</button>
+                <span class="schedule-week-number">(Semaine ?)</span>
+              </div>
+              <div class="schedule-header-right">
+                <button id="today-eleve" class="schedule-today-btn">Aujourd'hui</button>
+                <button id="prev-week-eleve" class="schedule-nav-btn">←</button>
+                <button id="next-week-eleve" class="schedule-nav-btn">→</button>
               </div>
             </div>
             <div class="schedule-grid">
-              <div id="emploi-du-temps-eleve" class="schedule-table">
-                <!-- Grille emploi du temps élève -->
+              <div class="schedule-table" id="emploi-du-temps-eleve">
+                <div class="schedule-hour-cell">
+                  <div class="day-header-spacer"></div>
+                  <div id="time-slots-eleve"></div>
+                </div>
+                <div class="days-grid" id="days-grid-eleve"></div>
               </div>
             </div>
           </div>
@@ -725,9 +148,126 @@
           </div>
         </div>
 
-        <!-- CRÉATION D'ACTIVITÉ -->
-        <div class="mb">
-          <h4 style="margin-bottom:12px">Créer / modifier une activité</h4>
+        <!-- ONGLETS PROF -->
+        <div class="prof-tabs">
+          <button class="prof-tab active">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:4px"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
+            Gestion & Planning
+          </button>
+          <button class="prof-tab">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:4px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
+            Créer une activité
+          </button>
+        </div>
+
+        <!-- ONGLET GESTION -->
+        <div id="prof-tab-gestion" class="prof-tab-content active">
+          <div class="dashboard-layout">
+            <div class="activities-panel">
+
+              <!-- Activités animées -->
+              <details open class="panel-collapsible" style="margin-top: 16px;">
+                <summary class="panel-header">
+                  <h4>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                      <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" fill="none"/>
+                      <circle cx="12" cy="12" r="2" fill="currentColor"/>
+                    </svg>
+                    Activités que j'anime
+                  </h4>
+                </summary>
+                <div id="liste-activites-animees">
+                  <p class="muted small text-center" style="padding: 20px;">Aucune activité à animer</p>
+                </div>
+              </details>
+
+              <!-- Activités créées -->
+              <details open class="panel-collapsible" style="margin-top: 16px;">
+                <summary class="panel-header">
+                  <h4>
+                    <svg xmlns="http://www.w3.org/2000/svg" id="Outline" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M18.656.93,6.464,13.122A4.966,4.966,0,0,0,5,16.657V18a1,1,0,0,0,1,1H7.343a4.966,4.966,0,0,0,3.535-1.464L23.07,5.344a3.125,3.125,0,0,0,0-4.414A3.194,3.194,0,0,0,18.656.93Zm3,3L9.464,16.122A3.02,3.02,0,0,1,7.343,17H7v-.343a3.02,3.02,0,0,1,.878-2.121L20.07,2.344a1.148,1.148,0,0,1,1.586,0A1.123,1.123,0,0,1,21.656,3.93Z"/>
+                        <path d="M23,8.979a1,1,0,0,0-1,1V15H18a3,3,0,0,0-3,3v4H5a3,3,0,0,1-3-3V5A3,3,0,0,1,5,2h9.042a1,1,0,0,0,0-2H5A5.006,5.006,0,0,0,0,5V19a5.006,5.006,0,0,0,5,5H16.343a4.968,4.968,0,0,0,3.536-1.464l2.656-2.658A4.968,4.968,0,0,0,24,16.343V9.979A1,1,0,0,0,23,8.979ZM18.465,21.122a2.975,2.975,0,0,1-1.465.8V18a1,1,0,0,1,1-1h3.925a3.016,3.016,0,0,1-.8,1.464Z"/>
+                    </svg>
+                    Activités que j'ai créées
+                  </h4>
+                </summary>
+                <div id="liste-activites-creees">
+                  <p class="muted small text-center" style="padding: 20px;">Aucune activité créée</p>
+                </div>
+              </details>
+
+
+              <!-- NOUVEAU : Section élèves non inscrits -->
+              <details open class="panel-collapsible" style="margin-top: 16px;">
+                <summary class="panel-header">
+                  <h4>
+                    <svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" data-name="Layer 1" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                        <path d="M16,18h-4c-.552,0-1-.447-1-1s.448-1,1-1h4c.552,0,1,.447,1,1s-.448,1-1,1Zm5,1V7c0-2.757-2.243-5-5-5h-.171c-.413-1.164-1.525-2-2.829-2h-2c-1.304,0-2.416,.836-2.829,2h-.171c-2.757,0-5,2.243-5,5v12c0,2.757,2.243,5,5,5h8c2.757,0,5-2.243,5-5ZM9,4c.552,0,1-.447,1-1s.449-1,1-1h2c.551,0,1,.448,1,1s.448,1,1,1h1c1.654,0,3,1.346,3,3v12c0,1.654-1.346,3-3,3H8c-1.654,0-3-1.346-3-3V7c0-1.654,1.346-3,3-3h1Zm-1,12c-.552,0-1,.448-1,1s.448,1,1,1,1-.448,1-1-.448-1-1-1Zm9-3c0-.553-.448-1-1-1h-4c-.552,0-1,.447-1,1s.448,1,1,1h4c.552,0,1-.447,1-1Zm-9-1c-.552,0-1,.448-1,1s.448,1,1,1,1-.448,1-1-.448-1-1-1Zm9-3c0-.553-.448-1-1-1h-4c-.552,0-1,.447-1,1s.448,1,1,1h4c.552,0,1-.447,1-1Zm-9-1c-.552,0-1,.448-1,1s.448,1,1,1,1-.448,1-1-.448-1-1-1Z"/>
+                    </svg>
+                    Élèves non inscrits aux groupes
+                  </h4>
+                </summary>
+                <div id="eleves-non-inscrits-container" style="padding: 12px;">
+                  <p class="muted small text-center" id="msg-no-groupe">Sélectionnez un groupe pour voir les élèves non inscrits</p>
+                  <select id="groupe-filter-select" style="width: 100%; margin-bottom: 12px;">
+                    <option value="">-- Choisir un groupe --</option>
+                  </select>
+                  <div id="liste-eleves-non-inscrits">
+                    <!-- Liste dynamique -->
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="schedule-container">
+              <div class="schedule-header">
+                <div class="schedule-header-left">
+                  <div class="schedule-view-tabs">
+                    <button class="schedule-view-tab active" data-view="week">Semaine</button>
+                    <button class="schedule-view-tab" data-view="month">Mois</button>
+                  </div>
+                </div>
+
+                <div class="schedule-header-center">
+                  <button id="prev-week-prof" class="schedule-nav-btn">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <div>
+                    <span id="current-week-prof" class="schedule-week">Semaine</span>
+                    <span class="schedule-week-number">(Semaine ?)</span>
+                  </div>
+                  <button id="next-week-prof" class="schedule-nav-btn">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div class="schedule-header-right">
+                  <button id="today-prof" class="schedule-today-btn">Aujourd'hui</button>
+                </div>
+              </div>
+
+              <div class="schedule-grid">
+                <div class="schedule-table" id="emploi-du-temps-prof">
+                  <div class="schedule-hour-cell">
+                    <div class="day-header-spacer"></div>
+                    <div id="time-slots-prof"></div>
+                  </div>
+                  <div class="days-grid" id="days-grid-prof"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ONGLET CRÉATION -->
+        <div id="prof-tab-creation" class="prof-tab-content">
+          <h4 style="margin-bottom:16px">Créer une nouvelle activité</h4>
           <div class="form-grid">
             <div>
               <label class="small">Titre <span style="color:#dd1738">*</span></label>
@@ -740,11 +280,16 @@
 
             <div>
               <label class="small">Effectif max</label>
-              <input id="effectif" type="number" min="1" value="30">
+              <input id="effectif" type="number" min="1" value="">
             </div>
             <div>
               <label class="small">Animateur</label>
               <select id="animateur-select"></select>
+            </div>
+
+            <div class="full">
+              <label class="small">Description (facultatif)</label>
+              <textarea id="description" placeholder="Description de l'activité..." rows="3"></textarea>
             </div>
 
             <div style="display: flex; gap: 20px; align-items: center;" class="full">
@@ -762,16 +307,32 @@
 
             <div class="full">
               <label class="small">Classes concernées</label>
-              <select id="classe-select" multiple style="min-height:46px;padding:10px"></select>
+              <select id="classe-select"></select>
             </div>
 
             <div class="full">
               <label class="small">Séances</label>
-              <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
+              <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
                 <input id="first-hebdoseance" type="datetime-local" style="max-width:260px">
-                <input id="nb-seances" type="number" min="1" max="20" value="4" style="width:84px">
-                <button class="btn ghost" onclick="ajouterSeanceHebdo()">+ Série hebdo</button>
-                <button class="btn ghost" onclick="ajouterSeanceManuelle()">+ Manuel</button>
+                <input id="nb-seances" type="number" min="1" max="25" value="4" style="width:84px" placeholder="Nb">
+                <select id="duree-hebdo" style="width:100px">
+                  <option value="15">15 min</option>
+                  <option value="30">30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60" selected>1h</option>
+                  <option value="75">1h15</option>
+                  <option value="90">1h30</option>
+                  <option value="105">1h45</option>
+                  <option value="120">2h</option>
+                </select>
+                <button class="btn ghost">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
+                  Série hebdo
+                </button>
+                <button class="btn ghost">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
+                  Manuel
+                </button>
               </div>
               <div id="seances-container"></div>
             </div>
@@ -786,45 +347,32 @@
             </div>
 
             <div class="full">
-              <label class="small">Activités exclusives (optionnel)</label>
-              <select id="exclusives-select" multiple style="min-height:72px;padding:10px"></select>
+              <label class="small">Groupe d'exclusivité (optionnel)</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="groupe-select" style="flex: 1;">
+                  <option value="">Aucun groupe</option>
+                  <!-- Options remplies dynamiquement -->
+                </select>
+                <button class="btn secondary" type="button">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
+                  Gérer
+                </button>
+              </div>
             </div>
 
             <div class="full" style="display:flex;gap:12px;align-items:center;">
-              <button class="btn" onclick="creerActivite()">Créer l'activité</button>
-              <button class="btn secondary" onclick="resetForm()">Réinitialiser</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- DASHBOARD PROF -->
-        <div class="dashboard-layout">
-          <div class="activities-panel">
-            <h4>Mes activités</h4>
-            <div id="liste-activites-prof">
-              <!-- Les activités prof seront listées ici -->
-            </div>
-          </div>
-
-          <div class="schedule-container">
-            <div class="schedule-header">
-              <h4>Emploi du temps</h4>
-              <div class="schedule-nav">
-                <button id="prev-week-prof">← Précédente</button>
-                <span id="current-week-prof" class="schedule-week">Semaine</span>
-                <button id="next-week-prof">Suivante →</button>
-              </div>
-            </div>
-            <div class="schedule-grid">
-              <div id="emploi-du-temps-prof" class="schedule-table">
-                <!-- Grille emploi du temps prof -->
+              <button class="btn">Créer l'activité</button>
+              <button class="btn secondary">Réinitialiser</button>
+              <div>
+                <input id="preserve-champs" type="checkbox">
+                <label class="small">Ne pas vider les champs lors de la création</label>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <footer class="small">© 2025 — TEAMAKER • Interface moderne</footer>
+      <footer class="small">© 2025 • CONCORDE • Gestion d'activités</footer>
     </main>
 
     <!-- SIDEBAR -->
@@ -833,9 +381,9 @@
       <div id="sidebar-raccourcis" class="card fade-in dev-raccourcis">
         <h4>Raccourcis (DEV)</h4>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-          <button class="btn secondary" onclick="demoLogin('prof1')">Prof</button>
-          <button class="btn secondary" onclick="demoLogin('eleve1')">Élève 1</button>
-          <button class="btn secondary" onclick="demoLogin('eleve2')">Élève 2</button>
+          <button class="btn secondary">Prof</button>
+          <button class="btn secondary">Élève 1</button>
+          <button class="btn secondary">Élève 2</button>
         </div>
       </div>
 
@@ -846,12 +394,6 @@
           <div class="stat"><h4>Utilisateurs</h4><p id="count-users">0</p></div>
         </div>
       </div>
-
-      <div id="sidebar-aide" class="card fade-in">
-        <h4>Aide</h4>
-        <p class="muted small">• Cliquez sur une activité pour voir les détails</p>
-        <p class="muted small">• Les activités sécables permettent l'inscription par séance</p>
-      </div>
     </aside>
 
     <!-- MODAL DÉTAILS ACTIVITÉ -->
@@ -859,7 +401,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3 id="modal-title">Détails de l'activité</h3>
-          <button class="modal-close" onclick="closeActivityModal()">&times;</button>
+          <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body" id="modal-body">
           <!-- Contenu dynamique -->
@@ -867,1338 +409,124 @@
       </div>
     </div>
 
-  </div>
+    <!-- MODAL GESTION GROUPES -->
+    <div id="groupes-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="groupe-modal-title">Gestion des groupes d'exclusivité</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+
+          <!-- SECTION INFORMATION -->
+          <div style="margin-bottom: 24px; padding: 16px; background: linear-gradient(135deg, rgba(11, 114, 255, 0.08), rgba(214, 51, 132, 0.08)); border-radius: 10px; border-left: 4px solid var(--primary);">
+            <div style="display: flex; align-items: start; gap: 12px;">
+
+              <div style="font-size: 24px; line-height: 1;">
+                <svg xmlns="http://www.w3.org/2000/svg" id="Outline" viewBox="0 0 24 24" width="32" height="32" style="fill: #0b72ff;">
+                    <path d="M12,0A12,12,0,1,0,24,12,12.013,12.013,0,0,0,12,0Zm0,22A10,10,0,1,1,22,12,10.011,10.011,0,0,1,12,22Z"/>
+                    <path d="M12,10H11a1,1,0,0,0,0,2h1v6a1,1,0,0,0,2,0V12A2,2,0,0,0,12,10Z"/>
+                    <circle cx="12" cy="6.5" r="1.5"/>
+                </svg>
+              </div>
+
+              <div>
+                <p style="margin: 0 0 8px 0; font-weight: 600; color: var(--text); font-size: 14px;">À propos des groupes d'exclusivité</p>
+                <p style="margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6;">
+                  Un groupe d'exclusivité garantit qu'un élève ne peut s'inscrire qu'à <strong>une seule activité</strong> parmi celles du groupe.<br>
+                  <strong style="color: var(--primary);">Important :</strong> Vous devez obligatoirement sélectionner les classes concernées par chaque groupe.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION FORMULAIRE CRÉATION/ÉDITION -->
+          <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 24px; border: 1px solid #e2e8f0;">
+            <h4 id="form-mode-indicator" style="margin: 0 0 16px 0; color: var(--primary); font-size: 15px; font-weight: 700;">
+              <svg viewBox="0 0 24 24" width="24" height="24" style="vertical-align:middle; margin-right:4px; fill:currentColor;">
+                  <path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+              </svg>
+              Créer un nouveau groupe
+            </h4>
+
+            <!-- Nom du groupe -->
+            <div style="margin-bottom: 16px;">
+              <label class="small" for="nouveau-groupe-nom">
+                Nom du groupe <span style="color:#dd1738; font-weight: 700;">*</span>
+              </label>
+              <input
+                id="nouveau-groupe-nom"
+                type="text"
+                placeholder="Ex: Sport, Arts, Soutien, Forums..."
+                style="width: 100%;"
+                maxlength="100"
+              >
+            </div>
+
+            <!-- Classes concernées -->
+            <div style="margin-bottom: 20px;">
+              <label class="small" for="groupe-classe-select">
+                Classes concernées <span style="color:#dd1738; font-weight: 700;">*</span>
+              </label>
+              <p class="muted small" style="margin: 4px 0 8px 0; line-height: 1.4; display: inline-flex; align-items: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" data-name="Layer 1" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                  <path d="M23.786,19.492L16.713,1.836c-.624-1.529-2.376-2.269-3.911-1.645l-.925,.378c-.249,.102-.472,.244-.68,.402-.548-.594-1.326-.972-2.196-.972H3C1.346,0,0,1.346,0,3V21c0,1.654,1.346,3,3,3h6c1.654,0,3-1.346,3-3V8.895l5.304,13.242c.625,1.543,2.417,2.26,3.909,1.641l.926-.378c1.505-.574,2.286-2.434,1.647-3.907ZM13.574,7.446l2.778-1.132,4.171,10.412-2.778,1.132L13.574,7.446Zm-.942-5.025l.925-.378c.496-.206,1.097,.031,1.302,.543l.75,1.871-2.777,1.132-.747-1.866c-.208-.51,.038-1.095,.549-1.303ZM2,7h3v10H2V7Zm5,0h3v10h-3V7Zm3-4v2h-3V2h2c.551,0,1,.448,1,1ZM3,2h2v3H2V3c0-.552,.449-1,1-1Zm-1,19v-2h3v3H3c-.551,0-1-.448-1-1Zm7,1h-2v-3h3v2c0,.552-.449,1-1,1Zm12.929-.991c-.104,.247-.297,.438-.544,.539h0l-.926,.378c-.511,.206-1.095-.037-1.3-.54l-.669-1.671,2.778-1.132,.665,1.661c.102,.247,.101,.52-.003,.766Z"/>
+                </svg>
+                Sélectionnez les classes qui doivent obligatoirement s'inscrire à une activité de ce groupe
+              </p>
+              <select id="groupe-classe-select"></select>
+            </div>
+
+            <!-- Boutons d'action -->
+            <div style="display: flex; gap: 10px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+              <button id="btn-save-groupe" class="btn" style="flex: 1;">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/>
+                </svg>
+                <span id="btn-save-text">Créer le groupe</span>
+              </button>
+              <button class="btn secondary">
+                <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px;">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/>
+                </svg>
+                Annuler
+              </button>
+            </div>
+          </div>
+
+          <!-- SECTION LISTE DES GROUPES EXISTANTS -->
+          <div>
+            <h4 style="margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; color: var(--text); font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+              <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:var(--primary);">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+              Groupes existants
+            </h4>
+
+            <div id="liste-groupes" style="max-height: 350px; overflow-y: auto; padding-right: 4px;">
+              <!-- Liste dynamique remplie par JavaScript -->
+            </div>
+          </div>
 
-<script>
-/* ===========================
-   Configuration & Variables
-   =========================== */
-const MODE = 'reel';
-let currentUser = null;
-let users = [];
-let classes = [];
-let activites = [];
-let currentWeekOffsetProf = 0;
-let currentWeekOffsetEleve = 0;
-
-// Mode DEV
-if(MODE === 'dev') {
-  document.body.classList.add('dev-mode');
-}
-
-/* ===========================
-   Helpers & Utils
-   =========================== */
-function $(s){ return document.querySelector(s); }
-function $all(s){ return Array.from(document.querySelectorAll(s)); }
-
-function formatDateLocal(str){
-  if(!str) return '—';
-  try{
-    const d = new Date(str);
-    return d.toLocaleString('fr-FR', {hour12:false});
-  } catch(e){ return str; }
-}
-
-function formatDateInputLocal(date){
-  const pad = n => n.toString().padStart(2,'0');
-  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function getUserById(id){ return users.find(u=>u.id===id)||null; }
-function getUserName(id){ const u=getUserById(id); return u ? `${u.prenom} ${u.nom||''}` : '—'; }
-
-function getUserNameWithClass(id){
-  const u=getUserById(id);
-  if (!u) return '—';
-  const className = u.classe_nom ? ` (${u.classe_nom})` : '';
-  return `${u.prenom} ${u.nom||''}${className}`;
-}
-
-function getMonday(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff));
-}
-
-/* ===========================
-   API helpers
-   =========================== */
-async function apiGet(url){
-  try {
-    const res = await fetch(url, {
-      credentials:'same-origin',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    });
-    if(!res.ok) {
-      if(res.status === 401) {
-        console.warn('Session expirée, redirection vers login');
-        currentUser = null;
-        onAuthChange();
-        throw new Error('Session expirée');
-      }
-      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-      throw new Error(errorData.error || `HTTP ${res.status}`);
-    }
-    return res.json();
-  } catch(e) {
-    console.error('API GET Error:', e);
-    throw e;
-  }
-}
-
-async function apiPost(url, data){
-  try {
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify(data)
-    });
-    if(!res.ok) {
-      if(res.status === 401) {
-        console.warn('Non autorisé, redirection vers login');
-        currentUser = null;
-        onAuthChange();
-        throw new Error('Non autorisé');
-      }
-      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-      throw new Error(errorData.error || `HTTP ${res.status}`);
-    }
-    return res.json();
-  } catch(e) {
-    console.error('API POST Error:', e);
-    throw e;
-  }
-}
-
-async function apiDelete(url, data){
-  try {
-    const res = await fetch(url, {
-      method:'DELETE',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify(data)
-    });
-    if(!res.ok) {
-      if(res.status === 401) {
-        console.warn('Non autorisé, redirection vers login');
-        currentUser = null;
-        onAuthChange();
-        throw new Error('Non autorisé');
-      }
-      const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-      throw new Error(errorData.error || `HTTP ${res.status}`);
-    }
-    return res.json();
-  } catch(e) {
-    console.error('API DELETE Error:', e);
-    throw e;
-  }
-}
-
-/* ===========================
-   Connexion / Déconnexion
-   =========================== */
-async function login(){
-  const username = $('#username').value.trim();
-  const password = $('#password').value.trim();
-
-  if(!username || !password) {
-    $('#login-msg').textContent = 'Veuillez remplir tous les champs';
-    return;
-  }
-
-  try{
-    console.log(`Tentative de connexion avec: ${username}`);
-    const data = await apiPost('/login', {username,password});
-    console.log('Réponse de connexion:', data);
-
-    if(!data.success) {
-      $('#login-msg').textContent = data.error || 'Erreur de connexion';
-      return;
-    }
-    currentUser = data;
-    console.log('Utilisateur connecté:', currentUser);
-
-    $('#login-msg').textContent='';
-    $('#username').value='';
-    $('#password').value='';
-    await fetchAllData();
-    onAuthChange();
-  } catch(e){
-    $('#login-msg').textContent = 'Erreur de connexion: ' + e.message;
-    console.error('Erreur de connexion:', e);
-  }
-}
-
-async function demoLogin(username){
-  if(MODE !== 'dev') return;
-  try{
-    const data = await apiPost('/login', {username, password: '123'});
-    if(data.success) {
-      currentUser = data;
-      await fetchAllData();
-      onAuthChange();
-    }
-  } catch(e){
-    console.error('Demo login error:', e);
-  }
-}
-
-async function logout(){
-  try{
-    await apiPost('/logout',{});
-    currentUser = null;
-    onAuthChange();
-  } catch(e){
-    console.error('Logout error:', e);
-    currentUser = null;
-    onAuthChange();
-  }
-}
-
-async function checkAuthStatus() {
-  try {
-    const userData = await apiGet('/me');
-    if (userData && userData.id) {
-      currentUser = userData;
-      console.log('[OK] Session valide:', currentUser);
-      return true;
-    }
-  } catch (e) {
-    console.log('[INFO] Pas de session active ou expirée');
-    currentUser = null;
-  }
-  return false;
-}
-
-/* ===========================
-   Récupération des données
-   =========================== */
-async function fetchAllData() {
-  try {
-    console.log('Récupération des données...');
-
-    // Récupérer les classes (toujours accessible)
-    classes = await apiGet('/classes');
-    console.log('Classes récupérées:', classes.length);
-
-    // Si pas connecté, s'arrêter là
-    if (!currentUser) {
-      console.log('[INFO] Pas d\'utilisateur connecté, arrêt du fetch');
-      users = [];
-      activites = [];
-      return;
-    }
-
-    // Données selon le rôle
-    if (currentUser.role === 'prof' || currentUser.role === 'admin') {
-      // Professeurs peuvent voir tous les utilisateurs
-      try {
-        users = await apiGet('/users');
-        console.log('Utilisateurs récupérés:', users.length);
-      } catch (e) {
-        console.warn('[INFO] Erreur récupération users:', e.message);
-        users = [];
-      }
-    } else {
-      // Élèves n'ont pas accès à la liste des utilisateurs
-      users = [currentUser]; // Seulement leur propre profil
-    }
-
-    // Récupérer les données principales
-    const [rawActivites, rawActiviteClasses, rawSeances] = await Promise.all([
-      apiGet('/activites'),
-      apiGet('/activite_classes'),
-      apiGet('/seances')
-    ]);
-
-    console.log('Données reçues:', {
-      activites: rawActivites.length,
-      classes: rawActiviteClasses.length,
-      seances: rawSeances.length
-    });
-
-    // Récupérer les inscriptions selon le rôle
-    let rawInscriptions = [];
-    try {
-      rawInscriptions = await apiGet('/inscriptions');
-    } catch (e) {
-      console.warn('[WARN] Erreur récupération inscriptions:', e.message);
-      rawInscriptions = [];
-    }
-
-    // Enrichir chaque activité
-    activites = rawActivites.map(act => {
-      act.classe_ids = rawActiviteClasses
-        .filter(ac => ac.activite_id === act.id)
-        .map(ac => Number(ac.classe_id));
-
-      act.seances = rawSeances
-        .filter(s => s.activite_id === act.id)
-        .map(s => ({ id: s.id, date_heure: s.date_heure }));
-
-      act.inscriptions = rawInscriptions
-        .filter(i => i.activite_id === act.id)
-        .map(i => i.eleve_id);
-
-      return act;
-    });
-
-    console.log('[OK] Activités enrichies:', activites.length);
-
-  } catch(e) {
-    console.error('[KO] Erreur lors du fetch des données:', e);
-    // Ne pas throw, permettre à l'app de continuer
-    if (e.message.includes('Session expirée') || e.message.includes('Non autorisé')) {
-      // L'utilisateur sera redirigé vers le login
-      return;
-    }
-    throw e;
-  }
-}
-
-/* ===========================
-   Mise à jour de l'UI
-   =========================== */
-function onAuthChange(){
-  if(currentUser){
-    $('#user-badge').style.display='inline-flex';
-    $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
-    $('#logout-btn').classList.remove('hidden');
-    $('#login-card').classList.add('hidden');
-    afficherPageRole(currentUser.role);
-  } else {
-    $('#user-badge').style.display='none';
-    $('#logout-btn').classList.add('hidden');
-    $('#login-card').classList.remove('hidden');
-    cacherToutesPages();
-  }
-  $('#count-acts').textContent=activites.length;
-  $('#count-users').textContent=users.length;
-  updateSidePanels();
-}
-
-function cacherToutesPages(){
-  $('#eleve-page').classList.add('hidden');
-  $('#prof-page').classList.add('hidden');
-}
-
-function afficherPageRole(role){
-  cacherToutesPages();
-  if(role==='prof' || role==='admin'){
-    $('#prof-page').classList.remove('hidden');
-    populateSelects();
-    majListeActivitesProf();
-    majListeExclusives();
-    initEmploiDuTempsProf();
-  } else if(role==='eleve'){
-    $('#eleve-page').classList.remove('hidden');
-    majListeActivitesEleve();
-    initEmploiDuTempsEleve();
-  }
-}
-
-function populateSelects(){
-  // Sélect classes
-  const select = $('#classe-select');
-  if(select){
-    select.innerHTML='';
-    classes.forEach(cl=>{
-      const opt=document.createElement('option');
-      opt.value=cl.id;
-      opt.textContent=cl.nom;
-      select.appendChild(opt);
-    });
-  }
-
-  // Select animateurs (profs + admin)
-  const animSelect = $('#animateur-select');
-  if(animSelect){
-    animSelect.innerHTML='';
-    const profs = users.filter(u=>u.role==='prof'||u.role==='admin');
-    profs.forEach(p=>{
-      const opt=document.createElement('option');
-      opt.value=p.id;
-      opt.textContent=`${p.prenom} ${p.nom||''}`;
-      animSelect.appendChild(opt);
-    });
-    // Valeur par défaut
-    const defaultId = (currentUser && currentUser.role==='prof') ? currentUser.id : (profs[0]?.id||'');
-    if(defaultId) animSelect.value=defaultId;
-  }
-}
-
-/* ===========================
-   Interface Élève
-   =========================== */
-function majListeActivitesEleve() {
-  const container = $('#liste-activites-eleve');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  if(!currentUser) return;
-
-  const classeId = Number(currentUser.classe_id);
-  if(!classeId || isNaN(classeId)) {
-    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Classe non définie</p>';
-    return;
-  }
-
-  const now = new Date();
-  let totalAct = 0, totalIns = 0;
-
-  // Filtrer activités pour cette classe
-  const activitesEleve = activites.filter(act => {
-    const ouverture = new Date(act.date_ouverture_inscriptions);
-    const fermeture = new Date(act.date_fermeture_inscriptions);
-    const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
-
-    if(!(act.visible_avant*1) && now < ouverture) return false;
-    if(!act.classe_ids.includes(classeId)) return false;
-    if(now > fermeture && allPassed) return false;
-
-    return true;
-  });
-
-  if (activitesEleve.length === 0) {
-    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucune activité disponible</p>';
-    $('#stat-act-eleve').textContent = '0';
-    $('#stat-insc-eleve').textContent = '0';
-    return;
-  }
-
-  activitesEleve.forEach(act => {
-    totalAct++;
-
-    const inscritsCount = act.inscriptions?.length || 0;
-    const classesText = act.classe_ids
-      .map(id => classes.find(c => c.id === id)?.nom || '')
-      .join(', ');
-
-    // Vérifier inscriptions de l'élève
-    const inscriptionsEleve = act.inscriptions?.includes(currentUser.id) || false;
-    if(inscriptionsEleve) totalIns++;
-
-    const actCard = document.createElement('div');
-    actCard.className = 'activity-card';
-
-    actCard.innerHTML = `
-      <div class="activity-card-header">
-        <h5 class="activity-title">${act.titre}</h5>
-        <span class="activity-room">${act.salle}</span>
-      </div>
-      <div class="activity-details">Classes: ${classesText}</div>
-      <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
-      <div class="activity-meta">
-        ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
-      </div>
-      ${act.separable ? '<div class="activity-seances" id="seances-' + act.id + '"></div>' : ''}
-    `;
-
-    const now = new Date();
-    const ouverture = new Date(act.date_ouverture_inscriptions);
-    const fermeture = new Date(act.date_fermeture_inscriptions);
-    const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
-
-    if (act.separable) {
-      // Activité sécable - boutons par séance
-      const seancesContainer = actCard.querySelector('.activity-seances');
-      act.seances?.forEach(seance => {
-        const seanceDate = new Date(seance.date_heure);
-        const seancePassee = seanceDate < now;
-
-        const seanceItem = document.createElement('div');
-        seanceItem.className = 'seance-item-eleve';
-
-        const dateSpan = document.createElement('span');
-        dateSpan.className = 'seance-date';
-        dateSpan.textContent = formatDateLocal(seance.date_heure);
-
-        const btn = document.createElement('button');
-        btn.className = 'seance-btn';
-
-        // TODO: Logique d'inscription par séance
-        // Pour l'instant, utiliser la logique globale
-        const estInscrit = inscriptionsEleve;
-
-        if (seancePassee) {
-          btn.textContent = 'Passée';
-          btn.className += ' ferme';
-          btn.disabled = true;
-        } else if (!inscriptionsOuvertes) {
-          btn.textContent = 'Fermée';
-          btn.className += ' ferme';
-          btn.disabled = true;
-        } else if (estInscrit) {
-          btn.textContent = 'Inscrit';
-          btn.className += ' inscrit';
-          btn.onclick = () => desinscrireSeance(act.id, seance.id);
-        } else {
-          btn.textContent = 'Inscrire';
-          btn.className += ' libre';
-          btn.onclick = () => inscrireSeance(act.id, seance.id);
-        }
-
-        seanceItem.appendChild(dateSpan);
-        seanceItem.appendChild(btn);
-        seancesContainer.appendChild(seanceItem);
-        });
-      } else {
-        // Activité non sécable - bouton global
-        const btnContainer = document.createElement('div');
-        btnContainer.style.marginTop = '8px';
-        btnContainer.style.paddingTop = '8px';
-        btnContainer.style.borderTop = '1px solid #e2e8f0';
-
-        const btn = document.createElement('button');
-        btn.className = 'btn';
-        btn.style.width = '100%';
-
-        if (!inscriptionsOuvertes) {
-          btn.textContent = 'Inscriptions fermées';
-          btn.disabled = true;
-          btn.classList.add('ghost');
-        } else if (inscriptionsEleve) {
-          btn.textContent = 'Se désinscrire';
-          btn.classList.add('secondary');
-          btn.onclick = () => desinscrireActivite(act.id);
-        } else {
-          btn.textContent = "S'inscrire";
-          btn.onclick = () => inscrireActivite(act.id);
-        }
-
-        btnContainer.appendChild(btn);
-        actCard.appendChild(btnContainer);
-      }
-
-      // Click pour voir détails (pour élève)
-      actCard.addEventListener('click', (e) => {
-        if (e.target.tagName !== 'BUTTON') {
-          showActivityDetailsEleve(act);
-        }
-      });
-
-      container.appendChild(actCard);
-  });
-
-  $('#stat-act-eleve').textContent = totalAct;
-  $('#stat-insc-eleve').textContent = totalIns;
-}
-
-function showActivityDetailsEleve(activite) {
-  const modal = $('#activity-modal');
-  const title = $('#modal-title');
-  const body = $('#modal-body');
-
-  title.textContent = activite.titre;
-
-  const classesText = activite.classe_ids
-    .map(id => classes.find(c => c.id === id)?.nom || '')
-    .join(', ');
-
-  const animateur = getUserName(activite.animateur_id || activite.prof_id);
-  const inscriptions = activite.inscriptions || [];
-  const isInscrit = inscriptions.includes(currentUser.id);
-
-  body.innerHTML = `
-    <div class="detail-row">
-      <span class="detail-label">Description:</span>
-      <span class="detail-value">${activite.description || '—'}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Salle:</span>
-      <span class="detail-value">${activite.salle}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Animateur:</span>
-      <span class="detail-value">${animateur}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Classes:</span>
-      <span class="detail-value">${classesText}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Places:</span>
-      <span class="detail-value">${inscriptions.length}/${activite.effectif_max} inscrit(s)</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Type:</span>
-      <span class="detail-value">${activite.separable ? 'Sécable' : 'Non sécable'}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Ouverture:</span>
-      <span class="detail-value">${formatDateLocal(activite.date_ouverture_inscriptions)}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Fermeture:</span>
-      <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Mes séances:</span>
-      <span class="detail-value">
-        ${isInscrit
-          ? (activite.seances || []).map(s => formatDateLocal(s.date_heure)).join('<br>')
-          : '<em class="muted">Non inscrit(e)</em>'
-        }
-      </span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Statut:</span>
-      <span class="detail-value">
-        ${isInscrit
-          ? '<span style="color: var(--primary); font-weight: 600;">✓ Inscrit(e)</span>'
-          : '<span style="color: var(--muted);">Non inscrit(e)</span>'
-        }
-      </span>
-    </div>
-  `;
-
-  modal.classList.add('visible');
-}
-
-// Fonctions d'inscription élève
-async function inscrireActivite(activiteId) {
-  try {
-    await apiPost('/inscriptions', {activite_id: activiteId});
-    await fetchAllData();
-    majListeActivitesEleve();
-    updateEmploiDuTempsEleve();
-  } catch(e) {
-    alert('Erreur: ' + e.message);
-  }
-}
-
-async function desinscrireActivite(activiteId) {
-  if(!confirm('Veux-tu te désinscrire de cette activité ?')) return;
-  try {
-    await apiDelete('/inscriptions', {activite_id: activiteId});
-    await fetchAllData();
-    majListeActivitesEleve();
-    updateEmploiDuTempsEleve();
-  } catch(e) {
-    alert('Erreur: ' + e.message);
-  }
-}
-
-async function inscrireSeance(activiteId, seanceId) {
-  // TODO: API pour inscription par séance
-  // Pour l'instant, utiliser l'inscription globale
-  await inscrireActivite(activiteId);
-}
-
-async function desinscrireSeance(activiteId, seanceId) {
-  // TODO: API pour désinscription par séance
-  // Pour l'instant, utiliser la désinscription globale
-  await desinscrireActivite(activiteId);
-}
-
-/* ===========================
-   Interface Professeur
-   =========================== */
-function majListeActivitesProf() {
-  const container = $('#liste-activites-prof');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  const mesActivites = activites.filter(act =>
-    act.prof_id === currentUser?.id || act.animateur_id === currentUser?.id
-  );
-
-  if (mesActivites.length === 0) {
-    container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucune activité</p>';
-    return;
-  }
-
-  mesActivites.forEach(act => {
-    const inscritsCount = act.inscriptions?.length || 0;
-    const classesText = act.classe_ids
-      .map(id => classes.find(c => c.id === id)?.nom || '')
-      .join(', ');
-
-    const actCard = document.createElement('div');
-    actCard.className = 'activity-card';
-
-    actCard.innerHTML = `
-      <div class="activity-card-header">
-        <h5 class="activity-title">${act.titre}</h5>
-        <span class="activity-room">${act.salle}</span>
-      </div>
-      <div class="activity-details">Classes: ${classesText}</div>
-      <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
-      <div class="activity-meta">
-        ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
-      </div>
-    `;
-
-    // Click pour détails et mise en avant dans l'emploi du temps
-    actCard.onclick = () => {
-      // Désélectionner les autres
-      container.querySelectorAll('.activity-card').forEach(el => {
-        el.classList.remove('selected');
-      });
-
-      // Sélectionner celle-ci
-      actCard.classList.add('selected');
-
-      // Mettre en avant dans l'emploi du temps
-      highlightActiviteInScheduleProf(act);
-
-      // Afficher détails
-      showActivityDetails(act);
-    };
-
-    container.appendChild(actCard);
-  });
-}
-
-function showActivityDetails(activite) {
-  const modal = $('#activity-modal');
-  const title = $('#modal-title');
-  const body = $('#modal-body');
-
-  title.textContent = activite.titre;
-
-  const classesText = activite.classe_ids
-    .map(id => classes.find(c => c.id === id)?.nom || '')
-    .join(', ');
-
-  const animateur = getUserName(activite.animateur_id || activite.prof_id);
-  const inscriptions = activite.inscriptions || [];
-
-  body.innerHTML = `
-    <div class="detail-row">
-      <span class="detail-label">Description:</span>
-      <span class="detail-value">${activite.description || '—'}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Salle:</span>
-      <span class="detail-value">${activite.salle}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Animateur:</span>
-      <span class="detail-value">${animateur}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Classes:</span>
-      <span class="detail-value">${classesText}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Effectif:</span>
-      <span class="detail-value">${inscriptions.length}/${activite.effectif_max}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Type:</span>
-      <span class="detail-value">${activite.separable ? 'Sécable' : 'Non sécable'}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Ouverture:</span>
-      <span class="detail-value">${formatDateLocal(activite.date_ouverture_inscriptions)}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Fermeture:</span>
-      <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Séances:</span>
-      <span class="detail-value">
-        ${(activite.seances || []).map(s => formatDateLocal(s.date_heure)).join('<br>')}
-      </span>
-    </div>
-    <div class="detail-row" style="align-items: flex-start;">
-      <span class="detail-label">Inscrits:</span>
-      <div class="detail-value">
-        <div class="inscriptions-list">
-          ${inscriptions.length > 0
-            ? inscriptions.map(eleveId => {
-              const eleve = getUserById(eleveId);
-              return `<div class="inscription-item">${eleve ? getUserNameWithClass(eleveId) : `ID: ${eleveId}`}</div>`;
-              }).join('')
-            : '<div class="inscription-item muted">Aucune inscription</div>'
-          }
         </div>
       </div>
     </div>
-  `;
 
-  modal.classList.add('visible');
-}
-
-function closeActivityModal() {
-  $('#activity-modal').classList.remove('visible');
-}
-
-/* ===========================
-   Emploi du temps Professeur
-   =========================== */
-function initEmploiDuTempsProf() {
-  updateWeekDisplayProf();
-
-  $('#prev-week-prof').onclick = () => {
-    currentWeekOffsetProf--;
-    updateWeekDisplayProf();
-    updateScheduleViewProf();
-  };
-
-  $('#next-week-prof').onclick = () => {
-    currentWeekOffsetProf++;
-    updateWeekDisplayProf();
-    updateScheduleViewProf();
-  };
-
-  updateScheduleViewProf(); // Changé de createScheduleGridProf() + updateScheduleViewProf()
-}
-
-function updateWeekDisplayProf() {
-  const today = new Date();
-  const monday = getMonday(today);
-  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
-
-  const sunday = new Date(monday);
-  sunday.setDate(sunday.getDate() + 6);
-
-  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${sunday.getDate().toString().padStart(2,'0')}/${(sunday.getMonth()+1).toString().padStart(2,'0')}`;
-  $('#current-week-prof').textContent = weekText;
-}
-
-function createScheduleGridProf() {
-  const container = $('#emploi-du-temps-prof');
-  container.innerHTML = '';
-
-  // Calculer le lundi de la semaine affichée
-  const today = new Date();
-  const monday = getMonday(today);
-  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
-
-  // En-têtes avec dates et mise en avant du jour actuel
-  const headers = [''];
-  const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
-  const todayDate = new Date();
-
-  for (let i = 0; i < 7; i++) {
-    const currentDay = new Date(monday);
-    currentDay.setDate(currentDay.getDate() + i);
-
-    const dayNum = currentDay.getDate();
-    const dayName = dayNames[i];
-
-    const isToday = currentDay.toDateString() === todayDate.toDateString();
-
-    const header = document.createElement('div');
-    header.className = `schedule-cell schedule-header-cell ${isToday ? 'today' : ''}`;
-    header.innerHTML = `<div>${dayName}</div><div style="font-size:10px;opacity:0.8">${dayNum}</div>`;
-
-    container.appendChild(header);
-  }
-
-  // Créneaux 8h-18h
-  for (let hour = 8; hour < 18; hour++) {
-    // Cellule heure
-    const hourCell = document.createElement('div');
-    hourCell.className = 'schedule-cell schedule-hour-cell';
-    hourCell.textContent = `${hour}h-${hour + 1}h`;
-    container.appendChild(hourCell);
-
-    // Cellules jours
-    const days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
-    days.forEach((day, dayIndex) => {
-      const dayDate = new Date(monday);
-      dayDate.setDate(dayDate.getDate() + dayIndex);
-      const isToday = dayDate.toDateString() === todayDate.toDateString();
-
-      const slot = document.createElement('div');
-      slot.className = `schedule-cell schedule-slot ${isToday ? 'today-column' : ''}`;
-      slot.id = `slot-prof-${day}-${hour}`;
-      container.appendChild(slot);
-    });
-  }
-}
-
-function updateScheduleViewProf() {
-  // Recréer la grille avec les nouvelles dates
-  createScheduleGridProf();
-
-  // Afficher les séances de la semaine courante
-  const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
-
-  activites.forEach(act => {
-    if (act.prof_id !== currentUser?.id && act.animateur_id !== currentUser?.id) return;
-
-    act.seances?.forEach(seance => {
-      const seanceDate = new Date(seance.date_heure);
-      const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
-
-      if (daysDiff >= 0 && daysDiff < 7) { // 7 jours maintenant
-        const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
-        const hour = seanceDate.getHours();
-
-        if (hour >= 8 && hour < 18) {
-          const slotId = `slot-prof-${dayName}-${hour}`;
-          const slot = document.getElementById(slotId);
-
-          if (slot) {
-            const seanceDiv = document.createElement('div');
-            seanceDiv.className = 'seance-block';
-            seanceDiv.textContent = act.titre;
-            seanceDiv.title = `${act.titre}\n${act.salle}\n${formatDateLocal(seance.date_heure)}`;
-
-            slot.appendChild(seanceDiv);
-          }
-        }
-      }
-    });
-  });
-}
-
-function highlightActiviteInScheduleProf(activite) {
-  // Reset highlighting
-  document.querySelectorAll('#emploi-du-temps-prof .schedule-slot').forEach(slot => {
-      slot.classList.remove('highlighted');
-  });
-
-  // Highlight les créneaux de cette activité
-  const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
-
-  activite.seances?.forEach(seance => {
-    const seanceDate = new Date(seance.date_heure);
-    const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
-
-    if (daysDiff >= 0 && daysDiff < 7) {
-      const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
-      const hour = seanceDate.getHours();
-
-      if (hour >= 8 && hour < 18) {
-        const slotId = `slot-prof-${dayName}-${hour}`;
-        const slot = document.getElementById(slotId);
-
-        if (slot) {
-          slot.classList.add('highlighted');
-        }
-      }
-    }
-  });
-}
-
-/* ===========================
-   Emploi du temps Élève
-   =========================== */
-function initEmploiDuTempsEleve() {
-  updateWeekDisplayEleve();
-
-  $('#prev-week-eleve').onclick = () => {
-    currentWeekOffsetEleve--;
-    updateWeekDisplayEleve();
-    updateEmploiDuTempsEleve();
-  };
-
-  $('#next-week-eleve').onclick = () => {
-    currentWeekOffsetEleve++;
-    updateWeekDisplayEleve();
-    updateEmploiDuTempsEleve();
-  };
-
-  updateEmploiDuTempsEleve(); // Changé de createScheduleGridEleve() + updateEmploiDuTempsEleve()
-}
-
-function updateWeekDisplayEleve() {
-  const today = new Date();
-  const monday = getMonday(today);
-  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
-
-  const sunday = new Date(monday);
-  sunday.setDate(sunday.getDate() + 6);
-
-  const weekText = `Semaine du ${monday.getDate().toString().padStart(2,'0')}/${(monday.getMonth()+1).toString().padStart(2,'0')} au ${sunday.getDate().toString().padStart(2,'0')}/${(sunday.getMonth()+1).toString().padStart(2,'0')}`;
-  $('#current-week-eleve').textContent = weekText;
-}
-
-function createScheduleGridEleve() {
-  const container = $('#emploi-du-temps-eleve');
-  container.innerHTML = '';
-
-  // Calculer le lundi de la semaine affichée
-  const today = new Date();
-  const monday = getMonday(today);
-  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
-
-  // En-têtes avec dates et mise en avant du jour actuel
-  const headers = [''];
-  const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
-  const todayDate = new Date();
-
-  for (let i = 0; i < 7; i++) {
-    const currentDay = new Date(monday);
-    currentDay.setDate(currentDay.getDate() + i);
-
-    const dayNum = currentDay.getDate();
-    const dayName = dayNames[i];
-
-    const isToday = currentDay.toDateString() === todayDate.toDateString();
-
-    const header = document.createElement('div');
-    header.className = `schedule-cell schedule-header-cell ${isToday ? 'today' : ''}`;
-    header.innerHTML = `<div>${dayName}</div><div style="font-size:10px;opacity:0.8">${dayNum}</div>`;
-
-    container.appendChild(header);
-  }
-
-  // Créneaux 8h-18h
-  for (let hour = 8; hour < 18; hour++) {
-    // Cellule heure
-    const hourCell = document.createElement('div');
-    hourCell.className = 'schedule-cell schedule-hour-cell';
-    hourCell.textContent = `${hour}h-${hour + 1}h`;
-    container.appendChild(hourCell);
-
-    // Cellules jours
-    const days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
-    days.forEach((day, dayIndex) => {
-      const dayDate = new Date(monday);
-      dayDate.setDate(dayDate.getDate() + dayIndex);
-      const isToday = dayDate.toDateString() === todayDate.toDateString();
-
-      const slot = document.createElement('div');
-      slot.className = `schedule-cell schedule-slot ${isToday ? 'today-column' : ''}`;
-      slot.id = `slot-eleve-${day}-${hour}`;
-      container.appendChild(slot);
-    });
-  }
-}
-
-function updateEmploiDuTempsEleve() {
-  if (!currentUser) return;
-
-  // Recréer la grille avec les nouvelles dates
-  createScheduleGridEleve();
-
-  // Afficher seulement les séances où l'élève est inscrit
-  const monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
-
-  activites.forEach(act => {
-    // Vérifier que l'élève est inscrit à cette activité
-    if (!act.inscriptions?.includes(currentUser.id)) return;
-
-    act.seances?.forEach(seance => {
-      const seanceDate = new Date(seance.date_heure);
-      const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
-
-      if (daysDiff >= 0 && daysDiff < 7) { // 7 jours maintenant
-        const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
-        const hour = seanceDate.getHours();
-
-        if (hour >= 8 && hour < 18) {
-          const slotId = `slot-eleve-${dayName}-${hour}`;
-          const slot = document.getElementById(slotId);
-
-          if (slot) {
-            const seanceDiv = document.createElement('div');
-            seanceDiv.className = 'seance-block';
-            seanceDiv.textContent = act.titre;
-            seanceDiv.title = `${act.titre}\n${act.salle}\n${formatDateLocal(seance.date_heure)}`;
-
-            slot.appendChild(seanceDiv);
-          }
-        }
-      }
-    });
-  });
-}
-
-/* ===========================
-   Gestion des exclusives
-   =========================== */
-function majListeExclusives(){
-  const select = $('#exclusives-select');
-  if(!select) return;
-  select.innerHTML='';
-  activites.forEach(act=>{
-    const opt = document.createElement('option');
-    opt.value=act.id;
-    opt.textContent=act.titre;
-    select.appendChild(opt);
-  });
-}
-
-/* ===========================
-   Reset form
-   =========================== */
-function resetForm(){
-  $('#titre').value='';
-  $('#salle').value='';
-  $('#effectif').value='30';
-  $('#seances-container').innerHTML='';
-  $('#first-hebdoseance').value='';
-  $('#nb-seances').value=4;
-  $('#ouverture').value='';
-  $('#fermeture').value='';
-
-  // Remettre animateur par défaut et visible_avant à false
-  if($('#animateur-select')){
-    const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
-    $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
-  }
-  if($('#visible-avant')) $('#visible-avant').checked = false;
-  if($('#separable')) $('#separable').checked = true;
-
-  // Clear selections
-  if($('#classe-select')) {
-    Array.from($('#classe-select').options).forEach(opt => opt.selected = false);
-  }
-  if($('#exclusives-select')) {
-    Array.from($('#exclusives-select').options).forEach(opt => opt.selected = false);
-  }
-}
-
-/* ===========================
-   Créer activité avec API
-   =========================== */
-async function creerActivite(){
-  const titre = $('#titre').value.trim();
-  const salle = $('#salle').value.trim();
-  const effectif = parseInt($('#effectif').value) || 30;
-  const separable = $('#separable').checked;
-  const selectedClasses = Array.from($('#classe-select').selectedOptions).map(o=>parseInt(o.value));
-  const seances = Array.from(document.querySelectorAll('.seance-input'))
-    .map((input, idx)=>({ date_heure: input.value}))
-    .filter(s=>s.date_heure);
-  const ouverture = $('#ouverture').value;
-  const fermeture = $('#fermeture').value;
-  const exclusives = Array.from($('#exclusives-select').selectedOptions).map(o=>parseInt(o.value));
-  const seancesContainer = $('#seances-container');
-
-  // Retirer anciennes erreurs
-  let hasError = false;
-  ['#titre', '#salle', '#effectif', '#classe-select', '#ouverture', '#fermeture'].forEach(sel => {
-    const el = $(sel);
-    if(el) el.classList.remove('error');
-  });
-  $all('.seance-input').forEach(inp => inp.classList.remove('error'));
-  if(seancesContainer) seancesContainer.classList.remove('error');
-
-  // Validation des champs obligatoires
-  if (!titre) { $('#titre')?.classList.add('error'); hasError = true; }
-  if (!salle) { $('#salle')?.classList.add('error'); hasError = true; }
-  if (!effectif || effectif < 1 || effectif > 100) {
-    $('#effectif')?.classList.add('error');
-    hasError = true;
-    if(effectif > 100) alert('Effectif maximum autorisé: 100');
-  }
-  if (selectedClasses.length === 0) { $('#classe-select')?.classList.add('error'); hasError = true; }
-  if (!ouverture) { $('#ouverture')?.classList.add('error'); hasError = true; }
-  if (!fermeture) { $('#fermeture')?.classList.add('error'); hasError = true; }
-  if (seances.length === 0) { seancesContainer?.classList.add('error'); hasError = true; }
-
-  if (hasError) {
-    alert('Veuillez remplir tous les champs obligatoires');
-    return;
-  }
-
-  // Récupération animateur + visible_avant
-  const animateurId = $('#animateur-select') ? parseInt($('#animateur-select').value) : currentUser.id;
-  const visibleAvant = $('#visible-avant') ? !!$('#visible-avant').checked : false;
-
-  // Préparer les données pour l'API
-  const newAct = {
-    titre,
-    description: '',
-    prof_id: currentUser.id,
-    animateur_id: animateurId,
-    visible_avant: visibleAvant,
-    classe_ids: selectedClasses,
-    salle,
-    separable,
-    effectif_max: effectif,
-    seances,
-    date_ouverture_inscriptions: ouverture,
-    date_fermeture_inscriptions: fermeture,
-    exclusives_ids: exclusives
-  };
-
-  try {
-    const result = await apiPost('/activites', newAct);
-    await fetchAllData();
-    majListeActivitesProf();
-    majListeExclusives();
-    updateScheduleViewProf();
-    resetForm();
-    alert('Activité créée et enregistrée en base!');
-  } catch(e) {
-    alert('Erreur lors de la création : ' + e.message);
-  }
-}
-
-/* ===========================
-   Gestion des séances
-   =========================== */
-function ajouterSeanceHebdo(){
-  const container = $('#seances-container');
-  const startInput = $('#first-hebdoseance');
-  const nbInput = $('#nb-seances');
-  const start = new Date(startInput.value);
-  const nb = parseInt(nbInput.value);
-
-  if(isNaN(start.getTime()) || !nb || nb<1){
-    alert('Choisissez une date et un nombre valide');
-    return;
-  }
-
-  const serieDiv = document.createElement('div');
-  serieDiv.className='serie-hebdo';
-
-  const sup = document.createElement('div');
-  sup.style.textAlign='right';
-  const supBtn = document.createElement('button');
-  supBtn.className='btn secondary';
-  supBtn.textContent='Supprimer série';
-  supBtn.onclick = ()=> serieDiv.remove();
-  sup.appendChild(supBtn);
-  serieDiv.appendChild(sup);
-
-  for(let i=0;i<nb;i++){
-    const d = document.createElement('div');
-    d.className='seance-item';
-    const inp = document.createElement('input');
-    inp.type='datetime-local';
-    const seanceDate = new Date(start.getTime() + i*7*24*3600*1000);
-    inp.value = formatDateInputLocal(seanceDate);
-    inp.className='seance-input';
-    const span = document.createElement('div');
-    span.className='small muted';
-    span.style.minWidth='110px';
-    span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
-    const del = document.createElement('button');
-    del.className='btn ghost';
-    del.textContent='✖';
-    del.onclick = ()=> d.remove();
-    d.appendChild(span);
-    d.appendChild(inp);
-    d.appendChild(del);
-    serieDiv.appendChild(d);
-  }
-
-  container.appendChild(serieDiv);
-}
-
-function ajouterSeanceManuelle(){
-  const container = $('#seances-container');
-  const d = document.createElement('div');
-  d.className='seance-item manual';
-  const inp = document.createElement('input');
-  inp.type='datetime-local';
-  inp.className='seance-input';
-  const span = document.createElement('div');
-  span.className='small muted';
-  span.style.minWidth='110px';
-  span.textContent='Ajout manuel';
-  const del = document.createElement('button');
-  del.className='btn ghost';
-  del.textContent='✖';
-  del.onclick = ()=> d.remove();
-  d.appendChild(span);
-  d.appendChild(inp);
-  d.appendChild(del);
-  container.appendChild(d);
-}
-
-/* ===========================
-   Sidebar panels
-   =========================== */
-function updateSidePanels(){
-  const raccourcis = $('#sidebar-raccourcis');
-  if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
-
-  const statut = $('#sidebar-statut');
-  if (statut) statut.style.display = MODE === 'dev' ? 'block' : 'none';
-
-  const aideRapide = $('#sidebar-aide');
-  if (aideRapide) {
-    aideRapide.style.display = (currentUser && (currentUser.role === 'prof' || currentUser.role === 'admin')) ? 'block' : 'none';
-  }
-}
-
-/* ===========================
-   Event Listeners
-   =========================== */
-document.addEventListener('DOMContentLoaded', function() {
-  // Enter key pour login
-  $('#username')?.addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') login();
-  });
-  $('#password')?.addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') login();
-  });
-
-  // Fermer modal avec Escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeActivityModal();
-    }
-  });
-
-  // Fermer modal en cliquant à côté
-  $('#activity-modal')?.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-overlay')) {
-      closeActivityModal();
-    }
-  });
-});
-
-/* ===========================
-   Gestion des erreurs
-   =========================== */
-window.addEventListener('error', (e) => {
-  console.error('Erreur JavaScript:', e.error);
-});
-
-window.addEventListener('unhandledrejection', (e) => {
-  console.error('Promise rejetée:', e.reason);
-});
-
-/* ===========================
-   Initialisation sécurisée
-   =========================== */
-(async function init(){
-  try{
-    console.log('[START] Initialisation de l\'application...');
-
-    const hasValidSession = await checkAuthStatus();
-
-    if (hasValidSession) {
-      console.log('[OK] Session existante détectée');
-      await fetchAllData();
-    } else {
-      console.log('[INFO] Aucune session active, affichage du login');
-      classes = [];
-      users = [];
-      activites = [];
-    }
-
-    onAuthChange();
-    updateSidePanels();
-    console.log('[OK] Application initialisée');
-  } catch(e){
-    console.error('[KO] Erreur lors de l\'initialisation:', e);
-    const loginMsg = $('#login-msg');
-    if(loginMsg) {
-      loginMsg.textContent = 'Erreur de connexion au serveur';
-    }
-    currentUser = null;
-    classes = [];
-    users = [];
-    activites = [];
-    onAuthChange();
-  }
-})();
-</script>
+    <!-- MODAL APPEL -->
+    <div id="appel-modal" class="modal-overlay">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3 id="appel-modal-title">Faire l'appel</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="appel-modal-body">
+          <!-- Contenu dynamique-->
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <script src="Select_Comp.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

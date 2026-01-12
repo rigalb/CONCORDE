@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inscription - CONCORDE</title>
+    <style>
+        :root {
+            --primary: #0b72ff;
+            --accent: #d63384;
+            --text: #222;
+            --muted: #666;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            padding: 20px;
+        }
+
+        .signup-container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            margin-bottom: 15px;
+            box-shadow: 0 8px 24px rgba(11, 114, 255, 0.3);
+        }
+
+        h1 {
+            color: var(--primary);
+            margin: 0 0 10px 0;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .info-box {
+            background: #f8fafc;
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .required { color: #dd1738; }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .form-group input:disabled {
+            background: #f1f5f9;
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        .form-group input:focus:not(:disabled),
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(11, 114, 255, 0.1);
+        }
+
+        .helper-text {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .password-strength {
+            margin-top: 8px;
+        }
+
+        .strength-bar {
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 2px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            background: #10b981;
+            transition: all 0.3s;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary), #0052cc);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            font-family: inherit;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            font-size: 14px;
+        }
+
+        .message.error {
+            background: #fff5f7;
+            color: #dd1738;
+            border: 1px solid #dd1738;
+        }
+
+        .message.success {
+            background: #f0fdf4;
+            color: #10b981;
+            border: 1px solid #10b981;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="signup-container">
+        <div class="logo-container">
+            <div class="logo">📚</div>
+            <h1>Bienvenue sur CONCORDE</h1>
+            <p class="subtitle">Créez votre compte professeur</p>
+        </div>
+
+        <div class="info-box" id="welcome-info">
+            <div class="loading">Chargement...</div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <form id="signup-form" style="display:none;">
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur <span class="required">*</span></label>
+                <input type="text" id="username" required disabled>
+                <div class="helper-text">Généré automatiquement depuis votre email</div>
+            </div>
+
+            <div class="form-group">
+                <label for="prenom">Prénom <span class="required">*</span></label>
+                <input type="text" id="prenom" required placeholder="Ex: Pierre">
+            </div>
+
+            <div class="form-group">
+                <label for="nom">Nom <span class="required">*</span></label>
+                <input type="text" id="nom" required placeholder="Ex: Dupont">
+            </div>
+
+            <div class="form-group">
+                <label for="matiere">Matière enseignée <span class="required">*</span></label>
+                <select id="matiere" required>
+                    <option value="">-- Sélectionnez une matière --</option>
+                    <option value="Mathématiques">Mathématiques</option>
+                    <option value="Français">Français</option>
+                    <option value="Histoire-Géographie">Histoire-Géographie</option>
+                    <option value="Sciences">Sciences (SVT/Physique-Chimie)</option>
+                    <option value="Anglais">Anglais</option>
+                    <option value="Espagnol">Espagnol</option>
+                    <option value="Allemand">Allemand</option>
+                    <option value="EPS">EPS (Sport)</option>
+                    <option value="Arts Plastiques">Arts Plastiques</option>
+                    <option value="Musique">Musique</option>
+                    <option value="Technologie">Technologie</option>
+                    <option value="Latin">Latin</option>
+                    <option value="Grec">Grec</option>
+                    <option value="Autre">Autre</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Mot de passe <span class="required">*</span></label>
+                <input type="password" id="password" required autocomplete="new-password">
+                <div class="password-strength">
+                    <div class="strength-bar">
+                        <div class="strength-fill" id="strength-fill"></div>
+                    </div>
+                    <div class="helper-text" id="strength-text">Minimum 8 caractères</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="password-confirm">Confirmer le mot de passe <span class="required">*</span></label>
+                <input type="password" id="password-confirm" required autocomplete="new-password">
+            </div>
+
+            <div class="form-group">
+                <label for="classe">Classe principale (optionnel)</label>
+                <select id="classe">
+                    <option value="">Aucune classe principale</option>
+                </select>
+                <div class="helper-text">Vous pourrez créer des activités pour toutes les classes</div>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submit-btn">Créer mon compte</button>
+        </form>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const messageDiv = document.getElementById('message');
+        const form = document.getElementById('signup-form');
+        const submitBtn = document.getElementById('submit-btn');
+
+        async function loadInvitationInfo() {
+            if (!token) {
+                showMessage('[KO] Token manquant', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/invitation-info?token=${token}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    showMessage('[KO] ' + data.error, 'error');
+                    return;
+                }
+
+                // Extraire username depuis l'email (partie avant @)
+                const username = data.email.split('@')[0];
+                document.getElementById('username').value = username;
+
+                document.getElementById('welcome-info').innerHTML = `
+                    <strong>👋 Bienvenue !</strong><br>
+                    Email : <strong>${data.email}</strong><br>
+                    Complétez vos informations ci-dessous.
+                `;
+
+                form.style.display = 'block';
+
+            } catch (e) {
+                showMessage('[KO] Erreur de chargement', 'error');
+            }
+        }
+
+        async function loadClasses() {
+            try {
+                const res = await fetch('/classes');
+                const classes = await res.json();
+                const select = document.getElementById('classe');
+
+                classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.nom;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('Erreur classes:', e);
+            }
+        }
+
+        document.getElementById('password').addEventListener('input', (e) => {
+            const password = e.target.value;
+            const fill = document.getElementById('strength-fill');
+            const text = document.getElementById('strength-text');
+
+            let strength = 0;
+            if (password.length >= 8) strength += 25;
+            if (password.length >= 12) strength += 25;
+            if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
+            if (/[0-9]/.test(password) && /[^a-zA-Z0-9]/.test(password)) strength += 25;
+
+            fill.style.width = strength + '%';
+
+            if (strength < 25) {
+                fill.style.background = '#dd1738';
+                text.textContent = 'Trop faible';
+                text.style.color = '#dd1738';
+            } else if (strength < 50) {
+                fill.style.background = '#ff8a00';
+                text.textContent = 'Faible';
+                text.style.color = '#ff8a00';
+            } else if (strength < 75) {
+                fill.style.background = '#00b5cc';
+                text.textContent = 'Moyen';
+                text.style.color = '#00b5cc';
+            } else {
+                fill.style.background = '#10b981';
+                text.textContent = 'Fort';
+                text.style.color = '#10b981';
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value.trim();
+            const prenom = document.getElementById('prenom').value.trim();
+            const nom = document.getElementById('nom').value.trim();
+            const matiere = document.getElementById('matiere').value;
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password-confirm').value;
+            const classeId = document.getElementById('classe').value || null;
+
+            // Validations
+            if (!prenom || !nom || !matiere) {
+                showMessage('[KO] Tous les champs obligatoires doivent être remplis', 'error');
+                return;
+            }
+
+            if (password !== passwordConfirm) {
+                showMessage('[KO] Les mots de passe ne correspondent pas', 'error');
+                return;
+            }
+
+            if (password.length < 8) {
+                showMessage('[KO] Mot de passe trop court (min 8 caractères)', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Création en cours...';
+
+            try {
+                const res = await fetch('/inscription', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        token,
+                        username,
+                        prenom,
+                        nom,
+                        matiere,
+                        password,
+                        classe_id: classeId
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    showMessage('[KO] ' + data.error, 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Créer mon compte';
+                    return;
+                }
+
+                showMessage('[OK] Compte créé ! Redirection...', 'success');
+                form.style.display = 'none';
+
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+
+            } catch (e) {
+                showMessage('[KO] Erreur lors de l\'inscription', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Créer mon compte';
+            }
+        });
+
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            messageDiv.style.display = 'block';
+            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        loadInvitationInfo();
+        loadClasses();
+    </script>
+</body>
+</html>
