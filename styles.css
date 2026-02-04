@@ -1951,6 +1951,17 @@ textarea {
   align-items: center;
 }
 
+/* Margin */
+.mb-6 { margin-bottom: 6px; }
+
+/* Text */
+.text-accent { color: var(--accent); }
+.text-11 { font-size: 11px; }
+
+/* SVG / size */
+.w-12 { width: 12px; }
+.h-12 { height: 12px; }
+.svg-fill-current { fill: currentColor; }
 
 
 

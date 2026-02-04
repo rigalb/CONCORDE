@@ -56,6 +56,19 @@ function setupEventDelegation() {
             return;
         }
 
+        // === BOUTONS DÉSINSCRIRE (ADMIN/PROF) - PRIORITÉ HAUTE ===
+        if (btn && btn.classList.contains('btn-unregister')) {
+            e.stopPropagation();
+            const eleveId = parseInt(btn.dataset.eleveId);
+            const seanceId = parseInt(btn.dataset.seanceId);
+            console.log(btn.dataset.activiteSeparable);
+            const isSeparable = btn.dataset.activiteSeparable === '1';
+            
+            console.log('Désinscription demandée:', { eleveId, seanceId, isSeparable });
+            desinscrireEleve(eleveId, seanceId, isSeparable);
+            return;
+        }
+
         // === BOUTONS DE SÉANCE (ÉLÈVE) ===
         if (btn && btn.classList.contains('seance-btn')) {
             e.stopPropagation();
@@ -70,8 +83,8 @@ function setupEventDelegation() {
             return;
         }
 
-        // === BOUTONS MINI DANS MODAL ===
-        if (btn && btn.classList.contains('btn-mini')) {
+        // === BOUTONS MINI DANS MODAL (sauf btn-unregister) ===
+        if (btn && btn.classList.contains('btn-mini') && !btn.classList.contains('btn-unregister')) {
             e.stopPropagation();
             // Extraire l'ID de la séance depuis l'attribut onclick (si présent)
             const onclickAttr = btn.getAttribute('onclick');
@@ -855,20 +868,28 @@ function initElevesNonInscrits() {
 
     const userId = currentUser.id;
 
-    // Récupérer toutes les activités du prof (créées OU animées)
-    const activitesProf = activites.filter(a =>
+    let groupesProf;
+    if (currentUser.role === 'admin') {
+    groupesProf = groupes; // Tous les groupes pour l'admin
+    } else {
+        // Pour les profs, filtrer comme avant
+
+        // Récupérer toutes les activités du prof (créées OU animées)
+        const activitesProf = activites.filter(a =>
         a.prof_id === userId || a.animateur_id === userId
-    );
+        );
 
-    // Extraire les groupes uniques de ces activités
-    const groupeIds = [...new Set(
-        activitesProf
-            .filter(a => a.groupe_id != null)
-            .map(a => a.groupe_id)
-    )];
+        // Extraire les groupes uniques de ces activités
+        const groupeIds = [...new Set(
+            activitesProf
+                .filter(a => a.groupe_id != null)
+                .map(a => a.groupe_id)
+        )];
 
-    // Filtrer les groupes correspondants
-    const groupesProf = groupes.filter(g => groupeIds.includes(g.id));
+        // Filtrer les groupes correspondants
+        groupesProf = groupes.filter(g => groupeIds.includes(g.id));
+    }
+
 
     // Remplir le sélecteur de groupes UNIQUEMENT avec les groupes du prof
     if (groupesProf.length === 0) {
@@ -1069,12 +1090,12 @@ function majListeActivitesEleve() {
                 <h5 class="activity-title">${act.titre}</h5>
                 <span class="activity-room">${act.salle}</span>
             </div>
-            <div class="activity-details" style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">
+            <div class="activity-details small muted mb-1">
                 👤 ${animateurNom}
             </div>
             ${act.groupe_id ? `
-                <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 6px; color: var(--accent); font-size: 11px; font-weight: 600;">
-                    <svg style="width: 12px; height: 12px; fill: currentColor;" viewBox="0 0 24 24">
+                <div class="flex items-center gap-4 mb-6 text-accent text-11 font-semibold">
+                    <svg class="w-12 h-12 svg-fill-current" viewBox="0 0 24 24">
                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
                     </svg>
                     Groupe d'Activité : ${groupes.find(g => g.id === act.groupe_id)?.nom || 'Non défini'}
@@ -1517,10 +1538,17 @@ function majListeActivitesProf() {
     if (!containerAnimees || !containerCreees) return;
 
     const userId = currentUser?.id;
+    const isAdmin = currentUser?.role === 'admin';
 
     // Séparer les activités animées et créées
-    const activitesAnimees = activites.filter(act => act.animateur_id === userId);
-    const activitesCreees = activites.filter(act => act.prof_id === userId && act.animateur_id !== userId);
+    const activitesAnimees = isAdmin
+        ? activites.filter(act => act.animateur_id !== act.prof_id) // Toutes les activités avec animateur différent
+        : activites.filter(act => act.animateur_id === userId);
+
+    const activitesCreees = isAdmin
+        ? activites.filter(act => act.animateur_id === act.prof_id || !act.animateur_id) // Toutes les autres
+        : activites.filter(act => act.prof_id === userId && act.animateur_id !== userId);
+
 
     // Fonction helper pour créer une carte d'activité
     function creerCarteActivite(act, container) {
@@ -1533,14 +1561,19 @@ function majListeActivitesProf() {
         actCard.className = 'activity-card';
         actCard.dataset.activityId = act.id;
 
-        // Vérifier si l'utilisateur est le créateur
-        const isCreator = act.prof_id === currentUser?.id;
+        // Vérifier si l'utilisateur est le créateur Ou admin
+        const isCreator = act.prof_id === currentUser?.id || currentUser?.role === "admin";
 
         actCard.innerHTML = `
             <div class="activity-card-header">
                 <h5 class="activity-title">${act.titre}</h5>
                 <span class="activity-room">${act.salle}</span>
             </div>
+            ${currentUser?.role === 'admin' && act.prof_id !== currentUser.id ? `
+            <div class="text-10 font-semibold text-warning mb-8">
+                🔑 ADMIN - Créée par ${getUserName(act.prof_id)}
+            </div>
+            ` : ''}
             <div class="activity-details">Classes: ${classesText}</div>
             <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
             <div class="activity-meta">
@@ -1690,8 +1723,26 @@ function showActivityDetails(activite) {
                     ${seanceInscrits.length > 0
                         ? seanceInscrits.map(eleveId => {
                             const eleve = getUserById(eleveId);
-                            return `<div class="inscription-item">${eleve ? getUserNameWithClass(eleveId) : `ID: ${eleveId}`}</div>`;
-                          }).join('')
+                            const userName = eleve ? getUserNameWithClass(eleveId) : `ID: ${eleveId}`;
+
+                            // Vérifier si l'utilisateur peut désinscrire
+                            const canUnregister = currentUser.role === 'admin' ||
+                                                    activite.prof_id === currentUser.id;
+                            let btnHtml = '';
+                            if (canUnregister) {
+                            btnHtml = `<button class="btn-mini secondary btn-unregister"
+                                                data-eleve-id="${eleveId}"
+                                                data-seance-id="${seance.id}"
+                                                data-activite-separable="${activite.separable}">
+                                            ✖ Désinscrire
+                                        </button>`;
+                            }
+
+                            return `<div class="inscription-item flex justify-between items-center">
+                                        <span>${userName} </span>
+                                        ${btnHtml}
+                                    </div>`;
+                            }).join('')
                         : '<div class="inscription-item muted">Aucune inscription</div>'
                     }
                 </div>
@@ -3886,6 +3937,50 @@ function initStaticEventListeners() {
 
 
 
+
+async function desinscrireEleve(eleveId, seanceId, isSeparable) {
+    const eleve = getUserById(eleveId);
+    const nomEleve = eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève #${eleveId}`;
+
+    if (!confirm(`Voulez-vous vraiment désinscrire ${nomEleve} ?`)) return;
+
+    try {
+        if (isSeparable) {
+            // Désinscrire de la séance spécifique
+            await apiDelete('/inscriptions/seance', {
+                seance_id: seanceId,
+                eleve_id: eleveId
+            });
+        } else {
+            // Désinscrire de toute l'activité
+            const seance = activites.flatMap(a =>
+                a.seances.map(s => ({...s, activite_id: a.id}))
+            ).find(s => s.id === seanceId);
+
+            if (seance) {
+                await apiDelete('/inscriptions', {
+                    activite_id: seance.activite_id,
+                    eleve_id: eleveId
+                });
+            }
+        }
+
+        await fetchAllData();
+
+        // Rafraîchir le modal
+        const activite = activites.find(a =>
+            a.seances.some(s => s.id === seanceId)
+        );
+        if (activite) {
+            showActivityDetails(activite);
+        }
+
+        alert('Élève désinscrit avec succès');
+
+    } catch(e) {
+        alert('Erreur lors de la désinscription : ' + e.message);
+    }
+}
 
 
 

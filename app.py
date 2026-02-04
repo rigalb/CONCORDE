@@ -561,7 +561,8 @@ def supprimer_activite(activite_id):
       conn.close()
       return jsonify({"error": "Activité introuvable"}), 404
 
-    if activite["prof_id"] != session["user_id"]:
+    # Les admins peuvent tout supprimer, les profs seulement leurs créations
+    if session["role"] != "admin" and activite["prof_id"] != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur de cette activité"}), 403
 
@@ -610,7 +611,8 @@ def modifier_activite(activite_id):
       conn.close()
       return jsonify({"error": "Activité introuvable"}), 404
 
-    if activite["prof_id"] != session["user_id"]:
+    # Les admins peuvent tout modifier, les profs seulement leurs créations
+    if session["role"] != "admin" and activite["prof_id"] != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur"}), 403
 
@@ -788,7 +790,7 @@ def generer_pdf_seance(seance_id):
       conn.close()
       return jsonify({"error": "Séance introuvable"}), 404
 
-    if seance_data["prof_id"] != session["user_id"] and seance_data["animateur_id"] != session["user_id"]:
+    if session["role"] != "admin" and seance_data["prof_id"] != session["user_id"] and seance_data["animateur_id"] != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé"}), 403
 
@@ -1045,7 +1047,7 @@ def inscrire():
     return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
 @app.route("/inscriptions", methods=["DELETE"])
-@role_required('eleve')
+@login_required
 def desinscrire():
   try:
     data = request.json
@@ -1053,7 +1055,21 @@ def desinscrire():
       return jsonify({"error": "Données manquantes"}), 400
 
     activite_id = validate_integer(data.get("activite_id"), min_val=1)
-    user_id = session["user_id"]
+    
+    # Support pour désinscription par admin/prof
+    eleve_id = data.get("eleve_id")
+    
+    if eleve_id:
+      # Vérifier que l'utilisateur est admin ou prof créateur
+      if session.get("role") not in ['admin', 'prof']:
+        return jsonify({"error": "Non autorisé"}), 403
+      
+      eleve_id = validate_integer(eleve_id, min_val=1)
+    else:
+      # Désinscription de soi-même (élève)
+      if session.get("role") != 'eleve':
+        return jsonify({"error": "Non autorisé"}), 403
+      eleve_id = session["user_id"]
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -1061,10 +1077,10 @@ def desinscrire():
     cur.execute("""
       DELETE FROM presences
       WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
-    """, (user_id, activite_id))
+    """, (eleve_id, activite_id))
 
     result = cur.execute("DELETE FROM inscriptions WHERE eleve_id=? AND activite_id=?",
-                        (user_id, activite_id))
+                        (eleve_id, activite_id))
 
     affected = result.rowcount
     conn.commit()
@@ -1073,7 +1089,7 @@ def desinscrire():
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
-    logger.info(f"Désinscription (NON sécable): user {user_id} <- activité {activite_id}")
+    logger.info(f"Désinscription (NON sécable): user {eleve_id} <- activité {activite_id}")
     return jsonify({"success": True})
 
   except ValueError as ve:
@@ -1177,7 +1193,7 @@ def inscrire_seance():
     return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
 @app.route("/inscriptions/seance", methods=["DELETE"])
-@role_required('eleve')
+@login_required
 def desinscrire_seance():
   try:
     data = request.json
@@ -1185,13 +1201,27 @@ def desinscrire_seance():
       return jsonify({"error": "Données manquantes"}), 400
 
     seance_id = validate_integer(data.get("seance_id"), min_val=1)
-    user_id = session["user_id"]
+    
+    # Support pour désinscription par admin/prof
+    eleve_id = data.get("eleve_id")
+    
+    if eleve_id:
+      # Vérifier que l'utilisateur est admin ou prof créateur
+      if session.get("role") not in ['admin', 'prof']:
+        return jsonify({"error": "Non autorisé"}), 403
+      
+      eleve_id = validate_integer(eleve_id, min_val=1)
+    else:
+      # Désinscription de soi-même (élève)
+      if session.get("role") != 'eleve':
+        return jsonify({"error": "Non autorisé"}), 403
+      eleve_id = session["user_id"]
 
     conn = get_db_connection()
     cur = conn.cursor()
 
     result = cur.execute("DELETE FROM presences WHERE eleve_id=? AND seance_id=?",
-                        (user_id, seance_id))
+                        (eleve_id, seance_id))
     affected = result.rowcount
     conn.commit()
     conn.close()
@@ -1199,7 +1229,7 @@ def desinscrire_seance():
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
-    logger.info(f"Désinscription séance: user {user_id} <- séance {seance_id}")
+    logger.info(f"Désinscription séance: user {eleve_id} <- séance {seance_id}")
     return jsonify({"success": True})
 
   except ValueError as ve:
@@ -1717,7 +1747,7 @@ def get_appel_info(seance_id):
       conn.close()
       return jsonify({"error": "Séance introuvable"}), 404
 
-    if seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
+    if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé"}), 403
 
@@ -1768,7 +1798,7 @@ def save_appel(seance_id):
       conn.close()
       return jsonify({"error": "Séance introuvable"}), 404
 
-    if seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
+    if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé"}), 403
 
@@ -1815,7 +1845,7 @@ def get_appel_status(seance_id):
 
     animateur_id = seance["animateur_id"] if seance["animateur_id"] else seance["prof_id"]
 
-    if seance["prof_id"] != session["user_id"] and animateur_id != session["user_id"]:
+    if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and animateur_id != session["user_id"]:
       conn.close()
       return jsonify({"error": "Non autorisé"}), 403
 
@@ -2187,9 +2217,11 @@ def serve_static(filename):
   # Liste blanche des fichiers autorisés pour la sécurité
   allowed_files = [
     "styles.css",
-    "Select_Comp.css",
     "script.js",
-    "Select_Comp.js"
+    "Select_Comp.css",
+    "Select_Comp.js",
+    "prof_signup.css",
+    "prof_signup.js"
   ]
 
   if filename in allowed_files:
