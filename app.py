@@ -1,7 +1,14 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-from flask import Flask, request, session, jsonify, send_from_directory, send_file
+from flask import Flask, request, session, jsonify, send_from_directory, send_file, Response
+import queue
+import json
+import time
+import secrets
+import threading
+from collections import defaultdict
+from typing import Dict, Set
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -32,6 +39,60 @@ from validators import (
   safe_int,
   safe_email
 )
+
+
+
+
+
+# ========================
+# SYSTÈME SSE
+# ========================
+class SSEManager:
+  def __init__(self):
+    self.listeners: Dict[str, queue.Queue] = {}
+    self.lock = threading.Lock()
+  
+  def add_listener(self, client_id: str) -> queue.Queue:
+    """Ajoute un nouveau listener SSE"""
+    with self.lock:
+      q = queue.Queue(maxsize=10)
+      self.listeners[client_id] = q
+      logger.info(f"SSE listener ajouté: {client_id} (total: {len(self.listeners)})")
+      return q
+  
+  def remove_listener(self, client_id: str):
+    """Retire un listener SSE"""
+    with self.lock:
+      if client_id in self.listeners:
+        del self.listeners[client_id]
+        logger.info(f"SSE listener retiré: {client_id} (total: {len(self.listeners)})")
+  
+  def broadcast(self, event_type: str, data: dict):
+    """Diffuse un événement à tous les listeners"""
+    with self.lock:
+      dead_listeners = []
+      for client_id, q in self.listeners.items():
+        try:
+          q.put_nowait({
+            'event': event_type,
+            'data': data
+          })
+        except queue.Full:
+          logger.warning(f"Queue pleine pour {client_id}")
+          dead_listeners.append(client_id)
+        except Exception as e:
+          logger.error(f"Erreur broadcast vers {client_id}: {e}")
+          dead_listeners.append(client_id)
+      
+      # Nettoyer les listeners morts
+      for client_id in dead_listeners:
+        del self.listeners[client_id]
+      
+      logger.info(f"Broadcast {event_type} vers {len(self.listeners)} client(s)")
+
+# Instance globale
+sse_manager = SSEManager()
+
 
 init()
 app = Flask(__name__)
@@ -299,6 +360,56 @@ def me():
   except Exception as e:
     logger.error(f"Erreur /me: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/sse")
+@login_required
+def sse():
+  """Endpoint SSE pour les mises à jour en temps réel"""
+  user_id = session.get("user_id")
+  client_id = f"{user_id}_{secrets.token_hex(4)}"
+  
+  def generate():
+    # Ajouter le listener via SSEManager
+    q = sse_manager.add_listener(client_id)
+    
+    try:
+      # Message de connexion initial
+      yield f"data: {json.dumps({'type': 'connected', 'client_id': client_id})}\n\n"
+      
+      # Heartbeat pour garder la connexion vivante
+      last_heartbeat = time.time()
+      
+      while True:
+        try:
+          # Envoyer un heartbeat toutes les 30 secondes
+          if time.time() - last_heartbeat > 30:
+            yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+            last_heartbeat = time.time()
+          
+          # Attendre un message avec timeout
+          try:
+            message = q.get(timeout=1)
+            yield f"event: {message['event']}\ndata: {json.dumps(message['data'])}\n\n"
+          except queue.Empty:
+            continue
+                
+        except GeneratorExit:
+          break
+                
+    finally:
+      # Retirer le listener
+      sse_manager.remove_listener(client_id)
+  
+  return Response(
+    generate(),
+    mimetype='text/event-stream',
+    headers={
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+      'Connection': 'keep-alive'
+    }
+  )
+
 
 # ========================
 # DONNÉES DE BASE
@@ -1037,6 +1148,11 @@ def inscrire():
     conn.commit()
     conn.close()
 
+    # Broadcast SSE
+    sse_manager.broadcast('inscription_created', {
+      'eleve_id': user_id,
+      'activite_id': activite_id
+    })
     logger.info(f"Inscription (NON sécable): user {user_id} -> activité {activite_id} (toutes séances)")
     return jsonify({"success": True})
 
@@ -1086,6 +1202,11 @@ def desinscrire():
     conn.commit()
     conn.close()
 
+    # Broadcast SSE
+    sse_manager.broadcast('inscription_deleted', {
+      'eleve_id': eleve_id,
+      'activite_id': activite_id
+    })
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
@@ -1183,6 +1304,12 @@ def inscrire_seance():
     conn.commit()
     conn.close()
 
+    # Broadcast SSE
+    sse_manager.broadcast('inscription_seance_created', {
+      'eleve_id': user_id,
+      'seance_id': seance_id,
+      'activite_id': activite_id
+    })
     logger.info(f"Inscription séance: user {user_id} -> séance {seance_id}")
     return jsonify({"success": True})
 
@@ -1226,6 +1353,11 @@ def desinscrire_seance():
     conn.commit()
     conn.close()
 
+    # Broadcast SSE
+    sse_manager.broadcast('inscription_seance_deleted', {
+      'eleve_id': eleve_id,
+      'seance_id': seance_id
+    })
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
@@ -1526,6 +1658,118 @@ CONCORDE © 2025"""
   except Exception as e:
     logger.error(f"Erreur envoi rappel: {str(e)}")
     return jsonify({"error": "Erreur lors de l'envoi"}), 500
+
+@app.route("/inscriptions/manuel", methods=["POST"])
+@role_required('prof', 'admin')
+def inscription_manuelle():
+  """Inscription manuelle d'un élève par un prof ou admin"""
+  try:
+    data = request.json
+    if not data or 'eleve_id' not in data or 'activite_id' not in data:
+      return jsonify({"error": "Données manquantes"}), 400
+
+    eleve_id = validate_integer(data.get("eleve_id"), min_val=1)
+    activite_id = validate_integer(data.get("activite_id"), min_val=1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Vérifier que l'élève existe
+    eleve = cur.execute("SELECT * FROM users WHERE id=? AND role='eleve'", (eleve_id,)).fetchone()
+    if not eleve:
+      conn.close()
+      return jsonify({"error": "Élève introuvable"}), 404
+
+    # Vérifier que l'activité existe
+    act = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
+    if not act:
+      conn.close()
+      return jsonify({"error": "Activité introuvable"}), 404
+
+    # Vérifier que l'utilisateur est autorisé (admin ou créateur)
+    if session.get("role") != 'admin' and act["prof_id"] != session["user_id"]:
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    # Vérifier que l'élève peut accéder à cette activité (classe)
+    classe_valide = cur.execute("""
+      SELECT 1 FROM activite_classes 
+      WHERE activite_id=? AND classe_id=?
+    """, (activite_id, eleve["classe_id"])).fetchone()
+
+    if not classe_valide:
+      conn.close()
+      return jsonify({"error": "L'élève n'a pas accès à cette activité (classe différente)"}), 400
+
+    # Vérifier le groupe d'exclusivité
+    if act["groupe_id"]:
+      conflits = cur.execute("""
+        SELECT DISTINCT a.titre
+        FROM activites a
+        JOIN seances s ON a.id = s.activite_id
+        JOIN presences p ON s.id = p.seance_id
+        WHERE a.groupe_id = ?
+        AND p.eleve_id = ?
+        AND a.id != ?
+      """, (act["groupe_id"], eleve_id, activite_id)).fetchall()
+
+      if conflits:
+        conn.close()
+        activite_conflit = conflits[0]["titre"]
+        return jsonify({
+          "error": f"L'élève est déjà inscrit à '{activite_conflit}' du même groupe exclusif"
+        }), 400
+
+    # Récupérer les séances
+    seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
+
+    if not seances:
+      conn.close()
+      return jsonify({"error": "Aucune séance pour cette activité"}), 400
+
+    # Vérifier si déjà inscrit
+    existing = cur.execute("""
+      SELECT 1 FROM presences
+      WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
+    """, (eleve_id, activite_id)).fetchone()
+
+    if existing:
+      conn.close()
+      return jsonify({"error": "Élève déjà inscrit"}), 400
+
+    # IMPORTANT : Inscription manuelle bypasse l'effectif max
+    # Pas de vérification d'effectif max ici
+
+    # Inscrire à toutes les séances
+    for seance in seances:
+      cur.execute("""
+        INSERT INTO presences (seance_id, eleve_id, present, commentaire)
+        VALUES (?, ?, 0, '')
+      """, (seance["id"], eleve_id))
+
+    # Ajouter l'inscription
+    cur.execute("""
+      INSERT INTO inscriptions (eleve_id, activite_id, date_inscription)
+      VALUES (?, ?, ?)
+    """, (eleve_id, activite_id, now_local_str()))
+
+    conn.commit()
+    conn.close()
+
+    # Broadcast SSE
+    sse_manager.broadcast('inscription_manuelle_created', {
+      'eleve_id': eleve_id,
+      'activite_id': activite_id,
+      'by_user_id': session['user_id']
+    })
+    logger.info(f"Inscription manuelle: élève {eleve_id} -> activité {activite_id} par {session['user_id']}")
+    return jsonify({"success": True})
+
+  except ValueError as ve:
+    return jsonify({"error": str(ve)}), 400
+  except Exception as e:
+    logger.error(f"Erreur inscription manuelle: {str(e)}")
+    return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
 # ========================
 # GROUPES D'EXCLUSIVITÉ

@@ -1,6 +1,6 @@
 /* ===========================
-   Configuration & Variables
-   =========================== */
+    Configuration & Variables
+    =========================== */
 const MODE = 'reel';
 let currentUser = null;
 let users = [];
@@ -20,17 +20,21 @@ let currentEditGroupeId = null;
 isSyncingClasses = false; //flag global
 let editingActivityId = null;
 
+// SSE Connection
+let sseConnection = null;
+let sseReconnectTimeout = null;
+
 // Mode DEV
 if(MODE === 'dev') {
-  document.body.classList.add('dev-mode');
+    document.body.classList.add('dev-mode');
 }
 
 
 
 
 /* ===========================
-   DELEGATION D'EVENEMENTS CENTRALE
-   =========================== */
+    DELEGATION D'EVENEMENTS CENTRALE
+    =========================== */
 function setupEventDelegation() {
     // Délégation sur le document pour tous les clics
     document.addEventListener('click', (e) => {
@@ -63,7 +67,7 @@ function setupEventDelegation() {
             const seanceId = parseInt(btn.dataset.seanceId);
             console.log(btn.dataset.activiteSeparable);
             const isSeparable = btn.dataset.activiteSeparable === '1';
-            
+
             console.log('Désinscription demandée:', { eleveId, seanceId, isSeparable });
             desinscrireEleve(eleveId, seanceId, isSeparable);
             return;
@@ -115,6 +119,15 @@ function setupEventDelegation() {
             const groupeId = parseInt(btn.dataset.groupeId);
             const eleveId = parseInt(btn.dataset.eleveId);
             envoyerRappelInscription(groupeId, eleveId, btn);
+            return;
+        }
+
+        // === BOUTONS INSCRIPTION MANUELLE ===
+        if (btn && btn.classList.contains('btn-inscription-manuelle')) {
+            e.stopPropagation();
+            const eleveId = parseInt(btn.dataset.eleveId);
+            const groupeId = parseInt(btn.dataset.groupeId);
+            ouvrirModalInscriptionManuelle(eleveId, groupeId);
             return;
         }
 
@@ -193,8 +206,8 @@ function setupCreationFormEvents() {
     }
 }
 /* ===========================
-   Helpers & Utils
-   =========================== */
+    Helpers & Utils
+    =========================== */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
 
@@ -222,7 +235,7 @@ function getUserName(id){
     return u ? `${u.prenom} ${u.nom||''}` : '—';
 }
 function getClassById(id){
-  return classes.find(c => c.id === Number(id)) || null;
+    return classes.find(c => c.id === Number(id)) || null;
 }
 
 function getUserNameWithClass(id) {
@@ -276,8 +289,8 @@ function timeToMinutes(dateTime) {
 }
 
 /* ===========================
-   API helpers
-   =========================== */
+    API helpers
+    =========================== */
 async function apiGet(url) {
     try {
         const res = await fetch(url, {
@@ -376,8 +389,8 @@ async function apiDelete(url, data){
 }
 
 /* ===========================
-   Authentification
-   =========================== */
+    Authentification
+    =========================== */
 async function login(){
     const username = $('#username').value.trim();
     const password = $('#password').value.trim();
@@ -422,6 +435,8 @@ async function demoLogin(username){
 
 async function logout(){
     try{
+        closeSSE();
+
         await apiPost('/logout',{});
         currentUser = null;
         onAuthChange();
@@ -445,8 +460,8 @@ async function checkAuthStatus() {
 }
 
 /* ===========================
-   Récupération des données
-   =========================== */
+    Récupération des données
+    =========================== */
 async function fetchAllData() {
     try {
         classes = await apiGet('/classes');
@@ -546,8 +561,8 @@ async function fetchAllData() {
 }
 
 /* ===========================
-   Mise à jour de l'UI
-   =========================== */
+    Mise à jour de l'UI
+    =========================== */
 function onAuthChange(){
     if(currentUser){
         $('#user-badge').style.display='inline-flex';
@@ -555,11 +570,15 @@ function onAuthChange(){
         $('#logout-btn').classList.remove('hidden');
         $('#login-card').classList.add('hidden');
         afficherPageRole(currentUser.role);
+
+        initSSE();
     } else {
         $('#user-badge').style.display='none';
         $('#logout-btn').classList.add('hidden');
         $('#login-card').classList.remove('hidden');
         cacherToutesPages();
+
+        closeSSE();
     }
     $('#count-acts').textContent=activites.length;
     $('#count-users').textContent=users.length;
@@ -742,8 +761,8 @@ function synchroniserClassesAvecGroupe() {
 
 
 /* ===========================
-   GESTION DES BOUTONS CRÉATION/ÉDITION
-   =========================== */
+    GESTION DES BOUTONS CRÉATION/ÉDITION
+    =========================== */
 function passerEnModeEdition() {
     console.log('> Passage en mode édition');
 
@@ -860,8 +879,8 @@ function passerEnModeCreation() {
 }
 
 /* ===========================
-   NOUVELLE FONCTIONNALITÉ: Élèves non inscrits
-   =========================== */
+    NOUVELLE FONCTIONNALITÉ: Élèves non inscrits
+    =========================== */
 function initElevesNonInscrits() {
     const groupeFilterSelect = $('#groupe-filter-select');
     if (!groupeFilterSelect) return;
@@ -967,9 +986,20 @@ async function chargerElevesNonInscrits(groupeId) {
                     <div class="eleve-non-inscrit-classe">${eleve.classe_nom || 'Sans classe'}</div>
                     ${mailInfo}
                 </div>
-                <button class="btn-rappel" onclick="envoyerRappelInscription(${groupeId}, ${eleve.id}, this)" ${!eleve.email ? 'disabled title="Pas d\'email"' : ''}>
-                    📧 Envoyer rappel
-                </button>
+                <div class="flex gap-8">
+                    <button class="btn-inscription-manuelle"
+                            data-eleve-id="${eleve.id}"
+                            data-groupe-id="${groupeId}"
+                            title="Inscrire manuellement">
+                        Inscrire
+                    </button>
+                    <button class="btn-rappel"
+                            data-groupe-id="${groupeId}"
+                            data-eleve-id="${eleve.id}"
+                            ${!eleve.email ? 'disabled title="Pas d\'email"' : ''}>
+                        📧 Rappel
+                    </button>
+                </div>
             `;
 
             container.appendChild(eleveDiv);
@@ -1007,9 +1037,163 @@ async function envoyerRappelInscription(groupeId, eleveId, btn) {
 }
 
 
+async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
+    try {
+        const eleve = getUserById(eleveId);
+        if (!eleve) {
+            alert('Élève introuvable');
+            return;
+        }
+
+        // Récupérer les activités du groupe
+        const activitesGroupe = activites.filter(a => a.groupe_id === groupeId);
+
+        if (activitesGroupe.length === 0) {
+            alert('Aucune activité dans ce groupe');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay visible';
+        modal.id = 'inscription-manuelle-modal';
+
+        let activitesHtml = '';
+
+        activitesGroupe.forEach(act => {
+            const inscritsCount = act.inscriptions?.length || 0;
+            const classesText = act.classe_ids
+                .map(id => classes.find(c => c.id === id)?.nom || '')
+                .join(', ');
+
+            const animateurNom = act.animateur_prenom && act.animateur_nom
+                ? `${act.animateur_prenom} ${act.animateur_nom}`
+                : 'Animateur non défini';
+
+            activitesHtml += `
+                <div class="activity-card inscription-manuelle-card">
+                    <div class="activity-card-header">
+                        <h5 class="activity-title">${act.titre}</h5>
+                        <span class="activity-room">${act.salle}</span>
+                    </div>
+                    <div class="activity-details mb-4">
+                        👤 ${animateurNom}
+                    </div>
+                    <div class="activity-details">
+                        Classes: ${classesText}
+                    </div>
+                    <div class="activity-details">
+                        <strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}
+                    </div>
+                    <div class="activity-meta mb-8">
+                        ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
+                    </div>
+                    <div class="activity-actions">
+                        <button class="btn-action inscrire"
+                                data-eleve-id="${eleveId}"
+                                data-activite-id="${act.id}"
+                                style="width: 100%; background: linear-gradient(135deg, #10b981, #059669);">
+                            <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor">
+                                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                            </svg>
+                            Inscrire manuellement
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        modal.innerHTML = `
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3>Inscrire ${eleve.prenom} ${eleve.nom}</h3>
+                    <button class="modal-close" onclick="fermerModalInscriptionManuelle()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="muted mb-16">
+                        Choisissez une activité du groupe pour inscrire cet élève :
+                    </p>
+                    <div class="inscription-manuelle-grid">
+                        ${activitesHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Gestionnaire pour les boutons inscrire
+        modal.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.btn-action.inscrire');
+            if (btn) {
+                e.stopPropagation();
+                const eleveId = parseInt(btn.dataset.eleveId);
+                const activiteId = parseInt(btn.dataset.activiteId);
+                await inscrireManuel(eleveId, activiteId);
+            }
+
+            // Fermer au clic extérieur
+            if (e.target.classList.contains('modal-overlay')) {
+                fermerModalInscriptionManuelle();
+            }
+        });
+
+    } catch(e) {
+        console.error('Erreur modal inscription manuelle:', e);
+        alert('Erreur lors de l\'ouverture du modal');
+    }
+    }
+
+    function fermerModalInscriptionManuelle() {
+    const modal = document.getElementById('inscription-manuelle-modal');
+    if (modal) {
+        modal.remove();
+    }
+    }
+
+    async function inscrireManuel(eleveId, activiteId) {
+    const eleve = getUserById(eleveId);
+    const activite = activites.find(a => a.id === activiteId);
+
+    if (!eleve || !activite) {
+        alert('Données introuvables');
+        return;
+    }
+
+    const message = `Confirmer l'inscription de ${eleve.prenom} ${eleve.nom} à "${activite.titre}" ?`;
+
+    if (!confirm(message)) return;
+
+    try {
+        await apiPost('/inscriptions/manuel', {
+            eleve_id: eleveId,
+            activite_id: activiteId
+        });
+
+        await fetchAllData();
+        fermerModalInscriptionManuelle();
+
+        // Rafraîchir la liste des élèves non inscrits
+        const groupeSelect = $('#groupe-filter-select');
+        if (groupeSelect && groupeSelect.value) {
+            chargerElevesNonInscrits(groupeSelect.value);
+        }
+
+        // Rafraîchir les listes et emploi du temps
+        majListeActivitesProf();
+        updateScheduleViewProf();
+
+        console.log('[SSE] [OK] Élève inscrit avec succès');
+        // SSE va broadcaster aux autres sessions
+        alert('Élève inscrit avec succès !');
+
+    } catch(e) {
+        alert('Erreur lors de l\'inscription : ' + e.message);
+    }
+    }
+
 /* ===========================
-   Interface Élève
-   =========================== */
+    Interface Élève
+    =========================== */
 function majListeActivitesEleve() {
     const container = $('#liste-activites-eleve');
     if (!container) return;
@@ -1529,8 +1713,8 @@ async function desinscrireSeance(seanceId) {
 }
 
 /* ===========================
-   Interface Professeur
-   =========================== */
+    Interface Professeur
+    =========================== */
 function majListeActivitesProf() {
     const containerAnimees = $('#liste-activites-animees');
     const containerCreees = $('#liste-activites-creees');
@@ -1809,8 +1993,8 @@ function closeActivityModal() {
 }
 
 /* ===========================
-   GESTION DE L'APPEL - LOGIQUE COMPLÈTE
-   =========================== */
+    GESTION DE L'APPEL - LOGIQUE COMPLÈTE
+    =========================== */
 async function checkAppelStatus(seanceId, seanceTerminee) {
     try {
         // Récupération du statut de l'appel depuis l'API
@@ -2019,31 +2203,31 @@ function fermerModalAppel() {
 }
 
 /* ===========================
-   Emploi du temps Professeur
-   =========================== */
+    Emploi du temps Professeur
+    =========================== */
 // Palette de couleurs pour les activités
 const ACTIVITY_COLORS = [
-  ['#0b72ff', '#0052cc'], // Bleu
-  ['#d63384', '#a02560'], // Rose
-  ['#ff8a00', '#cc6e00'], // Orange
-  ['#00b5cc', '#0090a3'], // Cyan
-  ['#8b5cf6', '#6d28d9'], // Violet
-  ['#10b981', '#059669'], // Vert
-  ['#f59e0b', '#d97706'], // Ambre
-  ['#ef4444', '#dc2626'], // Rouge
-  ['#06b6d4', '#0891b2'], // Turquoise
-  ['#ec4899', '#db2777'], // Pink
+    ['#0b72ff', '#0052cc'], // Bleu
+    ['#d63384', '#a02560'], // Rose
+    ['#ff8a00', '#cc6e00'], // Orange
+    ['#00b5cc', '#0090a3'], // Cyan
+    ['#8b5cf6', '#6d28d9'], // Violet
+    ['#10b981', '#059669'], // Vert
+    ['#f59e0b', '#d97706'], // Ambre
+    ['#ef4444', '#dc2626'], // Rouge
+    ['#06b6d4', '#0891b2'], // Turquoise
+    ['#ec4899', '#db2777'], // Pink
 ];
 
 // Cache pour les couleurs par activité
 const activityColorCache = new Map();
 
 function getActivityColors(activityId) {
-  if (!activityColorCache.has(activityId)) {
+    if (!activityColorCache.has(activityId)) {
     const colorIndex = activityId % ACTIVITY_COLORS.length;
     activityColorCache.set(activityId, ACTIVITY_COLORS[colorIndex]);
-  }
-  return activityColorCache.get(activityId);
+    }
+    return activityColorCache.get(activityId);
 }
 
 function initEmploiDuTempsProf() {
@@ -2291,8 +2475,8 @@ function highlightActiviteInScheduleProf(activite) {
 }
 
 /* ===========================
-   Emploi du temps Élève
-   =========================== */
+    Emploi du temps Élève
+    =========================== */
 function initEmploiDuTempsEleve() {
     updateWeekDisplayEleve();
 
@@ -2576,8 +2760,8 @@ function updateEmploiDuTempsEleve() {
 
 
 /* ===========================
-   Reset form
-   =========================== */
+    Reset form
+    =========================== */
 function resetForm(){
     $('#titre').value='';
     $('#description').value='';
@@ -2614,8 +2798,8 @@ function resetForm(){
 
 
 /* ===========================
-   GÉNÉRATION PDF
-   =========================== */
+    GÉNÉRATION PDF
+    =========================== */
 function ouvrirModalPDF(seanceId) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay visible';
@@ -2730,8 +2914,8 @@ async function genererPDF(seanceId) {
 
 
 /* ===========================
-   Créer activité avec API
-   =========================== */
+    Créer activité avec API
+    =========================== */
 async function creerActivite(){
     // Si on est en mode édition, appeler la fonction de modification.
     if (editingActivityId) {
@@ -2926,8 +3110,8 @@ async function supprimerActivite(activiteId, titre) {
 
 
 /* ===========================
-   ÉDITION D'ACTIVITÉ
-   =========================== */
+    ÉDITION D'ACTIVITÉ
+    =========================== */
 
 async function ouvrirModalEdition(activiteId) {
     try {
@@ -3181,8 +3365,8 @@ async function modifierActivite() {
 
 
 /* ===========================
-   Gestion des séances
-   =========================== */
+    Gestion des séances
+    =========================== */
 function ajouterSeanceHebdo(){
     const container = $('#seances-container');
     const startInput = $('#first-hebdoseance');
@@ -3400,8 +3584,8 @@ function trierSeances() {
 }
 
 /* ===========================
-   Gestion des groupes d'exclusivité
-   =========================== */
+    Gestion des groupes d'exclusivité
+    =========================== */
 function ouvrirModalGroupes() {
     groupeEditMode = false;
     currentEditGroupeId = null;
@@ -3832,8 +4016,8 @@ async function supprimerGroupe(groupeId, groupeNom) {
 }
 
 /* ===========================
-   ONGLETS PROF
-   =========================== */
+    ONGLETS PROF
+    =========================== */
 function switchProfTab(tabName) {
     // Gérer les onglets
     const tabs = document.querySelectorAll('.prof-tab');
@@ -3856,8 +4040,8 @@ function switchProfTab(tabName) {
 }
 
 /* ===========================
-   Sidebar panels
-   =========================== */
+    Sidebar panels
+    =========================== */
 function updateSidePanels(){
     const raccourcis = $('#sidebar-raccourcis');
     if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
@@ -3975,7 +4159,16 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
             showActivityDetails(activite);
         }
 
-        alert('Élève désinscrit avec succès');
+        // Rafraîchir les listes
+        majListeActivitesProf();
+        updateScheduleViewProf();
+
+        const successMsg = isSeparable
+            ? 'Élève désinscrit de cette séance'
+            : 'Élève désinscrit de toute l\'activité';
+
+            alert('[SSE] [OK]' + successMsg);
+            // SSE va broadcaster aux autres sessions
 
     } catch(e) {
         alert('Erreur lors de la désinscription : ' + e.message);
@@ -3988,7 +4181,138 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
 
 
 /* ===========================
-   Event Listeners
+    Event Listeners & SSE
+    =========================== */
+function initSSE() {
+    if (!currentUser) {
+        console.log('[SSE] Pas d\'utilisateur connecté, SSE non initialisé');
+        return;
+    }
+
+    console.log('[SSE] Initialisation de la connexion...');
+    
+    // Fermer l'ancienne connexion si elle existe
+    if (sseConnection) {
+        sseConnection.close();
+    }
+
+    // Créer la nouvelle connexion
+    sseConnection = new EventSource('/sse');
+
+    sseConnection.onopen = () => {
+        console.log('[SSE] [OK] Connexion établie');
+        // Annuler tout timeout de reconnexion
+        if (sseReconnectTimeout) {
+            clearTimeout(sseReconnectTimeout);
+            sseReconnectTimeout = null;
+        }
+    };
+
+    sseConnection.onerror = (error) => {
+        console.error('[SSE] [KO] Erreur de connexion:', error);
+        sseConnection.close();
+        
+        // Reconnexion automatique après 5 secondes
+        if (!sseReconnectTimeout && currentUser) {
+            console.log('[SSE] Reconnexion dans 5 secondes...');
+            sseReconnectTimeout = setTimeout(() => {
+                sseReconnectTimeout = null;
+                initSSE();
+            }, 5000);
+        }
+    };
+
+    // Écouter TOUS les événements
+    sseConnection.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            
+            // Ignorer heartbeat et connected
+            if (data.type === 'heartbeat' || data.type === 'connected') {
+                return;
+            }
+            
+            console.log('[SSE] Événement reçu:', data);
+        } catch(e) {
+            console.warn('[SSE] Message non-JSON reçu:', event.data);
+        }
+    };
+
+    // Écouter les événements typés
+    sseConnection.addEventListener('inscription_created', handleInscriptionEvent);
+    sseConnection.addEventListener('inscription_deleted', handleInscriptionEvent);
+    sseConnection.addEventListener('inscription_seance_created', handleInscriptionEvent);
+    sseConnection.addEventListener('inscription_seance_deleted', handleInscriptionEvent);
+    sseConnection.addEventListener('inscription_manuelle_created', handleInscriptionEvent);
+}
+
+/**
+ * Gère les événements d'inscription reçus via SSE
+ */
+async function handleInscriptionEvent(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] [INFO] Événement reçu:', event.type, data);
+
+        // Recharger les données
+        await fetchAllData();
+
+        // Rafraîchir l'interface selon le rôle
+        if (currentUser.role === 'eleve') {
+            majListeActivitesEleve();
+            updateEmploiDuTempsEleve();
+            console.log('[SSE] [OK] Interface élève mise à jour');
+        } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {
+            majListeActivitesProf();
+            updateScheduleViewProf();
+            
+            // Rafraîchir le panneau "élèves non inscrits" si ouvert
+            const groupeSelect = $('#groupe-filter-select');
+            if (groupeSelect && groupeSelect.value) {
+                await chargerElevesNonInscrits(groupeSelect.value);
+            }
+            
+            // Si le modal des détails est ouvert, le rafraîchir
+            const modal = document.getElementById('activity-modal');
+            if (modal && modal.classList.contains('visible')) {
+                const modalTitle = document.getElementById('modal-title');
+                const activiteTitre = modalTitle?.textContent;
+                
+                if (activiteTitre) {
+                    const activite = activites.find(a => a.titre === activiteTitre);
+                    if (activite) {
+                        showActivityDetails(activite);
+                    }
+                }
+            }
+            
+            console.log('[SSE] [OK] Interface prof mise à jour');
+        }
+
+    } catch (e) {
+        console.error('[SSE] [KO] Erreur traitement événement:', e);
+    }
+}
+
+/**
+ * Ferme proprement la connexion SSE
+ */
+function closeSSE() {
+    console.log('[SSE] Fermeture de la connexion');
+    
+    if (sseReconnectTimeout) {
+        clearTimeout(sseReconnectTimeout);
+        sseReconnectTimeout = null;
+    }
+    
+    if (sseConnection) {
+        sseConnection.close();
+        sseConnection = null;
+    }
+}
+
+/* ===========================
+   Event Listeners DOM
    =========================== */
 document.addEventListener('DOMContentLoaded', function() {
     console.log('- DOM chargé, initialisation...');
@@ -4024,12 +4348,49 @@ document.addEventListener('DOMContentLoaded', function() {
             else if (e.target.id === 'appel-modal') fermerModalAppel();
         }
     });
+
+    // Fermer modal en cliquant à côté
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal-overlay')) {
+            if (e.target.id === 'activity-modal') closeActivityModal();
+            else if (e.target.id === 'groupes-modal') fermerModalGroupes();
+            else if (e.target.id === 'appel-modal') fermerModalAppel();
+        }
+    });
+    
+    // Gérer la reconnexion SSE quand la page redevient visible
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && currentUser && !sseConnection) {
+            console.log('[SSE] Page visible, reconnexion...');
+            initSSE();
+        }
+    });
+    
+    // Fermer SSE proprement avant de quitter la page
+    window.addEventListener('beforeunload', () => {
+        closeSSE();
+    });
+    
+    // Responsive: recalculer l'emploi du temps au resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (currentUser) {
+                if (currentUser.role === 'prof' || currentUser.role === 'admin') {
+                    updateScheduleViewProf();
+                } else if (currentUser.role === 'eleve') {
+                    updateEmploiDuTempsEleve();
+                }
+            }
+        }, 250);
+    });
 });
 
 
 /* ===========================
-   Gestion des erreurs
-   =========================== */
+    Gestion des erreurs
+    =========================== */
 window.addEventListener('error', (e) => {
     console.error('Erreur JavaScript:', e.error);
 });
@@ -4040,8 +4401,8 @@ window.addEventListener('unhandledrejection', (e) => {
 
 
 /* ===========================
-   Initialisation sécurisée
-   =========================== */
+    Initialisation sécurisée
+    =========================== */
 (async function init(){
     try{
         console.log('[START] Initialisation de l\'application...');
@@ -4073,43 +4434,4 @@ window.addEventListener('unhandledrejection', (e) => {
         activites = [];
         onAuthChange();
     }
-})();querySelectorAll('#emploi-du-temps-prof .schedule-slot').forEach(slot => {
-        slot.classList.remove('highlighted');
-    });
-
-    const monday = getMonday(new Date());
-    monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
-
-    activite.seances?.forEach(seance => {
-        const seanceDate = new Date(seance.date_heure);
-        const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
-
-        if (daysDiff >= 0 && daysDiff < 7) {
-            const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
-            const hour = seanceDate.getHours();
-
-            if (hour >= 8 && hour < 18) {
-                const slotId = `slot-prof-${dayName}-${hour}`;
-                const slot = document.getElementById(slotId);
-
-                if (slot) {
-                    slot.classList.add('highlighted');
-                }
-            }
-        }
-    });
-    // Responsive: recalculer l'emploi du temps au resize
-    let resizeTimeout;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-            if (currentUser) {
-                if (currentUser.role === 'prof' || currentUser.role === 'admin') {
-                    updateScheduleViewProf();
-                } else if (currentUser.role === 'eleve') {
-                    updateEmploiDuTempsEleve();
-                }
-            }
-        }, 250);
-    });
-
+})();

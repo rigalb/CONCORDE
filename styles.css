@@ -1,6 +1,6 @@
 /* ===========================
-   MAIN - VARIABLES & RESET
-   =========================== */
+    MAIN - VARIABLES & RESET
+    =========================== */
 :root{
   --bg:#f8f9fb;
   --card:#ffffff;
@@ -70,8 +70,8 @@ body{
 
 
 /* ===========================
-   LAYOUT PRINCIPAL
-   =========================== */
+    LAYOUT PRINCIPAL
+    =========================== */
 /* Container principal plus large */
 .wrap{
   width: 100%;
@@ -265,8 +265,8 @@ footer.small{
 
 
 /* ===========================
-   CARDS D'ACTIVITÉS
-   =========================== */
+    CARDS D'ACTIVITÉS
+    =========================== */
 /* Panneau des activités */
 .activities-panel {
   background: #fafbfc;
@@ -682,8 +682,8 @@ footer.small{
 
 
 /* ===========================
-   SCHEDULE - EMPLOI DU TEMPS
-   =========================== */
+    SCHEDULE - EMPLOI DU TEMPS
+    =========================== */
 .schedule-container {
   background: white;
   border-radius: var(--radius);
@@ -1046,8 +1046,8 @@ footer.small{
 
 
 /* ===========================
-   MODALS
-   =========================== */
+    MODALS
+    =========================== */
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -1399,10 +1399,62 @@ footer.small{
 
 
 
+/* === MODAL INSCRIPTION MANUELLE === */
+.inscription-manuelle-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+gap: 16px;
+max-height: 60vh;
+overflow-y: auto;
+padding: 4px;
+}
+
+.inscription-manuelle-card {
+transition: all 0.2s ease;
+}
+
+.inscription-manuelle-card:hover {
+transform: translateY(-2px);
+box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+}
+
+.btn-inscription-manuelle {
+padding: 5px 10px;
+font-size: 11px;
+border-radius: 6px;
+border: none;
+cursor: pointer;
+font-weight: 600;
+transition: all 0.2s;
+background: var(--primary);
+color: white;
+}
+
+.btn-inscription-manuelle:hover {
+background: #0a4a9f;
+transform: translateY(-1px);
+box-shadow: 0 2px 6px rgba(11,92,204,0.3);
+}
+
+/* Responsive pour le modal inscription */
+@media (max-width: 767px) {
+.inscription-manuelle-grid {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+}
+
+
+
+
+
+
+
+
 
 /* ===========================
-   FORMULAIRES & BOUTONS
-   =========================== */
+    FORMULAIRES & BOUTONS
+    =========================== */
 label.small{
   font-size:12px;
   color:var(--text-secondary);
@@ -1833,8 +1885,8 @@ textarea {
 
 
 /* ===========================
-   CLASSES UTILITAIRES (remplacement styles inline)
-   =========================== */
+    CLASSES UTILITAIRES (remplacement styles inline)
+    =========================== */
 
 /* Flexbox utilities */
 .flex { display: flex; }
@@ -1972,8 +2024,8 @@ textarea {
 
 
 /* ===========================
-   RESPONSIVE DESIGN - IMPROVED
-   =========================== */
+    RESPONSIVE DESIGN - IMPROVED
+    =========================== */
 
 /* TABLETS & LARGE SCREENS - 1280px+ */
 @media (min-width: 1280px) {
