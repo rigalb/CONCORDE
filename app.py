@@ -51,7 +51,7 @@ class SSEManager:
   def __init__(self):
     self.listeners: Dict[str, queue.Queue] = {}
     self.lock = threading.Lock()
-  
+
   def add_listener(self, client_id: str) -> queue.Queue:
     """Ajoute un nouveau listener SSE"""
     with self.lock:
@@ -59,14 +59,14 @@ class SSEManager:
       self.listeners[client_id] = q
       logger.info(f"SSE listener ajouté: {client_id} (total: {len(self.listeners)})")
       return q
-  
+
   def remove_listener(self, client_id: str):
     """Retire un listener SSE"""
     with self.lock:
       if client_id in self.listeners:
         del self.listeners[client_id]
         logger.info(f"SSE listener retiré: {client_id} (total: {len(self.listeners)})")
-  
+
   def broadcast(self, event_type: str, data: dict):
     """Diffuse un événement à tous les listeners"""
     with self.lock:
@@ -83,11 +83,11 @@ class SSEManager:
         except Exception as e:
           logger.error(f"Erreur broadcast vers {client_id}: {e}")
           dead_listeners.append(client_id)
-      
+
       # Nettoyer les listeners morts
       for client_id in dead_listeners:
         del self.listeners[client_id]
-      
+
       logger.info(f"Broadcast {event_type} vers {len(self.listeners)} client(s)")
 
 # Instance globale
@@ -367,39 +367,39 @@ def sse():
   """Endpoint SSE pour les mises à jour en temps réel"""
   user_id = session.get("user_id")
   client_id = f"{user_id}_{secrets.token_hex(4)}"
-  
+
   def generate():
     # Ajouter le listener via SSEManager
     q = sse_manager.add_listener(client_id)
-    
+
     try:
       # Message de connexion initial
       yield f"data: {json.dumps({'type': 'connected', 'client_id': client_id})}\n\n"
-      
+
       # Heartbeat pour garder la connexion vivante
       last_heartbeat = time.time()
-      
+
       while True:
         try:
           # Envoyer un heartbeat toutes les 30 secondes
           if time.time() - last_heartbeat > 30:
             yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
             last_heartbeat = time.time()
-          
+
           # Attendre un message avec timeout
           try:
             message = q.get(timeout=1)
             yield f"event: {message['event']}\ndata: {json.dumps(message['data'])}\n\n"
           except queue.Empty:
             continue
-                
+
         except GeneratorExit:
           break
-                
+
     finally:
       # Retirer le listener
       sse_manager.remove_listener(client_id)
-  
+
   return Response(
     generate(),
     mimetype='text/event-stream',
@@ -1171,15 +1171,15 @@ def desinscrire():
       return jsonify({"error": "Données manquantes"}), 400
 
     activite_id = validate_integer(data.get("activite_id"), min_val=1)
-    
+
     # Support pour désinscription par admin/prof
     eleve_id = data.get("eleve_id")
-    
+
     if eleve_id:
       # Vérifier que l'utilisateur est admin ou prof créateur
       if session.get("role") not in ['admin', 'prof']:
         return jsonify({"error": "Non autorisé"}), 403
-      
+
       eleve_id = validate_integer(eleve_id, min_val=1)
     else:
       # Désinscription de soi-même (élève)
@@ -1328,15 +1328,15 @@ def desinscrire_seance():
       return jsonify({"error": "Données manquantes"}), 400
 
     seance_id = validate_integer(data.get("seance_id"), min_val=1)
-    
+
     # Support pour désinscription par admin/prof
     eleve_id = data.get("eleve_id")
-    
+
     if eleve_id:
       # Vérifier que l'utilisateur est admin ou prof créateur
       if session.get("role") not in ['admin', 'prof']:
         return jsonify({"error": "Non autorisé"}), 403
-      
+
       eleve_id = validate_integer(eleve_id, min_val=1)
     else:
       # Désinscription de soi-même (élève)
@@ -1693,7 +1693,7 @@ def inscription_manuelle():
 
     # Vérifier que l'élève peut accéder à cette activité (classe)
     classe_valide = cur.execute("""
-      SELECT 1 FROM activite_classes 
+      SELECT 1 FROM activite_classes
       WHERE activite_id=? AND classe_id=?
     """, (activite_id, eleve["classe_id"])).fetchone()
 

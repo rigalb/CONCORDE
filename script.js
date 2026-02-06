@@ -1091,7 +1091,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
                         <button class="btn-action inscrire"
                                 data-eleve-id="${eleveId}"
                                 data-activite-id="${act.id}"
-                                style="width: 100%; background: linear-gradient(135deg, #10b981, #059669);">
+                                style="width: 100%;">
                             <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor">
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                             </svg>
@@ -1233,194 +1233,234 @@ function majListeActivitesEleve() {
         return;
     }
 
+    // Organiser les activités par groupe
+    const activitesParGroupe = {};
+
     activitesEleve.forEach(act => {
-        totalAct++;
+        const groupeId = act.groupe_id;
 
-        // Nombre TOTAL d'inscrits (tous élèves confondus)
-        const inscritsCount = act.inscriptions?.length || 0;
+        if (groupeId) {
+            // Activité avec groupe
+            const groupe = groupes.find(g => g.id === groupeId);
+            const groupeNom = groupe ? groupe.nom : `Groupe #${groupeId}`;
 
-        const classesText = act.classe_ids
-            .map(id => classes.find(c => c.id === id)?.nom || '')
-            .join(', ');
-
-        // CORRECTIF : Vérification correcte de l'inscription de l'élève
-        let inscriptionsEleve = false;
-
-        if (act.separable) {
-            // Pour activité séparable : vérifier si inscrit à AU MOINS une séance
-            inscriptionsEleve = act.seances.some(seance =>
-                seance.inscriptions?.includes(currentUser.id)
-            );
+            if (!activitesParGroupe[groupeNom]) {
+                activitesParGroupe[groupeNom] = [];
+            }
+            activitesParGroupe[groupeNom].push(act);
         } else {
-            // Pour activité non séparable : vérifier inscription globale
-            inscriptionsEleve = act.inscriptions?.includes(currentUser.id) || false;
+            // Activité sans groupe -> DIVERS
+            if (!activitesParGroupe['DIVERS']) {
+                activitesParGroupe['DIVERS'] = [];
+            }
+            activitesParGroupe['DIVERS'].push(act);
         }
+    });
 
-        if(inscriptionsEleve) totalIns++;
+    // Trier les noms de groupes : alphabétique, puis DIVERS en dernier
+    const nomsGroupes = Object.keys(activitesParGroupe).sort((a, b) => {
+        if (a === 'DIVERS') return 1;
+        if (b === 'DIVERS') return -1;
+        return a.localeCompare(b);
+    });
 
-        const actCard = document.createElement('div');
-        actCard.className = 'activity-card';
+    // Trier les activités dans chaque groupe par ordre alphabétique de titre
+    Object.keys(activitesParGroupe).forEach(groupeNom => {
+        activitesParGroupe[groupeNom].sort((a, b) => a.titre.localeCompare(b.titre));
+    });
 
-        // Afficher l'animateur
-        // const animateurId = act.animateur_id || act.prof_id;
-        // const animateur = getUserById(animateurId);
-        // const animateurNom = animateur ? `${animateur.prenom} ${animateur.nom}` : 'Animateur non défini';
-        const animateurNom = act.animateur_prenom && act.animateur_nom
-        ? `${act.animateur_prenom} ${act.animateur_nom}`
-        : 'Animateur non défini';
+    // Créer les menus déroulants par groupe
+    nomsGroupes.forEach(groupeNom => {
+        const activitesGroupe = activitesParGroupe[groupeNom];
 
-        actCard.innerHTML = `
-            <div class="activity-card-header">
-                <h5 class="activity-title">${act.titre}</h5>
-                <span class="activity-room">${act.salle}</span>
-            </div>
-            <div class="activity-details small muted mb-1">
-                👤 ${animateurNom}
-            </div>
-            ${act.groupe_id ? `
-                <div class="flex items-center gap-4 mb-6 text-accent text-11 font-semibold">
-                    <svg class="w-12 h-12 svg-fill-current" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-                    </svg>
-                    Groupe d'Activité : ${groupes.find(g => g.id === act.groupe_id)?.nom || 'Non défini'}
+        // Créer le conteneur details
+        const detailsEl = document.createElement('details');
+        detailsEl.className = 'panel-collapsible';
+        detailsEl.open = true; // Ouvert par défaut
+
+        // Header du groupe
+        const summary = document.createElement('summary');
+        summary.className = 'panel-header';
+
+        const icone = groupeNom === 'DIVERS'
+            ? `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;margin-right:8px">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+               </svg>`
+            : `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;margin-right:8px">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" fill="none"/>
+                <circle cx="12" cy="12" r="2" fill="currentColor"/>
+               </svg>`;
+
+        summary.innerHTML = `<h4>${icone}${groupeNom} (${activitesGroupe.length})</h4>`;
+        detailsEl.appendChild(summary);
+
+        // Conteneur des activités
+        const contentDiv = document.createElement('div');
+        contentDiv.style.padding = '12px';
+
+        activitesGroupe.forEach(act => {
+            totalAct++;
+
+            const inscritsCount = act.inscriptions?.length || 0;
+
+            const classesText = act.classe_ids
+                .map(id => classes.find(c => c.id === id)?.nom || '')
+                .join(', ');
+
+            let inscriptionsEleve = false;
+
+            if (act.separable) {
+                inscriptionsEleve = act.seances.some(seance =>
+                    seance.inscriptions?.includes(currentUser.id)
+                );
+            } else {
+                inscriptionsEleve = act.inscriptions?.includes(currentUser.id) || false;
+            }
+
+            if(inscriptionsEleve) totalIns++;
+
+            const actCard = document.createElement('div');
+            actCard.className = 'activity-card';
+
+            const animateurNom = act.animateur_prenom && act.animateur_nom
+                ? `${act.animateur_prenom} ${act.animateur_nom}`
+                : 'Animateur non défini';
+
+            actCard.innerHTML = `
+                <div class="activity-card-header">
+                    <h5 class="activity-title">${act.titre}</h5>
+                    <span class="activity-room">${act.salle}</span>
                 </div>
-            ` : ''}
-            <div class="activity-details">Classes: ${classesText}</div>
-            <div class="activity-details">
-                ${act.separable
-                    ? `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`
-                    : `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`
-                }
-            </div>
-            <div class="activity-meta">
-                ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
-            </div>
-            ${act.separable ? '<div class="activity-seances" id="seances-' + act.id + '"></div>' : ''}
-        `;
+                <div class="activity-details small muted mb-1">
+                    👤 ${animateurNom}
+                </div>
+                <div class="activity-details">Classes: ${classesText}</div>
+                <div class="activity-details">
+                    ${act.separable
+                        ? `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`
+                        : `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`
+                    }
+                </div>
+                <div class="activity-meta">
+                    ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
+                </div>
+                ${act.separable ? '<div class="activity-seances" id="seances-' + act.id + '"></div>' : ''}
+            `;
 
-        const ouverture = new Date(act.date_ouverture_inscriptions);
-        const fermeture = new Date(act.date_fermeture_inscriptions);
-        const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
+            const ouverture = new Date(act.date_ouverture_inscriptions);
+            const fermeture = new Date(act.date_fermeture_inscriptions);
+            const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
 
-        if (act.separable) {
-            // ========================================
-            // ACTIVITÉ SÉCABLE - BOUTONS PAR SÉANCE
-            // ========================================
-            const seancesContainer = actCard.querySelector('.activity-seances');
-            act.seances?.forEach(seance => {
-                const seanceDate = new Date(seance.date_heure);
-                const seancePassee = seanceDate < now;
+            if (act.separable) {
+                const seancesContainer = actCard.querySelector('.activity-seances');
+                act.seances?.forEach(seance => {
+                    const seanceDate = new Date(seance.date_heure);
+                    const seancePassee = seanceDate < now;
 
-                const seanceItem = document.createElement('div');
-                seanceItem.className = 'seance-item-eleve';
+                    const seanceItem = document.createElement('div');
+                    seanceItem.className = 'seance-item-eleve';
 
-                const dateSpan = document.createElement('span');
-                dateSpan.className = 'seance-date';
-                dateSpan.textContent = formatDateLocal(seance.date_heure);
+                    const dateSpan = document.createElement('span');
+                    dateSpan.className = 'seance-date';
+                    dateSpan.textContent = formatDateLocal(seance.date_heure);
 
-                // AFFICHAGE DE L'EFFECTIF PAR SÉANCE
-                const inscritsSeance = seance.inscriptions?.length || 0;
-                const effectifInfo = document.createElement('span');
-                effectifInfo.className = 'seance-effectif';
-                effectifInfo.textContent = `${inscritsSeance}/${act.effectif_max}`;
-                effectifInfo.style.fontSize = '10px';
-                effectifInfo.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
-                effectifInfo.style.fontWeight = '600';
-                effectifInfo.style.marginRight = '8px';
+                    const inscritsSeance = seance.inscriptions?.length || 0;
+                    const effectifInfo = document.createElement('span');
+                    effectifInfo.className = 'seance-effectif';
+                    effectifInfo.textContent = `${inscritsSeance}/${act.effectif_max}`;
+                    effectifInfo.style.fontSize = '10px';
+                    effectifInfo.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
+                    effectifInfo.style.fontWeight = '600';
+                    effectifInfo.style.marginRight = '8px';
+
+                    const btn = document.createElement('button');
+                    btn.className = 'seance-btn';
+                    btn.dataset.seanceId = seance.id;
+
+                    const estInscritSeance = seance.inscriptions?.includes(currentUser.id) || false;
+
+                    if (seancePassee) {
+                        btn.textContent = 'Passée';
+                        btn.className += ' ferme';
+                        btn.disabled = true;
+                    } else if (!inscriptionsOuvertes) {
+                        btn.textContent = 'Fermée';
+                        btn.className += ' ferme';
+                        btn.disabled = true;
+                    } else if (estInscritSeance) {
+                        btn.textContent = 'Inscrit ✓';
+                        btn.className += ' inscrit';
+                        btn.dataset.action = 'desinscrire';
+                    } else if (inscritsSeance >= act.effectif_max) {
+                        btn.textContent = 'Complète';
+                        btn.className += ' ferme';
+                        btn.disabled = true;
+                    } else {
+                        btn.textContent = 'S\'inscrire';
+                        btn.className += ' libre';
+                        btn.dataset.action = 'inscrire';
+                    }
+
+                    seanceItem.appendChild(dateSpan);
+                    seanceItem.appendChild(effectifInfo);
+                    seanceItem.appendChild(btn);
+                    seancesContainer.appendChild(seanceItem);
+                });
+            } else {
+                const btnContainer = document.createElement('div');
+                btnContainer.style.marginTop = '8px';
+                btnContainer.style.paddingTop = '8px';
+                btnContainer.style.borderTop = '1px solid #e2e8f0';
 
                 const btn = document.createElement('button');
-                btn.className = 'seance-btn';
-                btn.dataset.seanceId = seance.id;
+                btn.className = 'btn';
+                btn.style.width = '100%';
 
-                // Vérifier l'inscription à CETTE séance spécifique (CORRECTIF)
-                const estInscritSeance = seance.inscriptions?.includes(currentUser.id) || false;
-
-                // Vérifier l'inscription à CETTE séance spécifique (CORRECTIF)
-                if (seancePassee) {
-                    btn.textContent = 'Passée';
-                    btn.className += ' ferme';
+                if (!inscriptionsOuvertes) {
+                    btn.textContent = 'Inscriptions fermées';
                     btn.disabled = true;
-                } else if (!inscriptionsOuvertes) {
-                    btn.textContent = 'Fermée';
-                    btn.className += ' ferme';
+                    btn.classList.add('ghost');
+                } else if (inscriptionsEleve) {
+                    btn.textContent = 'Se désinscrire (toutes séances)';
+                    btn.classList.add('secondary');
+                    btn.onclick = (e) => {
+                        e.stopPropagation();
+                        desinscrireActivite(act.id);
+                    };
+                } else if (inscritsCount >= act.effectif_max) {
+                    btn.textContent = 'Activité complète';
                     btn.disabled = true;
-                } else if (estInscritSeance) {
-                    // L'élève EST inscrit à cette séance --> Bouton désinscrire
-                    btn.textContent = 'Inscrit ✓';
-                    btn.className += ' inscrit';
-                    btn.dataset.action = 'desinscrire';
-                } else if (inscritsSeance >= act.effectif_max) {
-                    // Séance complète
-                    btn.textContent = 'Complète';
-                    btn.className += ' ferme';
-                    btn.disabled = true;
+                    btn.classList.add('ghost');
                 } else {
-                    // L'élève N'est PAS inscrit --> Bouton inscrire
-                    btn.textContent = 'S\'inscrire';
-                    btn.className += ' libre';
-                    btn.dataset.action = 'inscrire';
+                    btn.textContent = "S'inscrire (toutes séances)";
+                    btn.onclick = (e) => {
+                        e.stopPropagation();
+                        inscrireActivite(act.id);
+                    };
                 }
 
-                seanceItem.appendChild(dateSpan);
-                seanceItem.appendChild(effectifInfo);
-                seanceItem.appendChild(btn);
-                seancesContainer.appendChild(seanceItem);
+                btnContainer.appendChild(btn);
+                actCard.appendChild(btnContainer);
+            }
+
+            actCard.addEventListener('click', (e) => {
+                if (!e.target.closest('button')) {
+                    showActivityDetailsEleve(act);
+                }
             });
-        } else {
-            // ========================================
-            // ACTIVITÉ NON SÉCABLE - BOUTON GLOBAL
-            // ========================================
-            const btnContainer = document.createElement('div');
-            btnContainer.style.marginTop = '8px';
-            btnContainer.style.paddingTop = '8px';
-            btnContainer.style.borderTop = '1px solid #e2e8f0';
 
-            const btn = document.createElement('button');
-            btn.className = 'btn';
-            btn.style.width = '100%';
-
-            if (!inscriptionsOuvertes) {
-                btn.textContent = 'Inscriptions fermées';
-                btn.disabled = true;
-                btn.classList.add('ghost');
-            } else if (inscriptionsEleve) {
-                // L'élève EST inscrit à l'activité --> Bouton désinscrire
-                btn.textContent = 'Se désinscrire (toutes séances)';
-                btn.classList.add('secondary');
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    desinscrireActivite(act.id);
-                };
-            } else if (inscritsCount >= act.effectif_max) {
-                btn.textContent = 'Activité complète';
-                btn.disabled = true;
-                btn.classList.add('ghost');
-            } else {
-                // L'élève N'est PAS inscrit --> Bouton inscrire
-                btn.textContent = "S'inscrire (toutes séances)";
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    inscrireActivite(act.id);
-                };
-            }
-
-            btnContainer.appendChild(btn);
-            actCard.appendChild(btnContainer);
-        }
-
-        // Click sur la carte pour voir les détails (sauf sur les boutons)
-        actCard.addEventListener('click', (e) => {
-            if (!e.target.closest('button')) {
-                showActivityDetailsEleve(act);
-            }
+            contentDiv.appendChild(actCard);
         });
 
-        container.appendChild(actCard);
+        detailsEl.appendChild(contentDiv);
+        container.appendChild(detailsEl);
     });
 
     $('#stat-act-eleve').textContent = totalAct;
     $('#stat-insc-eleve').textContent = totalIns;
 }
+
 
 function fixShowActivityDetailsEleve() {
     // Cette fonction doit être appelée après la génération du HTML du modal
@@ -4190,7 +4230,7 @@ function initSSE() {
     }
 
     console.log('[SSE] Initialisation de la connexion...');
-    
+
     // Fermer l'ancienne connexion si elle existe
     if (sseConnection) {
         sseConnection.close();
@@ -4211,7 +4251,7 @@ function initSSE() {
     sseConnection.onerror = (error) => {
         console.error('[SSE] [KO] Erreur de connexion:', error);
         sseConnection.close();
-        
+
         // Reconnexion automatique après 5 secondes
         if (!sseReconnectTimeout && currentUser) {
             console.log('[SSE] Reconnexion dans 5 secondes...');
@@ -4226,12 +4266,12 @@ function initSSE() {
     sseConnection.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
+
             // Ignorer heartbeat et connected
             if (data.type === 'heartbeat' || data.type === 'connected') {
                 return;
             }
-            
+
             console.log('[SSE] Événement reçu:', data);
         } catch(e) {
             console.warn('[SSE] Message non-JSON reçu:', event.data);
@@ -4265,19 +4305,19 @@ async function handleInscriptionEvent(event) {
         } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {
             majListeActivitesProf();
             updateScheduleViewProf();
-            
+
             // Rafraîchir le panneau "élèves non inscrits" si ouvert
             const groupeSelect = $('#groupe-filter-select');
             if (groupeSelect && groupeSelect.value) {
                 await chargerElevesNonInscrits(groupeSelect.value);
             }
-            
+
             // Si le modal des détails est ouvert, le rafraîchir
             const modal = document.getElementById('activity-modal');
             if (modal && modal.classList.contains('visible')) {
                 const modalTitle = document.getElementById('modal-title');
                 const activiteTitre = modalTitle?.textContent;
-                
+
                 if (activiteTitre) {
                     const activite = activites.find(a => a.titre === activiteTitre);
                     if (activite) {
@@ -4285,7 +4325,7 @@ async function handleInscriptionEvent(event) {
                     }
                 }
             }
-            
+
             console.log('[SSE] [OK] Interface prof mise à jour');
         }
 
@@ -4299,12 +4339,12 @@ async function handleInscriptionEvent(event) {
  */
 function closeSSE() {
     console.log('[SSE] Fermeture de la connexion');
-    
+
     if (sseReconnectTimeout) {
         clearTimeout(sseReconnectTimeout);
         sseReconnectTimeout = null;
     }
-    
+
     if (sseConnection) {
         sseConnection.close();
         sseConnection = null;
@@ -4357,7 +4397,7 @@ document.addEventListener('DOMContentLoaded', function() {
             else if (e.target.id === 'appel-modal') fermerModalAppel();
         }
     });
-    
+
     // Gérer la reconnexion SSE quand la page redevient visible
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden && currentUser && !sseConnection) {
@@ -4365,12 +4405,12 @@ document.addEventListener('DOMContentLoaded', function() {
             initSSE();
         }
     });
-    
+
     // Fermer SSE proprement avant de quitter la page
     window.addEventListener('beforeunload', () => {
         closeSSE();
     });
-    
+
     // Responsive: recalculer l'emploi du temps au resize
     let resizeTimeout;
     window.addEventListener('resize', () => {

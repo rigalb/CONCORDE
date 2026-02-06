@@ -2,11 +2,12 @@
     MAIN - VARIABLES & RESET
     =========================== */
 :root{
-  --bg:#f8f9fb;
-  --card:#ffffff;
-  --text:#1a1a1a;
-  --text-secondary:#4a5568;
-  --text-muted:#6b7280;
+  --bg:#edf0f4;
+  --card:#f7f8fa;
+  --surface:#f0f2f5;
+  --text:#111827;
+  --text-secondary:#374151;
+  --text-muted:#4b5563;
   --primary:#0b5ccc;
   --primary-light:#0d66e8;
   --accent:#d55f1f;
@@ -14,10 +15,12 @@
   --success:#059669;
   --warning:#d97706;
   --error:#dc2626;
-  --glass: rgba(11,92,204,0.08);
-  --glass-2: rgba(0,0,0,0.04);
+  --glass: rgba(11,92,204,0.10);
+  --glass-2: rgba(0,0,0,0.06);
+  --border:#d1d5db;
+  --border-light:#e5e7eb;
   --radius:12px;
-  --shadow: 0 6px 20px rgba(20,30,60,0.08);
+  --shadow: 0 6px 20px rgba(20,30,60,0.10);
   --max-width:1600px;
   --gap:20px;
   font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
@@ -26,7 +29,7 @@
 *{box-sizing: border-box; margin: 0; padding: 0;}
 html, body{height: 100%;}
 body{
-  background: linear-gradient(180deg, var(--bg), #f0f4fb);
+  background: linear-gradient(180deg, var(--bg), #dde2ea);
   color: var(--text);
   padding: 16px;
   -webkit-font-smoothing:antialiased;
@@ -37,7 +40,7 @@ body{
 }
 
 /* Utilities */
-.muted{color:var(--text-muted);font-size:13px}
+.muted{color:var(--text-muted);font-size:13px;font-weight:500}
 .small{font-size:12px}
 .mb{margin-bottom:12px}
 .hidden{display:none !important;}
@@ -57,7 +60,7 @@ body{
   border-radius: var(--radius);
   padding: 20px;
   box-shadow: var(--shadow);
-  border: 1px solid var(--glass-2);
+  border: 1px solid var(--border-light);
 }
 
 
@@ -75,12 +78,20 @@ body{
 /* Container principal plus large */
 .wrap{
   width: 100%;
-  max-width: 78%;
+  max-width: 95%;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: var(--gap);
   align-items: start;
+}
+
+/* Quand aside n'a aucun enfant visible, il disparait et main prend toute la largeur */
+.side:not(:has(.card:not(.hidden))) {
+  display: none;
+}
+.wrap:has(> .side:not(:has(.card:not(.hidden)))) {
+  grid-template-columns: 1fr;
 }
 
 /* Header */
@@ -90,10 +101,10 @@ header{
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.95), var(--card));
+  background: linear-gradient(180deg, var(--card), var(--surface));
   border-radius: calc(var(--radius) + 4px);
   box-shadow: var(--shadow);
-  border: 1px solid var(--glass-2);
+  border: 1px solid var(--border-light);
   position: sticky;
   top: 16px;
   z-index: 10;
@@ -240,8 +251,8 @@ footer.small{
 }
 
 .stat{
-  background:linear-gradient(180deg,#ffffff,#fafbfc);
-  border-radius:10px;padding:12px 14px;border:1px solid var(--glass-2);flex:1;min-width: 100px;text-align:center;
+  background:linear-gradient(180deg,var(--card),var(--surface));
+  border-radius:10px;padding:12px 14px;border:1px solid var(--border-light);flex:1;min-width: 100px;text-align:center;
 }
 
 .stat h4{font-size:12px;color:var(--text-muted);font-weight:600;text-transform: uppercase; letter-spacing: 0.3px;}
@@ -269,10 +280,10 @@ footer.small{
     =========================== */
 /* Panneau des activités */
 .activities-panel {
-  background: #fafbfc;
+  background: var(--surface);
   border-radius: var(--radius);
   padding: 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   max-height: calc(80vh - 130px);
   overflow: auto;
 }
@@ -336,9 +347,9 @@ footer.small{
 
 /* Cards d'activités */
 .activity-card {
-  background: white;
+  background: var(--card);
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-light);
   padding: 12px;
   margin-bottom: 8px;
   cursor: pointer;
@@ -685,9 +696,9 @@ footer.small{
     SCHEDULE - EMPLOI DU TEMPS
     =========================== */
 .schedule-container {
-  background: white;
+  background: var(--card);
   border-radius: var(--radius);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   overflow: hidden;
   height: 70vh;
   display: flex;
@@ -700,8 +711,8 @@ footer.small{
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  border-bottom: 2px solid #e5e7eb;
-  background: linear-gradient(180deg, #fafbfc, white);
+  border-bottom: 2px solid var(--border-light);
+  background: linear-gradient(180deg, var(--surface), var(--card));
   flex-shrink: 0;
   gap: 16px;
   flex-wrap: wrap;
@@ -814,7 +825,7 @@ footer.small{
 .schedule-grid {
   flex: 1;
   overflow: auto;
-  background: #fafbfc;
+  background: var(--surface);
   position: relative;
   width: 100%;
   height: 100%;
@@ -856,8 +867,8 @@ footer.small{
   padding-top: 3px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
-  background: white;
+  color: var(--text-secondary);
+  background: var(--card);
   text-align: center;
 }
 
@@ -869,9 +880,9 @@ footer.small{
 }
 
 .day-column {
-  flex: 1;
+  flex: 1 1 0%;
   border-right: 1px solid #e0e7ff;
-  min-width: 160px;
+  min-width: 0;
   position: relative;
 }
 
@@ -930,8 +941,8 @@ footer.small{
   position: absolute;
   width: 100%;
   height: 60px;
-  border-bottom: 1px solid #e5e7eb;
-  background: white;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--card);
 }
 
 .day-content.today-column {
@@ -1017,15 +1028,15 @@ footer.small{
   filter: grayscale(50%);
 }
 
-/* Updated activity colors with better contrast */
-.activity-color-0 { background: #ffeb3b; color: #000; }
-.activity-color-1 { background: #26c6da; color: #000; }
-.activity-color-2 { background: #90a4ae; color: #000; }
-.activity-color-3 { background: #ec407a; color: #fff; }
-.activity-color-4 { background: #f48fb1; color: #000; }
-.activity-color-5 { background: #ffab91; color: #000; }
-.activity-color-6 { background: #b0bec5; color: #000; }
-.activity-color-7 { background: #4db6ac; color: #000; }
+/* Updated activity colors with WCAG AA contrast */
+.activity-color-0 { background: #f59e0b; color: #000; }
+.activity-color-1 { background: #0891b2; color: #fff; }
+.activity-color-2 { background: #64748b; color: #fff; }
+.activity-color-3 { background: #db2777; color: #fff; }
+.activity-color-4 { background: #e879a0; color: #000; }
+.activity-color-5 { background: #ea6852; color: #fff; }
+.activity-color-6 { background: #6b7280; color: #fff; }
+.activity-color-7 { background: #0d9488; color: #fff; }
 
 /* Badge couleur dans modal */
 .color-badge {
@@ -1073,7 +1084,7 @@ footer.small{
 
 /* Improved modal responsive layout */
 .modal-content {
-  background: white;
+  background: var(--card);
   border-radius: var(--radius);
   padding: 24px;
   max-width: 700px;
@@ -1472,7 +1483,7 @@ textarea {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
-  background: linear-gradient(180deg, #ffffff, #f9fafb);
+  background: linear-gradient(180deg, var(--card), var(--surface));
   font-size: 14px;
   color: var(--text);
   transition:box-shadow .18s ease, border-color .18s ease, transform .06s ease;
@@ -2027,15 +2038,15 @@ textarea {
     RESPONSIVE DESIGN - IMPROVED
     =========================== */
 
-/* TABLETS & LARGE SCREENS - 1280px+ */
+/* LARGE SCREENS - 1280px+ : les 7 jours DOIVENT tenir sans scroll horizontal */
 @media (min-width: 1280px) {
   .wrap {
-    max-width: 88%;
+    max-width: 96%;
     grid-template-columns: 1fr auto;
   }
 
   .dashboard-layout {
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 280px 1fr;
   }
 
   #login-card {
@@ -2044,18 +2055,87 @@ textarea {
   }
 
   .schedule-container {
-    height: 70vh;
+    height: 75vh;
+  }
+
+  /* Empecher le scroll horizontal : 7 jours doivent tous tenir */
+  .schedule-table {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .days-grid {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .day-column {
+    min-width: 0;
+    flex: 1 1 0%;
+  }
+
+  .schedule-hour-cell {
+    width: 55px;
   }
 
   .day-content {
     height: 720px;
+  }
+
+  /* Texte des seances adapte a la place disponible */
+  .seance-block-prof, .seance-block-eleve {
+    font-size: 10px;
+    padding: 4px 5px;
+  }
+
+  .seance-title {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .seance-time {
+    font-size: 9px;
+  }
+
+  .seance-room {
+    font-size: 9px;
+  }
+}
+
+/* TRES GRANDS ECRANS - 1600px+ : on restore plus d'espace */
+@media (min-width: 1600px) {
+  .wrap {
+    max-width: 92%;
+  }
+
+  .dashboard-layout {
+    grid-template-columns: 340px 1fr;
+  }
+
+  .schedule-hour-cell {
+    width: 65px;
+  }
+
+  .seance-block-prof, .seance-block-eleve {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  .seance-title {
+    font-size: 11px;
+  }
+
+  .seance-time {
+    font-size: 10px;
   }
 }
 
 /* TABLETS - 768px to 1279px */
 @media (min-width: 768px) and (max-width: 1279px) {
   .wrap {
-    max-width: 95%;
+    max-width: 98%;
     grid-template-columns: 1fr;
     gap: 16px;
   }
@@ -2080,12 +2160,18 @@ textarea {
 
   #login-card {
     grid-template-columns: 1fr;
-    max-width: 100%;
     max-width: 420px;
   }
 
+  /* Les 7 jours doivent aussi tenir en tablet */
+  .schedule-table {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
   .day-column {
-    min-width: 100px;
+    min-width: 0;
+    flex: 1 1 0%;
   }
 
   .schedule-cell {
@@ -2097,11 +2183,27 @@ textarea {
   }
 
   .schedule-hour-cell {
-    width: 60px;
+    width: 50px;
+  }
+
+  .seance-block-prof, .seance-block-eleve {
+    font-size: 9px;
+    padding: 3px 4px;
+  }
+
+  .seance-title {
+    font-size: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .seance-animateur {
     display: none;
+  }
+
+  .seance-room {
+    font-size: 8px;
   }
 
   .form-grid {
@@ -2285,7 +2387,8 @@ textarea {
   }
 
   .day-column {
-    min-width: 70px;
+    min-width: 0;
+    flex: 1 1 0%;
   }
 
   .seance-block-prof, .seance-block-eleve {
@@ -2496,6 +2599,7 @@ textarea {
   }
 
   .day-column {
-    min-width: 60px;
+    min-width: 0;
+    flex: 1 1 0%;
   }
 }
