@@ -631,7 +631,6 @@ footer.small{
 
 
 
-
 /* Boutons d'action dans les cartes d'activité */
 .activity-actions {
   display: flex;
@@ -2029,6 +2028,63 @@ textarea {
 
 
 
+/* === CLASSES UTILITAIRES SUPPLÉMENTAIRES === */
+.seance-actions-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-action.inscrire {
+    width: 100%;
+}
+
+.btn-action .icon-inline {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+.appel-btn .icon-print {
+    width: 14px;
+    height: 14px;
+}
+
+.groupe-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: white;
+}
+
+.groupe-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-print {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-print.faire {
+  background: var(--primary);
+  color: white;
+}
+
+
+
+
+
 
 
 
@@ -2046,7 +2102,7 @@ textarea {
   }
 
   .dashboard-layout {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 300px 1fr;
   }
 
   #login-card {

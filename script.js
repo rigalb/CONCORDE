@@ -87,20 +87,14 @@ function setupEventDelegation() {
             return;
         }
 
-        // === BOUTONS MINI DANS MODAL (sauf btn-unregister) ===
+        // === BOUTONS MINI DANS MODAL ===
         if (btn && btn.classList.contains('btn-mini') && !btn.classList.contains('btn-unregister')) {
             e.stopPropagation();
-            // Extraire l'ID de la séance depuis l'attribut onclick (si présent)
-            const onclickAttr = btn.getAttribute('onclick');
-            if (onclickAttr) {
-                const match = onclickAttr.match(/(inscrireSeance|desinscrireSeance)\((\d+)\)/);
-                if (match) {
-                    const func = match[1];
-                    const seanceId = parseInt(match[2]);
-                    if (func === 'inscrireSeance') inscrireSeance(seanceId);
-                    else if (func === 'desinscrireSeance') desinscrireSeance(seanceId);
-                }
-            }
+            const action = btn.dataset.action;
+            const seanceId = parseInt(btn.dataset.seanceId);
+
+            if (action === 'inscrire') inscrireSeance(seanceId);
+            else if (action === 'desinscrire') desinscrireSeance(seanceId);
             return;
         }
 
@@ -110,6 +104,14 @@ function setupEventDelegation() {
             const seanceId = parseInt(btn.dataset.seanceId);
             const consultation = btn.classList.contains('fait');
             ouvrirModalAppel(seanceId, consultation);
+            return;
+        }
+
+        // === BOUTONS IMPRIMER PDF ===
+        if (btn && btn.classList.contains('btn-print')) {
+            e.stopPropagation();
+            const seanceId = parseInt(btn.dataset.seanceId);
+            ouvrirModalPDF(seanceId);
             return;
         }
 
@@ -1090,9 +1092,8 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
                     <div class="activity-actions">
                         <button class="btn-action inscrire"
                                 data-eleve-id="${eleveId}"
-                                data-activite-id="${act.id}"
-                                style="width: 100%;">
-                            <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor">
+                                data-activite-id="${act.id}">
+                            <svg viewBox="0 0 24 24" class="icon-inline">
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                             </svg>
                             Inscrire manuellement
@@ -1106,7 +1107,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
             <div class="modal-content modal-large">
                 <div class="modal-header">
                     <h3>Inscrire ${eleve.prenom} ${eleve.nom}</h3>
-                    <button class="modal-close" onclick="fermerModalInscriptionManuelle()">&times;</button>
+                    <button class="modal-close">&times;</button>
                 </div>
                 <div class="modal-body">
                     <p class="muted mb-16">
@@ -1131,6 +1132,12 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
                 await inscrireManuel(eleveId, activiteId);
             }
 
+            // Fermer au clic sur la croix
+            const closeBtn = e.target.closest('.modal-close');
+            if (closeBtn) {
+                fermerModalInscriptionManuelle();
+            }
+
             // Fermer au clic extérieur
             if (e.target.classList.contains('modal-overlay')) {
                 fermerModalInscriptionManuelle();
@@ -1141,16 +1148,16 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
         console.error('Erreur modal inscription manuelle:', e);
         alert('Erreur lors de l\'ouverture du modal');
     }
-    }
+}
 
-    function fermerModalInscriptionManuelle() {
+function fermerModalInscriptionManuelle() {
     const modal = document.getElementById('inscription-manuelle-modal');
     if (modal) {
         modal.remove();
     }
-    }
+}
 
-    async function inscrireManuel(eleveId, activiteId) {
+async function inscrireManuel(eleveId, activiteId) {
     const eleve = getUserById(eleveId);
     const activite = activites.find(a => a.id === activiteId);
 
@@ -1189,7 +1196,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
     } catch(e) {
         alert('Erreur lors de l\'inscription : ' + e.message);
     }
-    }
+}
 
 /* ===========================
     Interface Élève
@@ -1283,10 +1290,10 @@ function majListeActivitesEleve() {
         summary.className = 'panel-header';
 
         const icone = groupeNom === 'DIVERS'
-            ? `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;margin-right:8px">
+            ? `<svg viewBox="0 0 24 24" class="w-16 h-16 svg-fill-current mr-8">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                </svg>`
-            : `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;margin-right:8px">
+            : `<svg viewBox="0 0 24 24" class="w-16 h-16 svg-fill-current mr-8">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
                 <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" fill="none"/>
                 <circle cx="12" cy="12" r="2" fill="currentColor"/>
@@ -1546,14 +1553,14 @@ function showActivityDetailsEleve(activite) {
             } else if (estInscritSeance) {
                 statutBadge = '<span class="seance-status inscrit">✓ Inscrit(e)</span>';
                 if (activite.separable) {
-                    btnAction = `<button class="btn-mini secondary" onclick="event.stopPropagation(); desinscrireSeance(${seance.id})">Se désinscrire</button>`;
+                    btnAction = `<button class="btn-mini secondary" data-action="desinscrire" data-seance-id="${seance.id}">Se désinscrire</button>`;
                 }
             } else if (seanceComplete) {
                 statutBadge = '<span class="seance-status full">Complète</span>';
             } else {
                 statutBadge = '<span class="seance-status available">Places disponibles</span>';
                 if (activite.separable) {
-                    btnAction = `<button class="btn-mini primary" onclick="event.stopPropagation(); inscrireSeance(${seance.id})">S'inscrire</button>`;
+                    btnAction = `<button class="btn-mini primary" data-action="inscrire" data-seance-id="${seance.id}">S'inscrire</button>`;
                 }
             }
 
@@ -1563,7 +1570,7 @@ function showActivityDetailsEleve(activite) {
                         <div class="seance-detail-date">📅 ${seanceDateStr}</div>
                         <div class="seance-detail-count">${inscritsSeance}/${activite.effectif_max} inscrit(s)</div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="seance-action-container">
                         ${statutBadge}
                         ${btnAction}
                     </div>
@@ -1911,8 +1918,8 @@ function showActivityDetails(activite) {
             const duree = seance.duree || 60;
             const seanceFin = new Date(seanceDate.getTime() + duree * 60000);
 
-            const btnPrint = `<button class="appel-btn faire" onclick="event.stopPropagation(); ouvrirModalPDF(${seance.id})">
-                <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px">
+            const btnPrint = `<button class="btn-print faire" data-seance-id=${seance.id}">
+                <svg class="icon icon-print" viewBox="0 0 24 24">
                     <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" fill="currentColor"/>
                 </svg>
                 Imprimer
@@ -1943,7 +1950,7 @@ function showActivityDetails(activite) {
                     ${btnPrint}
                     ${btnAppel}
                 </div>
-                <div class="inscriptions-list" style="max-height: 120px; margin-bottom: 12px;">
+                <div class="inscriptions-list"">
                     ${seanceInscrits.length > 0
                         ? seanceInscrits.map(eleveId => {
                             const eleve = getUserById(eleveId);
@@ -2101,7 +2108,6 @@ async function ouvrirModalAppel(seanceId, consultation) {
         let triActuel = 'nom';
 
 
-
         const renderAppel = () => {
             const { triActuel } = window.currentAppelData;
             body.innerHTML = `
@@ -2110,10 +2116,10 @@ async function ouvrirModalAppel(seanceId, consultation) {
                         <strong>${data.presences.length}</strong> élève(s) inscrit(s)
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn-tri ${triActuel === 'nom' ? 'active' : ''}" onclick="trierAppel('nom')">
+                        <button class="btn-tri ${triActuel === 'nom' ? 'active' : ''}" data-tri="nom">
                             Trier par nom
                         </button>
-                        <button class="btn-tri ${triActuel === 'classe' ? 'active' : ''}" onclick="trierAppel('classe')">
+                        <button class="btn-tri ${triActuel === 'classe' ? 'active' : ''}" data-tri="classe">
                             Trier par classe
                         </button>
                     </div>
@@ -2125,14 +2131,16 @@ async function ouvrirModalAppel(seanceId, consultation) {
                                 <div class="appel-eleve-nom">${p.prenom} ${p.nom}</div>
                                 <div class="appel-eleve-classe">${p.classe_nom || 'Sans classe'}</div>
                             </div>
-                            <div style="display: flex; gap: 8px; align-items: center;">
+                            <div class="flex gap-8 items-center">
                                 <button class="btn-presence ${p.present ? 'active' : ''}"
-                                        onclick="togglePresence(${p.eleve_id}, true)"
+                                        data-eleve-id="${p.eleve_id}"
+                                        data-present="true"
                                         ${consultation ? 'disabled' : ''}>
                                     Présent
                                 </button>
                                 <button class="btn-absence ${!p.present ? 'active' : ''}"
-                                        onclick="togglePresence(${p.eleve_id}, false)"
+                                        data-eleve-id="${p.eleve_id}"
+                                        data-present="false"
                                         ${consultation ? 'disabled' : ''}>
                                     Absent
                                 </button>
@@ -2141,16 +2149,16 @@ async function ouvrirModalAppel(seanceId, consultation) {
                     `).join('')}
                 </div>
                 ${!consultation ? `
-                    <div style="display: flex; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
-                        <button class="btn" onclick="enregistrerAppel(${seanceId})">
+                    <div class="flex gap-12 mt-16 pt-16 border-top">
+                        <button class="btn btn-save-appel" data-seance-id="${seanceId}">
                             <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" fill="currentColor"/></svg>
                             Enregistrer l'appel
                         </button>
-                        <button class="btn secondary" onclick="fermerModalAppel()">Annuler</button>
+                        <button class="btn secondary btn-close-appel">Annuler</button>
                     </div>
                 ` : `
-                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
-                        <button class="btn secondary" onclick="fermerModalAppel()">Fermer</button>
+                    <div class="mt-16 pt-16 border-top">
+                        <button class="btn secondary btn-close-appel">Fermer</button>
                     </div>
                 `}
             `;
@@ -2166,6 +2174,38 @@ async function ouvrirModalAppel(seanceId, consultation) {
 
         renderAppel();
         modal.classList.add('visible');
+
+        // Gestion pour les boutons de tri
+        body.addEventListener('click', (e) => {
+            const btnTri = e.target.closest('.btn-tri');
+            if (btnTri) {
+                e.preventDefault();
+                trierAppel(btnTri.dataset.tri);
+            }
+
+        // Gestion pour présence/absence
+            const btn = e.target.closest('.btn-presence, .btn-absence');
+            if (btn && !btn.disabled) {
+                e.preventDefault();
+                const eleveId = parseInt(btn.dataset.eleveId);
+                const present = btn.dataset.present === 'true';
+                togglePresence(eleveId, present);
+            }
+
+            // Gestionnaire pour sauvegarder l'appel
+            const btnSave = e.target.closest('.btn-save-appel');
+            if (btnSave) {
+                e.preventDefault();
+                enregistrerAppel(parseInt(btnSave.dataset.seanceId));
+            }
+
+            // Gestionnaire pour fermer
+            const btnClose = e.target.closest('.btn-close-appel');
+            if (btnClose) {
+                e.preventDefault();
+                fermerModalAppel();
+            }
+        });
 
     } catch(e) {
         alert('Erreur lors du chargement de l\'appel: ' + e.message);
@@ -2470,11 +2510,11 @@ function updateScheduleViewProf() {
                         <div class="seance-animateur">${inscritsCount}/${act.effectif_max} inscrits</div>
                     `;
 
-                    seanceBlock.onclick = (e) => {
+                    seanceBlock.addEventListener('click', (e) => {
                         e.stopPropagation();
                         showActivityDetails(act);
                         highlightActiviteInScheduleProf(act);
-                    };
+                    });
 
                     dayContent.appendChild(seanceBlock);
                 }
@@ -2786,10 +2826,10 @@ function updateEmploiDuTempsEleve() {
                         <div class="seance-animateur">${animateurNom}</div>
                     `;
 
-                    seanceBlock.onclick = (e) => {
+                    seanceBlock.addEventListener('click', (e) => {
                         e.stopPropagation();
                         showActivityDetailsEleve(act);
-                    };
+                    });
 
                     dayContent.appendChild(seanceBlock);
                 }
@@ -2849,48 +2889,64 @@ function ouvrirModalPDF(seanceId) {
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
                 <h3>Options d'impression</h3>
-                <button class="modal-close" onclick="fermerModalPDF()">&times;</button>
+                <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="muted" style="margin-bottom: 20px;">
+                <p class="muted mb-20">
                     Personnalisez les informations à inclure dans le PDF
                 </p>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <div class="form-group mb-16">
+                    <label class="flex items-center gap-10">
                         <input type="checkbox" id="pdf-show-appel" checked>
                         <span>Colonne "Présent" (cases à cocher pour l'appel)</span>
                     </label>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                        <input type="checkbox" id="pdf-show-emargement" checked>
+                <div class="form-group mb-16">
+                    <label class="flex items-center gap-10">
+                        <input type="checkbox" id="pdf-show-emargement">
                         <span>Colonne "Émargement" (signature des élèves)</span>
                     </label>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 20px;">
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <div class="form-group mb-20">
+                    <label class="flex items-center gap-10">
                         <input type="checkbox" id="pdf-show-commentaire">
                         <span>Colonne "Commentaire"</span>
                     </label>
                 </div>
 
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn" onclick="genererPDF(${seanceId})">
+                <div class="flex gap-12">
+                    <button class="btn btn-generate-pdf" data-seance-id="${seanceId}">
                         <svg class="icon" viewBox="0 0 24 24">
                             <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" fill="currentColor"/>
                         </svg>
                         Générer le PDF
                     </button>
-                    <button class="btn secondary" onclick="fermerModalPDF()">Annuler</button>
+                    <button class="btn secondary btn-close-pdf">Annuler</button>
                 </div>
             </div>
         </div>
     `;
 
     document.body.appendChild(modal);
+
+    // Gestionnaires d'événements
+    modal.querySelector('.btn-generate-pdf').addEventListener('click', (e) => {
+        e.preventDefault();
+        genererPDF(parseInt(e.currentTarget.dataset.seanceId));
+    });
+
+    modal.querySelector('.btn-close-pdf').addEventListener('click', (e) => {
+        e.preventDefault();
+        fermerModalPDF();
+    });
+
+    modal.querySelector('.modal-close').addEventListener('click', (e) => {
+        e.preventDefault();
+        fermerModalPDF();
+    });
 
     // Fermer au clic extérieur
     modal.addEventListener('click', (e) => {
@@ -3431,10 +3487,11 @@ function ajouterSeanceHebdo(){
     const supBtn = document.createElement('button');
     supBtn.className='btn secondary';
     supBtn.textContent='Supprimer série';
-    supBtn.onclick = ()=> {
+    supBtn.addEventListener('click', (e) => {
+        e.preventDefault();
         serieDiv.remove();
-        trierSeances(); // Ajout
-    };
+        trierSeances();
+    });
     sup.appendChild(supBtn);
     serieDiv.appendChild(sup);
 
@@ -3457,7 +3514,7 @@ function ajouterSeanceHebdo(){
 
             inp.value = formatDateInputLocal(newDate);
         });
-        trierSeances(); // Ajout
+        trierSeances();
     }
 
     // Fonction pour mettre à jour toutes les durées de la série
@@ -3519,7 +3576,8 @@ function ajouterSeanceHebdo(){
         const del = document.createElement('button');
         del.className='btn ghost';
         del.textContent='✖';
-        del.onclick = () => {
+        del.addEventListener('click', (e) => {
+            e.preventDefault();
             d.remove();
 
             const remainingItems = serieDiv.querySelectorAll('.seance-item');
@@ -3538,8 +3596,8 @@ function ajouterSeanceHebdo(){
             } else {
                 serieDiv.remove();
             }
-            trierSeances(); // Ajout
-        };
+            trierSeances();
+        });
 
         d.appendChild(span);
         d.appendChild(inp);
@@ -3560,7 +3618,7 @@ function ajouterSeanceManuelle(){
     const inp = document.createElement('input');
     inp.type='datetime-local';
     inp.className='seance-input';
-    inp.onchange = () => trierSeances(); // Ajout
+    inp.onchange = () => trierSeances();
 
     const span = document.createElement('div');
     span.className='small muted';
@@ -3584,17 +3642,18 @@ function ajouterSeanceManuelle(){
     const del = document.createElement('button');
     del.className='btn ghost';
     del.textContent='✖';
-    del.onclick = ()=> {
+    del.addEventListener('click', (e) => {
+        e.preventDefault();
         d.remove();
-        trierSeances(); // Ajout
-    };
+        trierSeances();
+    });
 
     d.appendChild(span);
     d.appendChild(inp);
     d.appendChild(selectDuree);
     d.appendChild(del);
     container.appendChild(d);
-    trierSeances(); // Ajout
+    trierSeances();
 }
 
 function trierSeances() {
@@ -3770,7 +3829,7 @@ function majListeGroupes() {
 
         const infoDiv = document.createElement('div');
         infoDiv.innerHTML = `
-            <strong style="color: var(--text); font-size: 14px;">${groupe.nom}</strong>
+            <strong class="text-14 font-semibold">${groupe.nom}</strong>
             <div class="small muted">Classes : ${classesGroupe || 'Aucune'}</div>
             <div class="small muted">${activitesCount} activité(s) • ${groupe.description || 'Pas de description'}</div>
         `;
@@ -3783,12 +3842,15 @@ function majListeGroupes() {
         btnEdit.className = 'btn secondary';
         btnEdit.dataset.groupeId = groupe.id;
         btnEdit.innerHTML = `
-            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px">
+            <svg class="icon" viewBox="0 0 24 24" class="w-16 h-16">
                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
             </svg>
             Éditer
         `;
-        btnEdit.onclick = () => editerGroupe(groupe.id);
+        btnEdit.addEventListener('click', (e) => {
+            e.preventDefault();
+            editerGroupe(parseInt(e.currentTarget.dataset.groupeId));
+        });
 
         // Bouton supprimer
         const btnSuppr = document.createElement('button');
@@ -3798,7 +3860,11 @@ function majListeGroupes() {
             <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
             Supprimer
         `;
-        btnSuppr.onclick = () => supprimerGroupe(groupe.id, groupe.nom);
+        btnSuppr.addEventListener('click', (e) => {
+            e.preventDefault();
+            const btn = e.currentTarget;
+            supprimerGroupe(parseInt(btn.dataset.groupeId), btn.dataset.groupeNom);
+        });
 
         btnContainer.appendChild(btnEdit);
         btnContainer.appendChild(btnSuppr);

@@ -112,16 +112,29 @@
                   <button class="schedule-view-tab" data-view="month">Mois</button>
                 </div>
               </div>
+
               <div class="schedule-header-center">
-                <span id="current-week-eleve" class="schedule-week">Semaine</span>
-                <span class="schedule-week-number">(Semaine ?)</span>
+                <button id="prev-week-eleve" class="schedule-nav-btn">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <div>
+                  <span id="current-week-eleve" class="schedule-week">Semaine</span>
+                  <span class="schedule-week-number">(Semaine ?)</span>
+                </div>
+                <button id="next-week-eleve" class="schedule-nav-btn">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
               </div>
+
               <div class="schedule-header-right">
                 <button id="today-eleve" class="schedule-today-btn">Aujourd'hui</button>
-                <button id="prev-week-eleve" class="schedule-nav-btn">←</button>
-                <button id="next-week-eleve" class="schedule-nav-btn">→</button>
               </div>
             </div>
+
             <div class="schedule-grid">
               <div class="schedule-table" id="emploi-du-temps-eleve">
                 <div class="schedule-hour-cell">

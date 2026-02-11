@@ -24,7 +24,7 @@ async function loadInvitationInfo() {
         document.getElementById('username').value = username;
         
         document.getElementById('welcome-info').innerHTML = `
-            <strong>👋 Bienvenue !</strong><br>
+            <strong>Bienvenue !</strong><br>
             Email : <strong>${data.email}</strong><br>
             Complétez vos informations ci-dessous.
         `;
