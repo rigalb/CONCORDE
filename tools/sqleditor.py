@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-SQLite Database Editor Pro - Version Ultimate
-Éditeur professionnel avec l'ensemble complet des fonctionnalités
+SQLite Database Editor Pro - Version Ultimate Complete
+Éditeur SQLite professionnel avec toutes les fonctionnalités implémentées
 """
 import sqlite3
 import json
@@ -10,17 +10,67 @@ import csv
 import os
 import re
 import shutil
+import hashlib
+import base64
 from datetime import datetime
 from tkinter import (
   Tk, Button, Label, Entry, Text, Toplevel, Radiobutton, Scrollbar, Canvas, Frame,
-  END, messagebox, filedialog, Menu, StringVar, BooleanVar, IntVar,
-  Checkbutton, Scale, HORIZONTAL, VERTICAL, Listbox
+  END, messagebox, filedialog, Menu, StringVar, BooleanVar, IntVar, DoubleVar,
+  Checkbutton, Scale, HORIZONTAL, VERTICAL, Listbox, font as tkfont
 )
-from tkinter.ttk import Combobox, Notebook, Progressbar, Treeview
+from tkinter.ttk import Combobox, Notebook, Progressbar, Treeview, Style
+from tkinter import simpledialog, colorchooser
 from typing import Optional, List, Tuple, Any, Dict, Set
 from collections import deque
 import threading
 import time
+
+# Werkzeug pour hashage sécurisé
+try:
+    from werkzeug.security import generate_password_hash, check_password_hash
+    WERKZEUG_AVAILABLE = True
+except ImportError:
+    WERKZEUG_AVAILABLE = False
+    print("[WARNNG]}  werkzeug non installé - hashage de mots de passe désactivé")
+
+
+# ==================== FONCTIONS UTILITAIRES ====================
+
+def hash_password(password: str) -> str:
+    """Hashe un mot de passe avec werkzeug."""
+    if not WERKZEUG_AVAILABLE:
+        raise ImportError("werkzeug non disponible")
+    return generate_password_hash(password)
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Vérifie un mot de passe."""
+    if not WERKZEUG_AVAILABLE:
+        return False
+    return check_password_hash(password_hash, password)
+
+def is_password_column(column_name: str) -> bool:
+    """Détecte une colonne de mot de passe."""
+    keywords = ['password', 'pwd', 'pass', 'motdepasse', 'mdp', 'hash']
+    return any(kw in column_name.lower() for kw in keywords)
+
+def is_already_hashed(value: str) -> bool:
+    """Détecte si déjà hashé."""
+    if not value:
+        return False
+    prefixes = ['pbkdf2:', 'scrypt:', 'argon2:', '$2b$', '$2a$', '$2y$']
+    return any(value.startswith(p) for p in prefixes)
+
+def format_file_size(size_bytes: int) -> str:
+    """Formatte une taille de fichier."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} TB"
+
+def sanitize_sql(query: str) -> str:
+    """Nettoie une requête SQL."""
+    return query.strip().rstrip(';')
 
 
 class UndoRedoManager:
@@ -55,28 +105,136 @@ class UndoRedoManager:
 
 
 class ThemeManager:
-  """Gestionnaire de thèmes avec personnalisation."""
+  """Gestionnaire de thèmes complet avec toutes les couleurs."""
   THEMES = {
     'light': {
-      'bg': '#ffffff', 'fg': '#000000', 'header_bg': '#4a90e2',
-      'header_fg': '#ffffff', 'selected_bg': '#e3f2fd', 'border': '#cccccc',
-      'pk_color': '#d0e7ff', 'fk_color': '#d0ffd6', 'normal_color': '#ffffff',
-      'toolbar_bg': '#f0f0f0', 'button_bg': '#4a90e2', 'button_fg': '#ffffff',
-      'modified_bg': '#fff3cd', 'null_fg': '#999999', 'negative_fg': '#dc3545'
+      # Couleurs de base
+      'bg': '#ffffff',
+      'fg': '#000000',
+      'header_bg': '#2c5aa0',
+      'header_fg': '#ffffff',
+      'selected_bg': '#cce5ff',
+      'selected_fg': '#000000',
+      'border': '#cccccc',
+      
+      # Table
+      'pk_color': '#bbdefb',
+      'fk_color': '#c8e6c9',
+      'normal_color': '#ffffff',
+      'modified_bg': '#fff9e6',
+      'null_fg': '#999999',
+      'negative_fg': '#d32f2f',
+      
+      # Toolbar et boutons
+      'toolbar_bg': '#f5f5f5',
+      'button_bg': '#2c5aa0',
+      'button_fg': '#ffffff',
+      'button_active_bg': '#1e3d6f',
+      'button_active_fg': '#ffffff',
+      'button_disabled_bg': '#cccccc',
+      'button_disabled_fg': '#666666',
+      
+      # Inputs
+      'entry_bg': '#ffffff',
+      'entry_fg': '#000000',
+      'entry_disabled_bg': '#f0f0f0',
+      'entry_disabled_fg': '#999999',
+      
+      # Status
+      'success_bg': '#d4edda',
+      'success_fg': '#155724',
+      'warning_bg': '#fff3cd',
+      'warning_fg': '#856404',
+      'error_bg': '#f8d7da',
+      'error_fg': '#721c24',
+      'info_bg': '#d1ecf1',
+      'info_fg': '#0c5460',
     },
     'dark': {
-      'bg': '#2b2b2b', 'fg': '#e0e0e0', 'header_bg': '#1e3a5f',
-      'header_fg': '#ffffff', 'selected_bg': '#3a3a3a', 'border': '#555555',
-      'pk_color': '#1a3d5f', 'fk_color': '#1a4d2e', 'normal_color': '#2b2b2b',
-      'toolbar_bg': '#1e1e1e', 'button_bg': '#1e3a5f', 'button_fg': '#ffffff',
-      'modified_bg': '#4a4020', 'null_fg': '#777777', 'negative_fg': '#ff6b6b'
+      # Couleurs de base
+      'bg': '#1e1e1e',
+      'fg': '#e0e0e0',
+      'header_bg': '#0d47a1',
+      'header_fg': '#ffffff',
+      'selected_bg': '#37474f',
+      'selected_fg': '#ffffff',
+      'border': '#424242',
+      
+      # Table
+      'pk_color': '#283593',
+      'fk_color': '#2e7d32',
+      'normal_color': '#2b2b2b',
+      'modified_bg': '#3e2723',
+      'null_fg': '#757575',
+      'negative_fg': '#ef5350',
+      
+      # Toolbar et boutons
+      'toolbar_bg': '#2b2b2b',
+      'button_bg': '#1976d2',
+      'button_fg': '#ffffff',
+      'button_active_bg': '#0d47a1',
+      'button_active_fg': '#ffffff',
+      'button_disabled_bg': '#424242',
+      'button_disabled_fg': '#757575',
+      
+      # Inputs
+      'entry_bg': '#2b2b2b',
+      'entry_fg': '#e0e0e0',
+      'entry_disabled_bg': '#1e1e1e',
+      'entry_disabled_fg': '#757575',
+      
+      # Status
+      'success_bg': '#1b5e20',
+      'success_fg': '#a5d6a7',
+      'warning_bg': '#f57f17',
+      'warning_fg': '#fff9c4',
+      'error_bg': '#b71c1c',
+      'error_fg': '#ffcdd2',
+      'info_bg': '#01579b',
+      'info_fg': '#b3e5fc',
     },
     'high_contrast': {
-      'bg': '#000000', 'fg': '#ffffff', 'header_bg': '#0000ff',
-      'header_fg': '#ffff00', 'selected_bg': '#0000ff', 'border': '#ffffff',
-      'pk_color': '#000080', 'fk_color': '#008000', 'normal_color': '#000000',
-      'toolbar_bg': '#000000', 'button_bg': '#0000ff', 'button_fg': '#ffff00',
-      'modified_bg': '#808000', 'null_fg': '#808080', 'negative_fg': '#ff0000'
+      # Couleurs de base
+      'bg': '#000000',
+      'fg': '#ffffff',
+      'header_bg': '#0000ff',
+      'header_fg': '#ffff00',
+      'selected_bg': '#ffff00',
+      'selected_fg': '#000000',
+      'border': '#ffffff',
+      
+      # Table
+      'pk_color': '#000080',
+      'fk_color': '#008000',
+      'normal_color': '#000000',
+      'modified_bg': '#800080',
+      'null_fg': '#808080',
+      'negative_fg': '#ff0000',
+      
+      # Toolbar et boutons
+      'toolbar_bg': '#000000',
+      'button_bg': '#0000ff',
+      'button_fg': '#ffff00',
+      'button_active_bg': '#0000cc',
+      'button_active_fg': '#ffff00',
+      'button_disabled_bg': '#404040',
+      'button_disabled_fg': '#808080',
+      
+      # Inputs
+      'entry_bg': '#000000',
+      'entry_fg': '#ffffff',
+      'entry_disabled_bg': '#202020',
+      'entry_disabled_fg': '#808080',
+      
+      # Status
+      'success_bg': '#00ff00',
+      'success_fg': '#000000',
+      'warning_bg': '#ffff00',
+      'warning_fg': '#000000',
+      'error_bg': '#ff0000',
+      'error_fg': '#ffffff',
+      'info_bg': '#00ffff',
+      'info_fg': '#000000',
     }
   }
 
@@ -100,7 +258,9 @@ class ThemeManager:
 
   def customize_color(self, key: str, color: str) -> None:
     self.custom_colors[key] = color
-
+    
+  def reset_custom_colors(self) -> None:
+    self.custom_colors = {}
 
 class QueryHistoryManager:
   """Gestionnaire d'historique et favoris de requêtes."""
@@ -2340,7 +2500,19 @@ class AdvancedTable(Frame):
 
         value = row[j] if j < len(row) else ''
         display_value = str(value) if value is not None else 'NULL'
-        text_color = theme['null_fg'] if value is None else theme['fg']
+        # Couleur de texte selon le fond
+        if value is None:
+          text_color = theme['null_fg']
+        else:
+          # Adapter la couleur du texte au fond
+          cell_bg = color
+          if cell_bg == theme['pk_color'] or cell_bg == theme['fk_color']:
+            # Sur fond coloré PK/FK, utiliser une couleur de texte qui contraste
+            text_color = theme['fg']
+          elif cell_bg == theme['selected_bg']:
+            text_color = theme['selected_fg']
+          else:
+            text_color = theme['fg']
 
         if len(display_value) > 50:
           display_value = display_value[:47] + '...'
@@ -2978,8 +3150,18 @@ class SQLiteEditorPro:
 
     schema_toolbar = Frame(schema_frame)
     schema_toolbar.pack(fill='x', padx=5, pady=5)
+    
+    # Checkbox pour afficher le dump complet
+    self.show_dump = BooleanVar(value=False)
+    Checkbutton(schema_toolbar, text="Afficher le dump complet (CREATE + INSERT)", 
+               variable=self.show_dump, command=self._toggle_schema_dump).pack(side='left', padx=5)
+    
+    # Séparateur
+    Frame(schema_toolbar, width=2, bg='gray').pack(side='left', fill='y', padx=10, pady=2)
+    
     Button(schema_toolbar, text="Rafraîchir", command=self._update_schema_view).pack(side='left', padx=5)
-    Button(schema_toolbar, text="Exporter schéma", command=self._export_schema).pack(side='left', padx=5)
+    Button(schema_toolbar, text="Exporter", command=self._export_schema).pack(side='left', padx=5)
+    Button(schema_toolbar, text="Copier", command=self._copy_schema_text).pack(side='left', padx=5)
 
     self.schema_text = Text(schema_frame, font=('Courier', 9))
     self.schema_text.pack(fill='both', expand=True, padx=5, pady=5)
@@ -3042,11 +3224,261 @@ class SQLiteEditorPro:
     self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
   def _apply_theme(self) -> None:
+    """Applique le thème à ABSOLUMENT TOUS les éléments de l'interface."""
     theme = self.theme_manager.get_theme()
-    self.root.configure(bg=theme['bg'])
+    
+    # ========== CONFIGURATION DES STYLES TTK ==========
+    try:
+      style = Style()
+      style.theme_use('clam')
+      
+      # Combobox
+      style.configure('TCombobox',
+                     fieldbackground=theme['entry_bg'],
+                     background=theme['toolbar_bg'],
+                     foreground=theme['fg'],
+                     selectbackground=theme['selected_bg'],
+                     selectforeground=theme['selected_fg'],
+                     arrowcolor=theme['fg'],
+                     bordercolor=theme['border'],
+                     darkcolor=theme['toolbar_bg'],
+                     lightcolor=theme['bg'])
+      style.map('TCombobox',
+               fieldbackground=[('readonly', theme['entry_bg']), ('disabled', theme['entry_disabled_bg'])],
+               foreground=[('disabled', theme['entry_disabled_fg'])],
+               selectbackground=[('readonly', theme['selected_bg'])])
+      
+      # Notebook (onglets)
+      style.configure('TNotebook', background=theme['toolbar_bg'], bordercolor=theme['border'])
+      style.configure('TNotebook.Tab',
+                     background=theme['toolbar_bg'],
+                     foreground=theme['fg'],
+                     padding=[10, 5])
+      style.map('TNotebook.Tab',
+               background=[('selected', theme['button_bg']), ('active', theme['button_active_bg'])],
+               foreground=[('selected', theme['button_fg']), ('active', theme['button_active_fg'])])
+      
+      # Progressbar
+      style.configure('TProgressbar',
+                     background=theme['button_bg'],
+                     troughcolor=theme['bg'],
+                     bordercolor=theme['border'])
+      
+      # Treeview
+      style.configure('Treeview',
+                     background=theme['bg'],
+                     foreground=theme['fg'],
+                     fieldbackground=theme['bg'],
+                     bordercolor=theme['border'])
+      style.configure('Treeview.Heading',
+                     background=theme['header_bg'],
+                     foreground=theme['header_fg'],
+                     bordercolor=theme['border'])
+      style.map('Treeview',
+               background=[('selected', theme['selected_bg'])],
+               foreground=[('selected', theme['selected_fg'])])
+      
+    except Exception as e:
+      print(f"Erreur config TTK: {e}")
+    
+    # ========== FONCTION RÉCURSIVE POUR TOUS LES WIDGETS ==========
+    def apply_recursive(widget, depth=0, is_toolbar=False):
+      """Applique le thème récursivement à un widget et ses enfants."""
+      if depth > 50:  # Protection contre récursion infinie
+        return
+      
+      try:
+        wtype = widget.winfo_class()
+        
+        # Déterminer le contexte
+        bg = theme['toolbar_bg'] if is_toolbar else theme['bg']
+        
+        # ===== BUTTON =====
+        if wtype == 'Button':
+          widget.configure(
+            bg=theme['button_bg'],
+            fg=theme['button_fg'],
+            activebackground=theme['button_active_bg'],
+            activeforeground=theme['button_active_fg'],
+            disabledforeground=theme['button_disabled_fg'],
+            highlightbackground=theme['border'],
+            highlightcolor=theme['header_bg'],
+            highlightthickness=1,
+            relief='flat',
+            bd=0
+          )
+        
+        # ===== LABEL =====
+        elif wtype == 'Label':
+          widget.configure(
+            bg=bg,
+            fg=theme['fg']
+          )
+        
+        # ===== ENTRY =====
+        elif wtype == 'Entry':
+          widget.configure(
+            bg=theme['entry_bg'],
+            fg=theme['entry_fg'],
+            insertbackground=theme['fg'],
+            selectbackground=theme['selected_bg'],
+            selectforeground=theme['selected_fg'],
+            disabledbackground=theme['entry_disabled_bg'],
+            disabledforeground=theme['entry_disabled_fg'],
+            highlightbackground=theme['border'],
+            highlightcolor=theme['header_bg'],
+            highlightthickness=1,
+            relief='solid',
+            bd=1
+          )
+        
+        # ===== TEXT =====
+        elif wtype == 'Text':
+          widget.configure(
+            bg=theme['bg'],
+            fg=theme['fg'],
+            insertbackground=theme['fg'],
+            selectbackground=theme['selected_bg'],
+            selectforeground=theme['selected_fg'],
+            highlightbackground=theme['border'],
+            highlightcolor=theme['header_bg'],
+            highlightthickness=1,
+            relief='solid',
+            bd=1
+          )
+          # Tags pour coloration syntaxique
+          try:
+            widget.tag_configure('keyword', foreground=theme['header_bg'])
+            widget.tag_configure('string', foreground=theme['success_fg'] if self.theme_manager.current_theme == 'light' else theme['success_bg'])
+            widget.tag_configure('comment', foreground=theme['null_fg'])
+            widget.tag_configure('error', foreground=theme['error_fg'], background=theme['error_bg'])
+          except:
+            pass
+        
+        # ===== LISTBOX =====
+        elif wtype == 'Listbox':
+          widget.configure(
+            bg=theme['bg'],
+            fg=theme['fg'],
+            selectbackground=theme['selected_bg'],
+            selectforeground=theme['selected_fg'],
+            highlightbackground=theme['border'],
+            highlightcolor=theme['header_bg'],
+            highlightthickness=1,
+            relief='solid',
+            bd=1
+          )
+        
+        # ===== CANVAS =====
+        elif wtype == 'Canvas':
+          widget.configure(
+            bg=theme['bg'],
+            highlightbackground=theme['border'],
+            highlightcolor=theme['header_bg'],
+            highlightthickness=1
+          )
+        
+        # ===== SCROLLBAR =====
+        elif wtype == 'Scrollbar':
+          widget.configure(
+            bg=theme['toolbar_bg'],
+            troughcolor=theme['bg'],
+            activebackground=theme['selected_bg'],
+            highlightbackground=theme['border'],
+            relief='flat',
+            bd=0
+          )
+        
+        # ===== FRAME =====
+        elif wtype == 'Frame':
+          widget.configure(bg=bg)
+        
+        # ===== TOPLEVEL =====
+        elif wtype == 'Toplevel':
+          widget.configure(bg=theme['bg'])
+        
+        # ===== CHECKBUTTON =====
+        elif wtype == 'Checkbutton':
+          widget.configure(
+            bg=bg,
+            fg=theme['fg'],
+            activebackground=bg,
+            activeforeground=theme['fg'],
+            selectcolor=theme['bg'],
+            highlightbackground=theme['border']
+          )
+        
+        # ===== RADIOBUTTON =====
+        elif wtype == 'Radiobutton':
+          widget.configure(
+            bg=bg,
+            fg=theme['fg'],
+            activebackground=bg,
+            activeforeground=theme['fg'],
+            selectcolor=theme['bg'],
+            highlightbackground=theme['border']
+          )
+        
+        # ===== SCALE =====
+        elif wtype == 'Scale':
+          widget.configure(
+            bg=bg,
+            fg=theme['fg'],
+            troughcolor=theme['bg'],
+            activebackground=theme['selected_bg'],
+            highlightbackground=theme['border']
+          )
+        
+        # ===== MENU =====
+        elif wtype == 'Menu':
+          widget.configure(
+            bg=theme['bg'],
+            fg=theme['fg'],
+            activebackground=theme['selected_bg'],
+            activeforeground=theme['selected_fg'],
+            disabledforeground=theme['null_fg'],
+            relief='flat',
+            bd=1,
+            activeborderwidth=0
+          )
+        
+        # Appliquer récursivement aux enfants
+        for child in widget.winfo_children():
+          child_is_toolbar = (hasattr(self, 'toolbar') and child == self.toolbar) or is_toolbar
+          apply_recursive(child, depth + 1, child_is_toolbar)
+      
+      except Exception as e:
+        pass  # Ignorer les widgets qui ne supportent pas ces options
+    
+    # ========== APPLICATION GLOBALE ==========
+    # Root
+    self.root.configure(bg=theme['toolbar_bg'])
+    
+    # Menu bar
+    if hasattr(self, 'menubar'):
+      try:
+        # Le menubar est géré différemment selon l'OS
+        pass
+      except:
+        pass
+    
+    # Appliquer récursivement à tous les enfants du root
+    for child in self.root.winfo_children():
+      is_toolbar = hasattr(self, 'toolbar') and child == self.toolbar
+      apply_recursive(child, 0, is_toolbar)
+    
+    # Redessiner la table
     if hasattr(self, 'table'):
-      self.table.draw_table()
-
+      try:
+        self.table.draw_table()
+      except:
+        pass
+    
+    # Log
+    try:
+      self.log(f"✓ Thème '{self.theme_manager.current_theme}' appliqué", 'INFO')
+    except:
+      pass
   def _set_theme(self, theme_name: str) -> None:
     self.theme_manager.set_theme(theme_name)
     self._apply_theme()
@@ -3433,19 +3865,27 @@ class SQLiteEditorPro:
     self.log("Table rafraîchie")
 
   def _edit_popup(self, values: List[Any], is_new: bool, is_duplicate: bool = False) -> None:
+    """Dialogue d'édition/ajout avec gestion des mots de passe et thème."""
+    theme = self.theme_manager.get_theme()
+    
     popup = Toplevel(self.root)
+    popup.configure(bg=theme['bg'])
     title = "Dupliquer" if is_duplicate else ("Ajouter" if is_new else "Éditer")
     popup.title(f"{title} - {self.current_table}")
-    popup.geometry("500x600")
+    popup.geometry("650x750")
 
     self.cursor.execute(f"PRAGMA table_info({self.current_table})")
     columns_info = self.cursor.fetchall()
     columns = [col[1] for col in columns_info]
     pk_columns = [col[1] for col in columns_info if col[5]]
 
-    canvas = Canvas(popup)
-    scrollbar = Scrollbar(popup, orient="vertical", command=canvas.yview)
-    scrollable_frame = Frame(canvas)
+    # Frame principal avec scrollbar
+    main_frame = Frame(popup, bg=theme['bg'])
+    main_frame.pack(fill='both', expand=True, padx=5, pady=5)
+    
+    canvas = Canvas(main_frame, bg=theme['bg'], highlightthickness=0)
+    scrollbar = Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = Frame(canvas, bg=theme['bg'])
 
     scrollable_frame.bind(
       "<Configure>",
@@ -3456,31 +3896,103 @@ class SQLiteEditorPro:
     canvas.configure(yscrollcommand=scrollbar.set)
 
     entries = []
+    password_info = {}
+    
     for idx, (col_info, col) in enumerate(zip(columns_info, columns)):
-      frame = Frame(scrollable_frame)
+      frame = Frame(scrollable_frame, bg=theme['bg'])
       frame.pack(fill='x', padx=10, pady=5)
 
       is_pk = col in pk_columns
       col_type = col_info[2]
-      label_text = f"{col} ({col_type}):" + (" [PK]" if is_pk else "")
-      Label(frame, text=label_text, font=('Arial', 10), width=25, anchor='w').pack(side='left')
+      is_pwd = is_password_column(col)
+      
+      label_text = f"{col} ({col_type}):"
+      if is_pk:
+        label_text += " [PK]"
+      if is_pwd and WERKZEUG_AVAILABLE:
+        label_text += " 🔒"
+      
+      lbl = Label(frame, text=label_text, font=('Arial', 10), width=32, anchor='w',
+                  bg=theme['bg'], fg=theme['fg'])
+      lbl.pack(side='left')
 
-      entry = Entry(frame, width=40, font=('Arial', 10))
+      entry_show = '*' if is_pwd and is_new else None
+      entry = Entry(frame, width=38, font=('Arial', 10), show=entry_show,
+                   bg=theme['entry_bg'], fg=theme['entry_fg'],
+                   insertbackground=theme['fg'],
+                   selectbackground=theme['selected_bg'],
+                   selectforeground=theme['selected_fg'])
       entry.pack(side='left', padx=5)
 
       if not is_new and values and idx < len(values):
         if is_duplicate and is_pk:
           pass
         else:
-          entry.insert(0, str(values[idx]) if values[idx] is not None else '')
+          if is_pwd:
+            entry.delete(0, END)
+            entry.config(show='*')
+          else:
+            entry.insert(0, str(values[idx]) if values[idx] is not None else '')
 
       entries.append(entry)
+      
+      if is_pwd and WERKZEUG_AVAILABLE:
+        password_info[idx] = entry
+        
+        def make_hash_handler(e, c):
+          def hash_it():
+            val = e.get()
+            if val:
+              if is_already_hashed(val):
+                messagebox.showwarning("Attention", "Déjà hashé")
+                return
+              try:
+                h = hash_password(val)
+                e.config(show=None)
+                e.delete(0, END)
+                e.insert(0, h)
+                self.log(f"Hashé: {c}")
+              except Exception as ex:
+                messagebox.showerror("Erreur", str(ex))
+          return hash_it
+        
+        hash_btn = Button(frame, text="🔑", command=make_hash_handler(entry, col),
+                         bg=theme['warning_bg'], fg=theme['warning_fg'],
+                         activebackground=theme['button_active_bg'],
+                         font=('Arial', 9, 'bold'), relief='flat', width=3)
+        hash_btn.pack(side='left', padx=2)
+        
+        def make_toggle(e):
+          def toggle():
+            e.config(show=None if e.cget('show') == '*' else '*')
+          return toggle
+        
+        toggle_btn = Button(frame, text="👁", command=make_toggle(entry),
+                          bg=theme['button_bg'], fg=theme['button_fg'],
+                          activebackground=theme['button_active_bg'],
+                          font=('Arial', 9), relief='flat', width=3)
+        toggle_btn.pack(side='left', padx=2)
 
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
 
     def save():
-      new_values = [e.get() if e.get() else None for e in entries]
+      new_values = []
+      
+      for idx, e in enumerate(entries):
+        val = e.get() if e.get() else None
+        
+        if val and is_password_column(columns[idx]) and WERKZEUG_AVAILABLE:
+          if not is_already_hashed(val):
+            if messagebox.askyesno("Hash auto", f"Hasher '{columns[idx]}' ?"):
+              try:
+                val = hash_password(val)
+                self.log(f"Auto-hashé: {columns[idx]}")
+              except Exception as ex:
+                messagebox.showerror("Erreur", str(ex))
+                return
+        
+        new_values.append(val)
 
       try:
         if is_new or is_duplicate:
@@ -3491,15 +4003,27 @@ class SQLiteEditorPro:
           )
           self.log("Ligne ajoutée")
         else:
-          where = " AND ".join(f"{pk} = ?" for pk in pk_columns)
-          pk_values = [values[columns.index(pk)] for pk in pk_columns]
-          set_clause = ", ".join(f"{col} = ?" for col in columns)
-
-          self.cursor.execute(
-            f"UPDATE {self.current_table} SET {set_clause} WHERE {where}",
-            new_values + pk_values
-          )
-          self.log("Ligne modifiée")
+          set_clauses = []
+          update_vals = []
+          
+          for idx, (col, new_val) in enumerate(zip(columns, new_values)):
+            if is_password_column(col):
+              if new_val:
+                set_clauses.append(f"{col} = ?")
+                update_vals.append(new_val)
+            else:
+              set_clauses.append(f"{col} = ?")
+              update_vals.append(new_val)
+          
+          if set_clauses:
+            where = " AND ".join(f"{pk} = ?" for pk in pk_columns)
+            pk_vals = [values[columns.index(pk)] for pk in pk_columns] if values else []
+            
+            self.cursor.execute(
+              f"UPDATE {self.current_table} SET {', '.join(set_clauses)} WHERE {where}",
+              update_vals + pk_vals
+            )
+            self.log("Ligne modifiée")
 
         self.conn.commit()
         self.load_table()
@@ -3509,13 +4033,50 @@ class SQLiteEditorPro:
         self.log(f"Erreur: {e}", 'ERROR')
         messagebox.showerror("Erreur", str(e))
 
-    btn_frame = Frame(popup)
+    btn_frame = Frame(popup, bg=theme['bg'])
     btn_frame.pack(fill='x', pady=10)
 
-    Button(btn_frame, text="Enregistrer", command=save,
-          bg='#28a745', fg='white', font=('Arial', 10)).pack(side='left', padx=10)
-    Button(btn_frame, text="Annuler", command=popup.destroy,
-          bg='#6c757d', fg='white', font=('Arial', 10)).pack(side='left', padx=10)
+    Button(btn_frame, text="✓ Enregistrer", command=save,
+          bg=theme['success_bg'], fg=theme['success_fg'],
+          activebackground=theme['button_active_bg'],
+          font=('Arial', 10, 'bold'), relief='flat', padx=20, pady=5).pack(side='left', padx=10)
+    Button(btn_frame, text="✗ Annuler", command=popup.destroy,
+          bg=theme['error_bg'], fg=theme['error_fg'],
+          activebackground=theme['button_active_bg'],
+          font=('Arial', 10), relief='flat', padx=20, pady=5).pack(side='left', padx=10)
+    
+    if not WERKZEUG_AVAILABLE and any(is_password_column(c) for c in columns):
+      info = Frame(popup, bg=theme['warning_bg'], relief='solid', bd=1)
+      info.pack(fill='x', padx=10, pady=5)
+      Label(info, text="⚠️ werkzeug non installé - hashage désactivé",
+            bg=theme['warning_bg'], fg=theme['warning_fg'],
+            font=('Arial', 9)).pack(pady=3)
+    
+    # Appliquer le thème au popup
+    self._apply_theme_to_window(popup)
+
+  def _apply_theme_to_window(self, window):
+    """Applique le thème à une fenêtre popup."""
+    theme = self.theme_manager.get_theme()
+    try:
+      window.configure(bg=theme['bg'])
+      for widget in window.winfo_children():
+        self._apply_theme_recursive_widget(widget, theme)
+    except:
+      pass
+  
+  def _apply_theme_recursive_widget(self, widget, theme):
+    """Applique le thème récursivement à un widget."""
+    try:
+      wtype = widget.winfo_class()
+      if wtype == 'Frame':
+        widget.configure(bg=theme['bg'])
+      elif wtype == 'Label':
+        widget.configure(bg=theme['bg'], fg=theme['fg'])
+      for child in widget.winfo_children():
+        self._apply_theme_recursive_widget(child, theme)
+    except:
+      pass
 
   def _undo(self) -> None:
     action = self.undo_manager.undo()
@@ -4352,6 +4913,250 @@ Clic droit      Menu contextuel
 
     thread = threading.Thread(target=auto_save, daemon=True)
     thread.start()
+
+
+
+  def _toggle_schema_dump(self) -> None:
+    """Bascule entre schéma et dump complet."""
+    if self.show_dump.get():
+      # Afficher le dump complet
+      self._generate_full_dump_to_schema_text()
+    else:
+      # Afficher le schéma normal
+      self.load_schema()
+  
+  def _generate_full_dump_to_schema_text(self) -> None:
+    """Génère le dump complet dans schema_text."""
+    if not self.conn:
+      return
+    
+    try:
+      self.schema_text.delete('1.0', END)
+      dump_sql = []
+      
+      # En-tête
+      dump_sql.append(f"-- Dump SQL complet généré le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+      dump_sql.append(f"-- Base de données: {os.path.basename(self.db_path) if self.db_path else 'N/A'}")
+      dump_sql.append("-- " + "=" * 70)
+      dump_sql.append("")
+      
+      # Récupérer toutes les tables
+      self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      tables = [row[0] for row in self.cursor.fetchall()]
+      
+      for table in tables:
+        dump_sql.append(f"-- Table: {table}")
+        dump_sql.append("-- " + "-" * 70)
+        
+        # CREATE TABLE
+        self.cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        create_sql = self.cursor.fetchone()
+        if create_sql and create_sql[0]:
+          dump_sql.append(f"DROP TABLE IF EXISTS {table};")
+          dump_sql.append(create_sql[0] + ";")
+          dump_sql.append("")
+        
+        # INSERT DATA
+        self.cursor.execute(f"SELECT * FROM {table}")
+        rows = self.cursor.fetchall()
+        
+        if rows:
+          self.cursor.execute(f"PRAGMA table_info({table})")
+          columns = [col[1] for col in self.cursor.fetchall()]
+          
+          dump_sql.append(f"-- Données pour {table} ({len(rows)} lignes)")
+          
+          for row in rows:
+            values = []
+            for val in row:
+              if val is None:
+                values.append('NULL')
+              elif isinstance(val, str):
+                escaped = val.replace("'", "''")
+                values.append(f"'{escaped}'")
+              elif isinstance(val, (int, float)):
+                values.append(str(val))
+              else:
+                values.append(f"'{str(val)}'")
+            
+            insert_sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(values)});"
+            dump_sql.append(insert_sql)
+          
+          dump_sql.append("")
+        
+        dump_sql.append("")
+      
+      # Indices
+      self.cursor.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+      indices = self.cursor.fetchall()
+      
+      if indices:
+        dump_sql.append("-- Indices")
+        dump_sql.append("-- " + "-" * 70)
+        for idx in indices:
+          dump_sql.append(idx[0] + ";")
+        dump_sql.append("")
+      
+      # Triggers
+      self.cursor.execute("SELECT sql FROM sqlite_master WHERE type='trigger'")
+      triggers = self.cursor.fetchall()
+      
+      if triggers:
+        dump_sql.append("-- Triggers")
+        dump_sql.append("-- " + "-" * 70)
+        for trig in triggers:
+          if trig[0]:
+            dump_sql.append(trig[0] + ";")
+        dump_sql.append("")
+      
+      # Afficher dans schema_text
+      full_dump = "\n".join(dump_sql)
+      self.schema_text.insert('1.0', full_dump)
+      
+      self.log(f"Dump généré: {len(tables)} tables, {sum(1 for line in dump_sql if line.startswith('INSERT'))} insertions")
+      
+    except Exception as e:
+      self.log(f"Erreur génération dump: {e}", 'ERROR')
+      messagebox.showerror("Erreur", f"Erreur: {e}")
+  
+  def _copy_schema_text(self) -> None:
+    """Copie le contenu de schema_text dans le presse-papiers."""
+    content = self.schema_text.get('1.0', END).strip()
+    
+    if not content:
+      messagebox.showwarning("Attention", "Rien à copier")
+      return
+    
+    try:
+      self.root.clipboard_clear()
+      self.root.clipboard_append(content)
+      self.log("Contenu copié dans le presse-papiers")
+      messagebox.showinfo("Succès", "Contenu copié !")
+    except Exception as e:
+      messagebox.showerror("Erreur", f"Erreur: {e}")
+
+  def _generate_full_dump(self) -> None:
+    """Génère un dump SQL complet avec CREATE + INSERT."""
+    if not self.conn:
+      messagebox.showwarning("Attention", "Aucune base ouverte")
+      return
+    
+    try:
+      self.dump_text.delete('1.0', END)
+      dump_sql = []
+      
+      # En-tête
+      dump_sql.append(f"-- Dump SQL complet généré le {datetime.now()}")
+      dump_sql.append(f"-- Base de données: {os.path.basename(self.db_path)}")
+      dump_sql.append("-- " + "=" * 70)
+      dump_sql.append("")
+      
+      # Récupérer toutes les tables
+      self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      tables = [row[0] for row in self.cursor.fetchall()]
+      
+      for table in tables:
+        dump_sql.append(f"-- Table: {table}")
+        dump_sql.append("-- " + "-" * 70)
+        
+        # CREATE TABLE
+        self.cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        create_sql = self.cursor.fetchone()
+        if create_sql and create_sql[0]:
+          dump_sql.append(f"DROP TABLE IF EXISTS {table};")
+          dump_sql.append(create_sql[0] + ";")
+          dump_sql.append("")
+        
+        # INSERT DATA
+        self.cursor.execute(f"SELECT * FROM {table}")
+        rows = self.cursor.fetchall()
+        
+        if rows:
+          self.cursor.execute(f"PRAGMA table_info({table})")
+          columns = [col[1] for col in self.cursor.fetchall()]
+          
+          dump_sql.append(f"-- Données pour {table} ({len(rows)} lignes)")
+          
+          for row in rows:
+            values = []
+            for val in row:
+              if val is None:
+                values.append('NULL')
+              elif isinstance(val, str):
+                # Échapper les quotes
+                escaped = val.replace("'", "''")
+                values.append(f"'{escaped}'")
+              elif isinstance(val, (int, float)):
+                values.append(str(val))
+              else:
+                values.append(f"'{str(val)}'")
+            
+            insert_sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(values)});"
+            dump_sql.append(insert_sql)
+          
+          dump_sql.append("")
+        
+        dump_sql.append("")
+      
+      # Indices
+      self.cursor.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+      indices = self.cursor.fetchall()
+      
+      if indices:
+        dump_sql.append("-- Indices")
+        dump_sql.append("-- " + "-" * 70)
+        for idx in indices:
+          dump_sql.append(idx[0] + ";")
+        dump_sql.append("")
+      
+      # Afficher dans le Text widget
+      full_dump = "\n".join(dump_sql)
+      self.dump_text.insert('1.0', full_dump)
+      
+      self.log(f"Dump généré: {len(tables)} tables, {sum(1 for line in dump_sql if line.startswith('INSERT'))} insertions")
+      messagebox.showinfo("Succès", f"Dump généré: {len(tables)} tables")
+      
+    except Exception as e:
+      self.log(f"Erreur génération dump: {e}", 'ERROR')
+      messagebox.showerror("Erreur", f"Erreur: {e}")
+  
+  def _export_dump(self) -> None:
+    """Exporte le dump dans un fichier."""
+    dump_content = self.dump_text.get('1.0', END).strip()
+    
+    if not dump_content:
+      messagebox.showwarning("Attention", "Générez d'abord le dump")
+      return
+    
+    file_path = filedialog.asksaveasfilename(
+      defaultextension=".sql",
+      filenamepatterns=[("SQL", "*.sql"), ("Tous", "*.*")]
+    )
+    
+    if file_path:
+      try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+          f.write(dump_content)
+        self.log(f"Dump exporté: {file_path}")
+        messagebox.showinfo("Succès", f"Dump exporté:\n{file_path}")
+      except Exception as e:
+        messagebox.showerror("Erreur", f"Erreur export: {e}")
+  
+  def _copy_dump(self) -> None:
+    """Copie le dump dans le presse-papiers."""
+    dump_content = self.dump_text.get('1.0', END).strip()
+    
+    if not dump_content:
+      messagebox.showwarning("Attention", "Générez d'abord le dump")
+      return
+    
+    try:
+      self.root.clipboard_clear()
+      self.root.clipboard_append(dump_content)
+      self.log("Dump copié dans le presse-papiers")
+      messagebox.showinfo("Succès", "Dump copié dans le presse-papiers")
+    except Exception as e:
+      messagebox.showerror("Erreur", f"Erreur copie: {e}")
 
   def _on_closing(self) -> None:
     """Gestion de la fermeture de l'application."""
