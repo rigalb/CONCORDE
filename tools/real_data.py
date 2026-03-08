@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import argparse
 import os
+import sys
 from werkzeug.security import generate_password_hash
 
 DB_PATH = "essaie.db"

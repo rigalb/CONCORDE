@@ -2659,3 +2659,72 @@ textarea {
     flex: 1 1 0%;
   }
 }
+
+/* ===========================
+   CLASSES UTILITAIRES SUPPLÉMENTAIRES
+   (ajoutées pour éliminer les style= inline)
+   =========================== */
+
+/* Champs désactivés visuellement */
+.disabled-field {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Bouton "envoyé" (rappel inscription) */
+.btn-sent {
+  background: #059669 !important;
+  color: white;
+}
+
+/* Groupe d'exclusivité dans la liste */
+.groupe-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+}
+
+/* Warning banner (élèves non inscrits) */
+.warning-banner {
+  background: #fef3c7;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #92400e;
+}
+
+/* Appel header */
+.appel-header {
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+/* Effectif plein */
+.effectif-plein {
+  color: #dc2626 !important;
+}
+
+/* Modal small */
+.modal-sm { max-width: 500px; }
+
+/* SVG icons génériques (dans innerHTML généré) */
+.svg-icon-14 { width: 14px; height: 14px; fill: currentColor; }
+.svg-icon-16 { width: 16px; height: 16px; fill: currentColor; }
+
+/* Min-width utilitaires */
+.min-w-110 { min-width: 110px; }
+
+/* Text-right */
+.text-right { text-align: right; }
+
+/* Padding 20px */
+.p-20 { padding: 20px; }
+
+/* User badge — s'assurer que .hidden fonctionne bien avec inline-flex */
+#user-badge.hidden { display: none !important; }

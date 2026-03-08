@@ -409,8 +409,14 @@ async function login(){
             $('#login-msg').textContent = data.error || 'Erreur de connexion';
             return;
         }
-        currentUser = data;
 
+        // Première connexion élève → redirection vers la page dédiée
+        if(data.first_login) {
+            window.location.href = `/first-login?uid=${data.user_id}`;
+            return;
+        }
+
+        currentUser = data;
         $('#login-msg').textContent='';
         $('#username').value='';
         $('#password').value='';
@@ -1201,9 +1207,48 @@ async function inscrireManuel(eleveId, activiteId) {
 /* ===========================
     Interface Élève
     =========================== */
+
+// Timers pour rafraîchir automatiquement quand une période d'inscription ouvre
+let inscriptionOpenTimers = [];
+
+function clearInscriptionOpenTimers() {
+    inscriptionOpenTimers.forEach(t => clearTimeout(t));
+    inscriptionOpenTimers = [];
+}
+
+function scheduleInscriptionOpenTimers() {
+    clearInscriptionOpenTimers();
+    if (!currentUser || currentUser.role !== 'eleve') return;
+
+    const now = new Date();
+    const classeId = Number(currentUser.classe_id);
+
+    activites.forEach(act => {
+        if (!act.classe_ids.includes(classeId)) return;
+        const ouverture = new Date(act.date_ouverture_inscriptions);
+        const delay = ouverture - now;
+
+        // Si la période d'inscription ouvre dans le futur (max 24h pour éviter des timers trop lointains)
+        if (delay > 0 && delay < 24 * 60 * 60 * 1000) {
+            console.log(`[Timer] Rafraîchissement prévu dans ${Math.round(delay/1000)}s pour "${act.titre}"`);
+            const t = setTimeout(() => {
+                console.log(`[Timer] Période d'inscription ouverte pour "${act.titre}", rafraîchissement...`);
+                majListeActivitesEleve();
+            }, delay);
+            inscriptionOpenTimers.push(t);
+        }
+    });
+}
+
 function majListeActivitesEleve() {
     const container = $('#liste-activites-eleve');
     if (!container) return;
+
+    // Sauvegarder l'état ouvert/fermé des groupes avant de re-rendre
+    const etatGroupes = {};
+    container.querySelectorAll('details[data-groupe-nom]').forEach(d => {
+        etatGroupes[d.dataset.groupeNom] = d.open;
+    });
 
     container.innerHTML = '';
 
@@ -1220,14 +1265,17 @@ function majListeActivitesEleve() {
 
     // Filtrer activités pour cette classe
     const activitesEleve = activites.filter(act => {
+        // Mauvaise classe = activitées masquées
+        if(!act.classe_ids.includes(classeId)) return false;
+
         const ouverture = new Date(act.date_ouverture_inscriptions);
         const fermeture = new Date(act.date_fermeture_inscriptions);
 
+        // Pas encore visible (visible_avant désactivé et période pas ouverte)
         if(!(act.visible_avant*1) && now < ouverture) return false;
 
+        // Masquer si période fermée ET toutes les séances sont passées
         const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
-        if(!act.classe_ids.includes(classeId)) return false;
-
         if(now > fermeture && allPassed) return false;
 
         return true;
@@ -1283,7 +1331,9 @@ function majListeActivitesEleve() {
         // Créer le conteneur details
         const detailsEl = document.createElement('details');
         detailsEl.className = 'panel-collapsible';
-        detailsEl.open = true; // Ouvert par défaut
+        detailsEl.dataset.groupeNom = groupeNom;
+        // Restaurer l'état si connu, sinon replié par défaut
+        detailsEl.open = groupeNom in etatGroupes ? etatGroupes[groupeNom] : false;
 
         // Header du groupe
         const summary = document.createElement('summary');
@@ -1328,7 +1378,7 @@ function majListeActivitesEleve() {
             if(inscriptionsEleve) totalIns++;
 
             const actCard = document.createElement('div');
-            actCard.className = 'activity-card';
+            actCard.className = 'activity-card' + (inscriptionsEleve ? ' selected' : '');
 
             const animateurNom = act.animateur_prenom && act.animateur_nom
                 ? `${act.animateur_prenom} ${act.animateur_nom}`
@@ -1338,6 +1388,7 @@ function majListeActivitesEleve() {
                 <div class="activity-card-header">
                     <h5 class="activity-title">${act.titre}</h5>
                     <span class="activity-room">${act.salle}</span>
+                    ${inscriptionsEleve ? '<span class="seance-status inscrit">\u2713 Inscrit(e)</span>' : ''}
                 </div>
                 <div class="activity-details small muted mb-1">
                     👤 ${animateurNom}
@@ -1466,8 +1517,109 @@ function majListeActivitesEleve() {
 
     $('#stat-act-eleve').textContent = totalAct;
     $('#stat-insc-eleve').textContent = totalIns;
+    // Programmer des rafraîchissements automatiques quand les périodes d'inscription ouvrent
+    scheduleInscriptionOpenTimers();
 }
 
+/**
+ * Mise à jour légère : ne rafraîchit que les compteurs d'inscrits
+ * et les boutons d'inscription, sans recréer tout le DOM.
+ * Utilisée par le SSE pour éviter de réinitialiser les sliders.
+ */
+function majComptesActivitesEleve() {
+    const now = new Date();
+    const classeId = Number(currentUser?.classe_id);
+    if (!classeId || isNaN(classeId)) return;
+
+    let needsFullRender = false;
+
+    // Vérifier si une activité vient de devenir inscriptible (période qui vient d'ouvrir)
+    activites.forEach(act => {
+        if (!act.classe_ids.includes(classeId)) return;
+        const ouverture = new Date(act.date_ouverture_inscriptions);
+        // Si la période vient d'ouvrir (dans les 10 dernières secondes) → re-render complet
+        if (ouverture <= now && (now - ouverture) < 10000) {
+            needsFullRender = true;
+        }
+    });
+
+    if (needsFullRender) {
+        majListeActivitesEleve();
+        return;
+    }
+
+    // Mettre à jour les compteurs activity-details et boutons existants
+    activites.forEach(act => {
+        if (!act.classe_ids.includes(classeId)) return;
+
+        const ouverture = new Date(act.date_ouverture_inscriptions);
+        const fermeture = new Date(act.date_fermeture_inscriptions);
+        const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
+        const inscritsCount = act.inscriptions?.length || 0;
+
+        // Trouver la card par data-activity-id
+        const card = document.querySelector(`#liste-activites-eleve .activity-card[data-activity-id="${act.id}"]`);
+
+        // Les cards n'ont pas de data-activity-id — on les trouve via le titre
+        // On cherche dans toutes les cards
+        const cards = document.querySelectorAll('#liste-activites-eleve .activity-card');
+        cards.forEach(c => {
+            const titre = c.querySelector('.activity-title')?.textContent;
+            if (titre === act.titre) {
+                // Mettre à jour le compteur inscrits
+                const details = c.querySelectorAll('.activity-details');
+                details.forEach(d => {
+                    if (act.separable) {
+                        if (d.textContent.includes('Inscriptions :')) {
+                            d.innerHTML = `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`;
+                        }
+                    } else {
+                        if (d.innerHTML.includes('inscrit')) {
+                            d.innerHTML = `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`;
+                        }
+                    }
+                });
+
+                // Mettre à jour les compteurs par séance (separable)
+                if (act.separable) {
+                    act.seances?.forEach(seance => {
+                        const inscritsSeance = seance.inscriptions?.length || 0;
+                        const items = c.querySelectorAll('.seance-item-eleve');
+                        // Match par date (le texte du span date)
+                        items.forEach(item => {
+                            const dateSpan = item.querySelector('.seance-date');
+                            if (dateSpan?.textContent === formatDateLocal(seance.date_heure)) {
+                                const effectifSpan = item.querySelector('.seance-effectif');
+                                if (effectifSpan) {
+                                    effectifSpan.textContent = `${inscritsSeance}/${act.effectif_max}`;
+                                    effectifSpan.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
+                                }
+                            }
+                        });
+                    });
+                }
+            }
+        });
+    });
+
+    // Mettre à jour les stats globales
+    let totalAct = 0, totalIns = 0;
+    activites.forEach(act => {
+        if (!act.classe_ids.includes(classeId)) return;
+        const ouverture = new Date(act.date_ouverture_inscriptions);
+        const fermeture = new Date(act.date_fermeture_inscriptions);
+        if (!(act.visible_avant*1) && now < ouverture) return;
+        const allPassed = (act.seances || []).every(s => new Date(s.date_heure) < now);
+        if (now > fermeture && allPassed) return;
+        totalAct++;
+        const inscrit = act.separable
+            ? act.seances?.some(s => s.inscriptions?.includes(currentUser.id))
+            : act.inscriptions?.includes(currentUser.id);
+        if (inscrit) totalIns++;
+    });
+    $('#stat-act-eleve').textContent = totalAct;
+    $('#stat-insc-eleve').textContent = totalIns;
+}
 
 function fixShowActivityDetailsEleve() {
     // Cette fonction doit être appelée après la génération du HTML du modal
@@ -2431,7 +2583,7 @@ function createScheduleGridProf() {
         const totalHeight = hourHeight * 12;
         content.style.height = totalHeight + 'px';
 
-        // Lignes d'heures (12 heures × 60px = 720px)
+        // Lignes d'heures (12 heures x 60px = 720px)
         for (let j = 0; j < 12; j++) {
             const line = document.createElement('div');
             line.className = 'hour-line';
@@ -3077,7 +3229,7 @@ async function creerActivite(){
 
     if (!titre) { titreEl.classList.add('error'); hasError = true; }
     if (!salle) { salleEl.classList.add('error'); hasError = true; }
-    if (!effectif || isNaN(effectif) || effectif < 1 || effectif > 100) {
+    if (!effectif || isNaN(effectif) || effectif < 1 || effectif > 3000) {
         effectifEl.classList.add('error');
         hasError = true;
     }
@@ -4365,7 +4517,7 @@ async function handleInscriptionEvent(event) {
 
         // Rafraîchir l'interface selon le rôle
         if (currentUser.role === 'eleve') {
-            majListeActivitesEleve();
+            majComptesActivitesEleve();
             updateEmploiDuTempsEleve();
             console.log('[SSE] [OK] Interface élève mise à jour');
         } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {

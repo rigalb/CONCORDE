@@ -40,6 +40,8 @@ from validators import (
   safe_email
 )
 
+from password_reset import PasswordResetManager
+
 
 
 
@@ -122,6 +124,18 @@ app.config.update(
 )
 
 DB = "essaie.db"
+
+def init_db():
+  """Active le mode WAL pour SQLite (meilleures perfs en concurrence)."""
+  try:
+    conn = sqlite3.connect(DB)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA cache_size=-32000;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    conn.close()
+  except Exception:
+    pass  # logger pas encore initialise a ce stade
 
 # Configuration logging sécurisé
 logging.basicConfig(
@@ -276,6 +290,75 @@ def send_email(to_email, subject, html_content, text_content):
     return False, f"Erreur : {str(e)}"
 
 # ========================
+# HELPERS EMAIL CODES 6 CHIFFRES
+# ========================
+
+def _build_code_email_html(prenom: str, code: str, expiry_min: int, titre: str) -> str:
+  return f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8">
+<style>
+body{{font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:20px;color:#333}}
+.wrap{{max-width:520px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.1)}}
+.head{{background:linear-gradient(135deg,#0b5ccc,#d55f1f);padding:28px;text-align:center;color:white}}
+.head h1{{margin:0;font-size:22px;font-weight:700}}
+.body{{padding:32px 28px}}
+.code-box{{background:#f0f4ff;border:2px dashed #0b5ccc;border-radius:10px;text-align:center;padding:20px;margin:24px 0}}
+.code-box span{{font-size:40px;font-weight:800;letter-spacing:10px;color:#0b5ccc;font-family:monospace}}
+.warn{{background:#fff7ed;border-left:4px solid #d55f1f;padding:14px;border-radius:6px;font-size:13px;color:#7c3d0d}}
+.foot{{background:#f8f9fa;padding:16px;text-align:center;color:#888;font-size:11px}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="head"><h1>CONCORDE</h1><p style="margin:4px 0 0;opacity:.85;font-size:13px">{titre}</p></div>
+  <div class="body">
+    <p>Bonjour <strong>{prenom}</strong>,</p>
+    <p>Voici votre code de vérification :</p>
+    <div class="code-box"><span>{code}</span></div>
+    <div class="warn">
+      ⏱ Ce code est valable <strong>{expiry_min} minutes</strong>.<br>
+      Ne partagez jamais ce code avec quelqu'un d'autre.
+    </div>
+  </div>
+  <div class="foot">CONCORDE &copy; 2025</div>
+</div>
+</body></html>"""
+
+def _build_code_email_text(prenom: str, code: str, expiry_min: int, titre: str) -> str:
+  return f"""{titre} — CONCORDE
+
+Bonjour {prenom},
+
+Votre code de vérification : {code}
+
+Ce code est valable {expiry_min} minutes.
+Ne partagez jamais ce code.
+
+CONCORDE © 2025"""
+
+def _send_first_login_code_email(to_email: str, prenom: str, code: str):
+  """Envoie le code de première connexion par email."""
+  from password_reset import PasswordResetManager
+  html = _build_code_email_html(prenom, code, PasswordResetManager.FIRST_LOGIN_EXPIRY,
+                                 "Première connexion")
+  text = _build_code_email_text(prenom, code, PasswordResetManager.FIRST_LOGIN_EXPIRY,
+                                 "Première connexion")
+  ok, msg = send_email(to_email, "Votre code CONCORDE — Première connexion", html, text)
+  if not ok:
+    logger.error(f"Échec envoi code first_login à {to_email}: {msg}")
+
+def _send_reset_code_email(to_email: str, prenom: str, code: str):
+  """Envoie le code de réinitialisation de mot de passe par email."""
+  from password_reset import PasswordResetManager
+  html = _build_code_email_html(prenom, code, PasswordResetManager.PASSWORD_RESET_EXPIRY,
+                                 "Réinitialisation de mot de passe")
+  text = _build_code_email_text(prenom, code, PasswordResetManager.PASSWORD_RESET_EXPIRY,
+                                 "Réinitialisation de mot de passe")
+  ok, msg = send_email(to_email, "Votre code CONCORDE — Réinitialisation", html, text)
+  if not ok:
+    logger.error(f"Échec envoi code reset à {to_email}: {msg}")
+
+# ========================
 # AUTHENTIFICATION
 # ========================
 @app.route("/login", methods=["POST"])
@@ -310,6 +393,23 @@ def login():
     conn.close()
 
     if user and check_password_hash(user["password_hash"], password):
+
+      # --- Détection première connexion élève ---
+      if user["role"] == "eleve" and PasswordResetManager.is_first_login(user["id"]):
+        # On stocke le user_id en sessionb temporaire sans envoyer de code.
+        # Le code est envoyé uniquement quand l'élève clique sur "Envoyer le code" dans /api/first-login/send-code
+        # Générer un code 6 chiffres et l'envoyer par mail
+
+        # Stocker l'user_id en session temporaire (pas encore connecté)
+        session["pending_first_login_user_id"] = user["id"]
+        logger.info(f"Première connexion détectée pour {username}, code envoyé")
+        return jsonify({
+          "success": True,
+          "first_login": True,
+          "user_id": user["id"]
+        })
+
+      # --- Connexion normale ---
       session["user_id"] = user["id"]
       session["role"] = user["role"]
       session["classe_id"] = user["classe_id"]
@@ -319,6 +419,7 @@ def login():
 
       return jsonify({
         "success": True,
+        "first_login": False,
         "id": user["id"],
         "role": user["role"],
         "prenom": user["prenom"],
@@ -490,11 +591,24 @@ def get_activites():
         SELECT activite_id FROM inscriptions WHERE eleve_id = ?
       """, (user_id,)).fetchall()
       inscriptions_eleve = {ins["activite_id"] for ins in inscriptions}
+    
+      # Date de la dernière séance par activité (pour le filtre de masquage)
+      seances_rows = conn.execute("""
+        SELECT s.activite_id, MAX(s.date_heure) as derniere_seance
+        FROM seances s
+        JOIN activite_classes ac ON s.activite_id = ac.activite_id
+        WHERE ac.classe_id = ?
+        GROUP BY s.activite_id
+      """, (classe_id,)).fetchall()
+      derniere_seance_par_activite = {
+        r["activite_id"]: datetime.fromisoformat(r["derniere_seance"])
+        for r in seances_rows if r["derniere_seance"]
+      }
 
     conn.close()
 
     result = []
-    now = datetime.now()
+    now = now_local()
 
     for a in rows:
       act = dict(a)
@@ -502,16 +616,15 @@ def get_activites():
       if role == "eleve":
         ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
         fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
+        derniere_seance = derniere_seance_par_activite.get(act["id"])
 
-        est_inscrit = act["id"] in inscriptions_eleve
+        # Pas encore visible (visible_avant désactivé et période pas ouverte)
+        if not act["visible_avant"] and now < ouverture:
+          continue
 
-        if not est_inscrit:
-          # Si non inscrit, appliquer les filtres de visibilité
-          if not act["visible_avant"] and now < ouverture:
-            continue
-          if now > fermeture:
-            continue
-        # Si inscrit, toujours afficher l'activité
+        # Masquer si période fermée ET toutes les séances sont passées
+        if now > fermeture and (derniere_seance is None or now > derniere_seance):
+          continue
 
       result.append(act)
 
@@ -935,7 +1048,7 @@ def generer_pdf_seance(seance_id):
 
     # TITRE SIMPLE, AUCUNE COULEUR
     title = Paragraph(
-      f"<b>LYCÉE ASSOMPTION – LISTE D'APPEL<br/>{seance_data['titre']}</b>",
+      f"<b>LYCÉE ASSOMPTION - LISTE D'APPEL<br/>{seance_data['titre']}</b>",
       ParagraphStyle(
         "Title",
         parent=styles["Normal"],
@@ -1084,7 +1197,7 @@ def inscrire():
       conn.close()
       return jsonify({"error": "Cette activité est sécable, inscrivez-vous séance par séance"}), 400
 
-    now = datetime.now()
+    now = now_local()
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
@@ -1143,7 +1256,7 @@ def inscrire():
     cur.execute("""
       INSERT INTO inscriptions (eleve_id, activite_id, date_inscription)
       VALUES (?, ?, ?)
-    """, (user_id, activite_id, datetime.now().isoformat()))
+    """, (user_id, activite_id, now_local_str()))
 
     conn.commit()
     conn.close()
@@ -1258,7 +1371,7 @@ def inscrire_seance():
       conn.close()
       return jsonify({"error": "Cette activité n'est pas sécable"}), 400
 
-    now = datetime.now()
+    now = now_local()
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
@@ -2346,7 +2459,7 @@ def signup_form():
 <p>Contactez l'administrateur pour obtenir une nouvelle invitation.</p>
 </body></html>""", 404
 
-  return send_from_directory(".", "prof_signup.html")
+  return send_from_directory("prof_signup", "prof_signup.html")
 
 @app.route("/inscription", methods=["POST"])
 def process_signup():
@@ -2450,26 +2563,263 @@ def process_signup():
     return jsonify({"error": "Erreur lors de l'inscription"}), 500
 
 # ========================
-# SERVIR LE FRONT
+# PREMIÈRE CONNEXION ÉLÈVE
 # ========================
+
+@app.route("/first-login")
+def first_login_page():
+  """Affiche la page de première connexion."""
+  return send_from_directory("first_login", "first_login.html")
+
+@app.route("/api/first-login/send-code", methods=["POST"])
+def first_login_send_code():
+  """
+  Étape 1 : l'élève soumet son username.
+  On vérifie que c'est bien une première connexion, on génère le code et on l'envoie.
+  """
+  try:
+    data = request.json or {}
+    user_id = data.get("user_id")
+    if not user_id:
+      return jsonify({"error": "user_id requis"}), 400
+
+    try:
+      user_id = int(user_id)
+    except (TypeError, ValueError):
+      return jsonify({"error": "user_id invalide"}), 400
+
+    # Vérifier session temporaire first_login
+    if session.get("pending_first_login_user_id") != user_id:
+      return jsonify({"error": "Session invalide"}), 403
+
+    conn = get_db_connection()
+    user = conn.execute(
+      "SELECT id, email, prenom, role FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+    conn.close()
+
+    if not user or user["role"] != "eleve":
+      return jsonify({"error": "Utilisateur invalide"}), 400
+
+    if not PasswordResetManager.is_first_login(user_id):
+      return jsonify({"error": "Pas de première connexion en attente"}), 400
+
+    ok, code = PasswordResetManager.create_first_login_code(user_id, ip_address=request.remote_addr)
+    if not ok:
+      return jsonify({"error": code}), 500
+
+    _send_first_login_code_email(user["email"], user["prenom"], code)
+    logger.info(f"Code first_login (re)envoyé pour user_id={user_id}")
+    return jsonify({"success": True, "message": "Code envoyé par email"})
+
+  except Exception as e:
+    logger.error(f"Erreur first_login send_code: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/api/first-login/verify", methods=["POST"])
+def first_login_verify():
+  """
+  Étape 2 : l'élève soumet le code + nouveau mot de passe.
+  On valide le code, on met à jour le mot de passe.
+  """
+  try:
+    data = request.json or {}
+    user_id     = data.get("user_id")
+    code        = str(data.get("code", "")).strip()
+    new_password = data.get("password", "")
+    confirm_pwd  = data.get("confirm_password", "")
+
+    if not user_id or not code:
+      return jsonify({"error": "Données manquantes"}), 400
+
+    try:
+      user_id = int(user_id)
+    except (TypeError, ValueError):
+      return jsonify({"error": "user_id invalide"}), 400
+
+    # Vérifier session temporaire
+    if session.get("pending_first_login_user_id") != user_id:
+      return jsonify({"error": "Session invalide"}), 403
+
+    if len(new_password) < 8:
+      return jsonify({"error": "Mot de passe trop court (min 8 caractères)"}), 400
+    if len(new_password) > 200:
+      return jsonify({"error": "Mot de passe trop long"}), 400
+    if new_password != confirm_pwd:
+      return jsonify({"error": "Les mots de passe ne correspondent pas"}), 400
+
+    result = PasswordResetManager.validate_code(user_id, code, "first_login")
+    if not result:
+      return jsonify({"error": "Code invalide ou expiré"}), 400
+
+    # Mettre à jour le mot de passe
+    password_hash = generate_password_hash(new_password)
+    conn = get_db_connection()
+    cur  = conn.cursor()
+    cur.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
+    conn.commit()
+
+    # Récupérer les infos pour la session
+    user = conn.execute(
+      "SELECT id, role, prenom, nom, classe_id FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+    conn.close()
+
+    # Invalider le code
+    PasswordResetManager.mark_code_used(user_id, "first_login", ip_address=request.remote_addr)
+
+    # Ouvrir la session normale
+    session.pop("pending_first_login_user_id", None)
+    session["user_id"]       = user["id"]
+    session["role"]          = user["role"]
+    session["classe_id"]     = user["classe_id"]
+    session["last_activity"] = datetime.now().timestamp()
+
+    logger.info(f"Première connexion validée pour user_id={user_id}")
+    return jsonify({
+      "success": True,
+      "id":       user["id"],
+      "role":     user["role"],
+      "prenom":   user["prenom"],
+      "nom":      user["nom"],
+      "classe_id": user["classe_id"]
+    })
+
+  except Exception as e:
+    logger.error(f"Erreur first_login verify: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+# ========================
+# MOT DE PASSE OUBLIÉ
+# ========================
+
+@app.route("/forgot-password")
+def forgot_password_page():
+  """Affiche la page mot de passe oublié."""
+  return send_from_directory("forgot_password", "forgot_password.html")
+
+@app.route("/api/forgot-password/request", methods=["POST"])
+def forgot_password_request():
+  """
+  Etape 1 : username OU email acceptes.
+  Cherche le compte dans les deux champs, envoie le code au mail associe.
+  Reponse toujours generique pour ne pas reveler si le compte existe.
+  """
+  try:
+    data       = request.json or {}
+    identifier = data.get("identifier", "").strip()
+
+    if not identifier:
+      return jsonify({"error": "Identifiant requis"}), 400
+    if len(identifier) > 150:
+      return jsonify({"error": "Identifiant trop long"}), 400
+
+    # Chercher par username d'abord, puis par email
+    user = PasswordResetManager.get_user_by_username(identifier)
+    if not user:
+      user = PasswordResetManager.get_user_by_email(identifier.lower())
+
+    generic = {"success": True, "message": "Si ce compte existe, un code a ete envoye."}
+
+    if not user or not user.get("email"):
+      logger.warning(f"Tentative reset identifiant inconnu: {identifier}")
+      return jsonify(generic)
+
+    ok, code = PasswordResetManager.create_password_reset_code(
+      user["id"], ip_address=request.remote_addr
+    )
+    if not ok:
+      return jsonify(generic)
+
+    _send_reset_code_email(user["email"], user["prenom"], code)
+
+    session["pending_reset_user_id"] = user["id"]
+    logger.info(f"Code reset envoye pour identifier={identifier}")
+    return jsonify(generic)
+
+  except Exception as e:
+    logger.error(f"Erreur forgot_password request: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/api/forgot-password/verify", methods=["POST"])
+def forgot_password_verify():
+  """
+  Etape 2 : code 6 chiffres + nouveau mot de passe.
+  user_id recupere depuis session["pending_reset_user_id"].
+  """
+  try:
+    data         = request.json or {}
+    code         = str(data.get("code", "")).strip()
+    new_password = data.get("password", "")
+    confirm_pwd  = data.get("confirm_password", "")
+
+    user_id = session.get("pending_reset_user_id")
+    if not user_id:
+      return jsonify({"error": "Session expiree. Recommencez depuis le debut."}), 400
+
+    if not code:
+      return jsonify({"error": "Code requis"}), 400
+
+    if len(new_password) < 8:
+      return jsonify({"error": "Mot de passe trop court (min 8 caracteres)"}), 400
+    if len(new_password) > 200:
+      return jsonify({"error": "Mot de passe trop long"}), 400
+    if new_password != confirm_pwd:
+      return jsonify({"error": "Les mots de passe ne correspondent pas"}), 400
+
+    result = PasswordResetManager.validate_code(user_id, code, "password_reset")
+    if not result:
+      return jsonify({"error": "Code invalide ou expire"}), 400
+
+    password_hash = generate_password_hash(new_password)
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
+    conn.commit()
+    conn.close()
+
+    PasswordResetManager.mark_code_used(user_id, "password_reset", ip_address=request.remote_addr)
+    session.pop("pending_reset_user_id", None)
+
+    logger.info(f"Mot de passe reinitialise pour user_id={user_id}")
+    return jsonify({"success": True, "message": "Mot de passe reinitialise avec succes."})
+
+  except Exception as e:
+    logger.error(f"Erreur forgot_password verify: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
 @app.route("/")
 def index():
   return send_from_directory(".", "Concorde.html")
 
+# ========================
+# SERVIR LE FRONT
+# ========================
 @app.route("/<path:filename>")
 def serve_static(filename):
   # Liste blanche des fichiers autorisés pour la sécurité
-  allowed_files = [
-    "styles.css",
-    "script.js",
-    "Select_Comp.css",
-    "Select_Comp.js",
-    "prof_signup.css",
-    "prof_signup.js"
-  ]
+  # Fichiers servis depuis la racine
+  root_files = {
+    "styles.css", "script.js",
+    "Select_Comp.css", "Select_Comp.js",
+  }
+  # Fichiers servis depuis leur sous-dossier
+  subdir_files = {
+    "forgot_password/forgot_password.css":  ("forgot_password", "forgot_password.css"),
+    "forgot_password/forgot_password.js":   ("forgot_password", "forgot_password.js"),
+    "first_login/first_login.css":          ("first_login",     "first_login.css"),
+    "first_login/first_login.js":           ("first_login",     "first_login.js"),
+    "reset_password/reset_password.css":    ("reset_password",  "reset_password.css"),
+    "reset_password/reset_password.js":     ("reset_password",  "reset_password.js"),
+    "prof_signup/prof_signup.css":          ("prof_signup",     "prof_signup.css"),
+    "prof_signup/prof_signup.js":           ("prof_signup",     "prof_signup.js"),
+  }
 
-  if filename in allowed_files:
+  if filename in root_files:
     return send_from_directory(".", filename)
+  if filename in subdir_files:
+    folder, fname = subdir_files[filename]
+    return send_from_directory(folder, fname)
   else:
     return "File not found", 404
 
@@ -2488,6 +2838,7 @@ def internal_error(error):
   return jsonify({"error": "Erreur serveur interne"}), 500
 
 if __name__ == "__main__":
+  init_db()
   logger.info("Démarrage de l'application en mode production")
   app.run(
     debug=False,
