@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Première connexion — CONCORDE</title>
+  <title>Première connexion - CONCORDE</title>
   <link rel="stylesheet" href="first_login/first_login.css">
+  <link rel="stylesheet" href="Input_Comp.css">
 </head>
 <body>
   <div class="container">
@@ -39,7 +40,6 @@
         </p>
 
         <div class="form-group">
-          <label for="code">Code de vérification (6 chiffres)</label>
           <input
             type="text"
             id="code"
@@ -47,33 +47,27 @@
             maxlength="6"
             inputmode="numeric"
             autocomplete="one-time-code"
-            placeholder="123456"
-          >
+            data-input-comp='{"label":"Code de vérification (6 chiffres)","hint":"6 chiffres reçus par email","maxlength":6}'>
         </div>
 
         <div class="form-group">
-          <label for="password">Nouveau mot de passe</label>
           <input
             type="password"
             id="password"
             name="password"
             minlength="8"
             autocomplete="new-password"
-            placeholder="Au moins 8 caractères"
-          >
-          <small class="hint">Minimum 8 caractères</small>
+            data-input-comp='{"label":"Nouveau mot de passe","showPassword":true,"hint":"Minimum 8 caractères","icon":"lock"}'>
         </div>
 
         <div class="form-group">
-          <label for="confirm-password">Confirmer le mot de passe</label>
           <input
             type="password"
             id="confirm-password"
             name="confirm_password"
             minlength="8"
             autocomplete="new-password"
-            placeholder="Retapez votre mot de passe"
-          >
+            data-input-comp='{"label":"Confirmer le mot de passe","showPassword":true,"icon":"lock"}'>
         </div>
 
         <div id="verify-error" class="error-message" aria-live="polite"></div>
@@ -91,7 +85,7 @@
       <!-- SUCCÈS -->
       <div id="step-success" class="step hidden">
         <div class="success-box">
-          <div class="success-icon" aria-hidden="true">✓</div>
+          <div class="success-icon" aria-hidden="true">✔</div>
           <h2>Mot de passe défini !</h2>
           <p>Votre compte est maintenant actif.</p>
           <a href="/" class="btn-primary">Se connecter</a>
@@ -101,6 +95,7 @@
     </div>
   </div>
 
+  <script src="Input_Comp.js"></script>
   <script src="first_login/first_login.js"></script>
 </body>
 </html>

@@ -3,7 +3,25 @@
    Flux : username OU email → code 6 chiffres + nouveau MDP = succès
    ============================================================ */
 
-// --- Références DOM ---
+/* ── Utilitaire : lit la valeur réelle d'un champ ─────────────────────────
+   Pour un InputComp, getValue() peut être désynchronisé avec le DOM.
+   On lit directement le .ic-input natif du wrapper pour être sûr.    */
+function fieldGet(id) {
+  const ic = window._IC_instances?.[id];
+  if (ic) {
+    const el = ic.wrapper.querySelector('.ic-input');
+    return el ? el.value : ic.getValue();
+  }
+  return document.getElementById(id)?.value ?? '';
+}
+
+function fieldGetEl(id) {
+  const ic = window._IC_instances?.[id];
+  if (ic) return ic.wrapper.querySelector('.ic-input') || document.getElementById(id);
+  return document.getElementById(id);
+}
+
+// --- Références DOM stables ---
 const stepIdentifier = document.getElementById('step-identifier');
 const stepVerify     = document.getElementById('step-verify');
 const stepSuccess    = document.getElementById('step-success');
@@ -11,16 +29,10 @@ const stepSuccess    = document.getElementById('step-success');
 const identifierError = document.getElementById('identifier-error');
 const verifyError     = document.getElementById('verify-error');
 
-const identifierInput = document.getElementById('identifier');
-const codeInput       = document.getElementById('code');
-const passwordInput   = document.getElementById('password');
-const confirmInput    = document.getElementById('confirm-password');
-
 const btnSend   = document.getElementById('btn-send');
 const btnVerify = document.getElementById('btn-verify');
 const btnResend = document.getElementById('btn-resend');
 
-// identifiant mémorisé pour le renvoi éventuel
 let currentIdentifier = '';
 
 // --- Utilitaires ---
@@ -36,40 +48,53 @@ function setLoading(btn, loading) {
   else         { btn.textContent = btn.dataset.originalText || btn.textContent; }
 }
 
-// --- Validation temps réel code ---
-codeInput.addEventListener('input', () => {
-  hideError(verifyError);
-  codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
-  codeInput.classList.toggle('input-valid',   codeInput.value.length === 6);
-  codeInput.classList.toggle('input-invalid', codeInput.value.length > 0 && codeInput.value.length < 6);
-});
+// --- Validation temps réel via délégation ---
+document.addEventListener('input', (e) => {
+  const target = e.target;
 
-// --- Validation temps réel MDP ---
-passwordInput.addEventListener('input', () => {
-  hideError(verifyError);
-  const l = passwordInput.value.length;
-  passwordInput.classList.toggle('input-valid',   l >= 8);
-  passwordInput.classList.toggle('input-invalid', l > 0 && l < 8);
-  if (confirmInput.value.length > 0) confirmInput.dispatchEvent(new Event('input'));
-});
-confirmInput.addEventListener('input', () => {
-  hideError(verifyError);
-  if (confirmInput.value.length > 0) {
-    const ok = confirmInput.value === passwordInput.value;
-    confirmInput.classList.toggle('input-valid',   ok);
-    confirmInput.classList.toggle('input-invalid', !ok);
-  } else {
-    confirmInput.classList.remove('input-valid', 'input-invalid');
+  // Champ code : input NATIF (pas de data-input-comp dans forgot_password.html)
+  if (target.id === 'code') {
+    hideError(verifyError);
+    target.value = target.value.replace(/\D/g, '').slice(0, 6);
+    target.classList.toggle('input-valid',   target.value.length === 6);
+    target.classList.toggle('input-invalid', target.value.length > 0 && target.value.length < 6);
+    return;
+  }
+
+  // Champs IC : identifier, password, confirm-password
+  if (!target.classList.contains('ic-input')) return;
+  const wrapper = target.closest('[data-input-id]');
+  if (!wrapper) return;
+  const id = wrapper.dataset.inputId;
+
+  if (id === 'password') {
+    hideError(verifyError);
+    const l = target.value.length;
+    target.classList.toggle('input-valid',   l >= 8);
+    target.classList.toggle('input-invalid', l > 0 && l < 8);
+    const confirmEl = fieldGetEl('confirm-password');
+    if (confirmEl && confirmEl.value.length > 0) confirmEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  if (id === 'confirm-password') {
+    hideError(verifyError);
+    const pwd = fieldGet('password');
+    if (target.value.length > 0) {
+      target.classList.toggle('input-valid',   target.value === pwd);
+      target.classList.toggle('input-invalid', target.value !== pwd);
+    } else {
+      target.classList.remove('input-valid', 'input-invalid');
+    }
   }
 });
 
 // --- Étape 1 : envoyer le code ---
 async function sendCode() {
   hideError(identifierError);
-  const identifier = identifierInput.value.trim();
+  const identifier = fieldGet('identifier').trim();
   if (!identifier) {
     showError(identifierError, 'Veuillez entrer votre identifiant ou email.');
-    identifierInput.focus();
+    fieldGetEl('identifier')?.focus();
     return;
   }
   currentIdentifier = identifier;
@@ -87,9 +112,8 @@ async function sendCode() {
       setLoading(btnSend, false);
       return;
     }
-    // Passer à l'étape 2 (réponse générique côté serveur)
     showStep(stepVerify);
-    codeInput.focus();
+    setTimeout(() => document.getElementById('code')?.focus(), 80);
   } catch (e) {
     showError(identifierError, 'Erreur réseau. Vérifiez votre connexion.');
     setLoading(btnSend, false);
@@ -99,14 +123,15 @@ async function sendCode() {
 // --- Étape 2 : vérifier code + changer MDP ---
 async function verifyCode() {
   hideError(verifyError);
-  const code    = codeInput.value.trim();
-  const pwd     = passwordInput.value;
-  const confirm = confirmInput.value;
+  // code : input natif
+  const code    = (document.getElementById('code')?.value || '').replace(/\D/g, '').trim();
+  const pwd     = fieldGet('password');
+  const confirm = fieldGet('confirm-password');
 
-  if (code.length !== 6) { showError(verifyError, 'Le code doit contenir 6 chiffres.'); codeInput.focus(); return; }
-  if (pwd.length < 8)    { showError(verifyError, 'Mot de passe trop court (min 8 caractères).'); passwordInput.focus(); return; }
+  if (code.length !== 6) { showError(verifyError, 'Le code doit contenir 6 chiffres.'); document.getElementById('code')?.focus(); return; }
+  if (pwd.length < 8)    { showError(verifyError, 'Mot de passe trop court (min 8 caractères).'); fieldGetEl('password')?.focus(); return; }
   if (pwd.length > 200)  { showError(verifyError, 'Mot de passe trop long.'); return; }
-  if (pwd !== confirm)   { showError(verifyError, 'Les mots de passe ne correspondent pas.'); confirmInput.focus(); return; }
+  if (pwd !== confirm)   { showError(verifyError, 'Les mots de passe ne correspondent pas.'); fieldGetEl('confirm-password')?.focus(); return; }
 
   setLoading(btnVerify, true);
   try {
@@ -160,6 +185,16 @@ async function resendCode() {
 btnSend.addEventListener('click', sendCode);
 btnVerify.addEventListener('click', verifyCode);
 btnResend.addEventListener('click', resendCode);
-identifierInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendCode(); });
-codeInput.addEventListener('keydown',       e => { if (e.key === 'Enter') verifyCode(); });
-confirmInput.addEventListener('keydown',    e => { if (e.key === 'Enter') verifyCode(); });
+
+// Enter : délégation
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  // input natif code
+  if (e.target.id === 'code') { e.preventDefault(); verifyCode(); return; }
+  // champs IC
+  const wrapper = e.target.closest('[data-input-id]');
+  if (!wrapper) return;
+  const id = wrapper.dataset.inputId;
+  if (id === 'identifier') { e.preventDefault(); sendCode(); }
+  else if (id === 'password' || id === 'confirm-password') { e.preventDefault(); verifyCode(); }
+});

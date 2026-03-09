@@ -2801,7 +2801,7 @@ def serve_static(filename):
   # Fichiers servis depuis la racine
   root_files = {
     "styles.css", "script.js",
-    "Select_Comp.css", "Select_Comp.js",
+    "Input_Comp.css", "Input_Comp.js",
   }
   # Fichiers servis depuis leur sous-dossier
   subdir_files = {

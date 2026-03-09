@@ -2728,3 +2728,79 @@ textarea {
 
 /* User badge — s'assurer que .hidden fonctionne bien avec inline-flex */
 #user-badge.hidden { display: none !important; }
+/* ── Classes ajoutées pour migration Select_Comp → Input_Comp ────── */
+
+/* Checkbox désactivé en mode édition (remplace style= inline) */
+.disabled-field {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.disabled-label {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Liste de groupes dans modal */
+.groupe-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+}
+.groupe-list-info { flex: 1; min-width: 0; }
+.groupe-list-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Panel content (activités par groupe) */
+.panel-content { padding: 12px; }
+
+/* Série hebdo header (aligner bouton à droite) */
+.serie-hebdo-header { text-align: right; margin-bottom: 4px; }
+
+/* Séance item : input datetime-local natif dans seances-container */
+.seance-item input[type="datetime-local"],
+.seance-item .seance-input {
+  width: auto;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+/* Séance item : select durée natif */
+.seance-item .duree-select {
+  width: auto;
+  min-width: 80px;
+}
+
+/* ── Contraintes max-width pour les IC dans le formulaire de création ── */
+/* Les wrappers InputComp dans la grille doivent rester dans leur cellule */
+#prof-tab-creation .ic-wrapper {
+  max-width: 100%;
+}
+
+/* Champs de dates ouverture/fermeture : laisser la grille décider */
+#ouverture.ic-wrapper,
+#fermeture.ic-wrapper,
+[data-input-id="ouverture"],
+[data-input-id="fermeture"] {
+  width: 100%;
+}
+
+/* Groupe-select dans la ligne flex */
+[data-input-id="groupe-select"] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* IC dans les séances hebdo (taille compacte) */
+.flex.gap-10 [data-input-id="first-hebdoseance"],
+.flex.gap-10 [data-input-id="nb-seances"],
+.flex.gap-10 [data-input-id="duree-hebdo"] {
+  max-width: 200px;
+  width: auto;
+}
+
+/* Bouton rappel envoyé */
+.btn-sent { background: #10b981 !important; color: white !important; }

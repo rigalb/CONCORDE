@@ -12,6 +12,23 @@ let groupes = [];
 // Variable globale pour stocker l'instance Select_Comp
 let classeMultiSelect = null;
 
+/* ── InputComp helpers ────────────────────────────────────────────
+   Permettent de lire/écrire les valeurs des InputComp depuis script.js
+   sans casser les accès getElementById existants.
+   _IC_instances est peuplé par InputComp.js via un hook DOMContentLoaded.
+──────────────────────────────────────────────────────────────────── */
+function icGet(id) {
+    return window._IC_instances?.[id]?.getValue() ?? document.getElementById(id)?.value ?? '';
+}
+function icSet(id, val) {
+    if (window._IC_instances?.[id]) window._IC_instances[id].setValue(val);
+    else { const el = document.getElementById(id); if (el) el.value = val; }
+}
+function icSetError(id, msg) {
+    if (window._IC_instances?.[id]) window._IC_instances[id].setError(msg);
+    else { const el = document.getElementById(id); if (el) el.classList.toggle('error', !!msg); }
+}
+
 let groupeClasses = [];
 let groupeClasseMultiSelect = null; // Instance Select_Comp pour les classes de groupe
 let groupeEditMode = false;
@@ -410,13 +427,14 @@ async function login(){
             return;
         }
 
-        // Première connexion élève → redirection vers la page dédiée
+        // Première connexion élève = redirection vers la page dédiée
         if(data.first_login) {
             window.location.href = `/first-login?uid=${data.user_id}`;
             return;
         }
 
         currentUser = data;
+
         $('#login-msg').textContent='';
         $('#username').value='';
         $('#password').value='';
@@ -617,89 +635,54 @@ function afficherPageRole(role){
 }
 
 function populateSelects(){
-    // Détruire l'ancienne instance PROPREMENT
-    if (classeMultiSelect) {
-        try {
-            classeMultiSelect.destroy();
-            classeMultiSelect = null;
-        } catch(e) {
-            console.warn('Erreur destruction MultiSelect:', e);
-        }
-    }
-
-    // Recréer le select HTML
-    const selectEl = $('#classe-select');
-    if (selectEl) {
-        // Vider le parent et recréer le select
-        const parent = selectEl.parentElement;
-        selectEl.remove();
-
-        const newSelect = document.createElement('select');
-        newSelect.id = 'classe-select';
-        parent.appendChild(newSelect);
+    // ── classe-select : InputComp multiselect ──────────────────
+    if (!classeMultiSelect) {
+        classeMultiSelect = window._IC_instances?.['classe-select'] || null;
     }
 
     // Préparer les données pour MultiSelect
-    const classesData = classes.map(cl => ({
-        value: cl.id.toString(),
-        text: cl.nom
-    }));
-
+    const classesData = classes.map(cl => ({ value: cl.id.toString(), label: cl.nom }));
     // Initialiser MultiSelect
-    if ($('#classe-select')) {
-        classeMultiSelect = new MultiSelect('#classe-select', {
-            data: classesData,
-            placeholder: 'Sélectionner les classes',
-            search: true,
-            selectAll: true,
-            listAll: true,
-            onChange: function(value, text, element) {
-                if (isSyncingClasses) return;
-                if (classeMultiSelect.selectedItems.length > 0) {
-                    $('#classe-select').classList.remove('error');
-                }
-                verifierCoherenceGroupeClasses();
-            }
-        });
+    if (classeMultiSelect) {
+        classeMultiSelect.setOptions(classesData);
+        classeMultiSelect.clearSelection();
         classeMultiSelect.enable();
+        classeMultiSelect.opts.onChange = function() {
+                if (isSyncingClasses) return;
+                if (classeMultiSelect.selectedItems.length > 0) classeMultiSelect.setError('');
+                verifierCoherenceGroupeClasses();
+            };
     }
 
-    const animSelect = $('#animateur-select');
-    if(animSelect){
-        animSelect.innerHTML='';
-        const profs = users.filter(u=>u.role==='prof'||u.role==='admin');
-        profs.forEach(p=>{
-            const opt=document.createElement('option');
-            opt.value=p.id;
-            opt.textContent=`${p.prenom} ${p.nom||''}`;
-            animSelect.appendChild(opt);
-        });
-        const defaultId = (currentUser && currentUser.role==='prof') ? currentUser.id : (profs[0]?.id||'');
-        if(defaultId) animSelect.value=defaultId;
+    // InputComp select animateur
+    const animComp = window._IC_instances?.['animateur-select'];
+    if (animComp) {
+        const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
+        animComp.setOptions(profs.map(p => ({
+            value: String(p.id),
+            label: `${p.prenom} ${p.nom || ''}`.trim()
+        })));
+        const defaultId = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
+        if (defaultId) animComp.setValue(String(defaultId));
     }
 
-    const groupeSelect = $('#groupe-select');
-    if (groupeSelect) {
-        groupeSelect.innerHTML = '<option value="">Aucun groupe</option>';
-        groupes.forEach(g => {
-            const opt = document.createElement('option');
-            opt.value = g.id;
-            opt.textContent = g.nom;
-            groupeSelect.appendChild(opt);
-        });
+    // InputComp select groupe
+    const groupeComp = window._IC_instances?.['groupe-select'];
+    if (groupeComp) {
+        groupeComp.setOptions([
+            ...groupes.map(g => ({ value: String(g.id), label: g.nom }))
+        ]);
 
         // Écouteur pour synchroniser les classes
-        groupeSelect.onchange = () => {
-            synchroniserClassesAvecGroupe();
-        };
+        groupeComp.opts.onChange = () => { synchroniserClassesAvecGroupe(); };
     }
 }
 
 function verifierCoherenceGroupeClasses() {
-    const groupeSelect = $('#groupe-select');
-    if (!groupeSelect || !groupeSelect.value) return;
+    const groupeComp3 = window._IC_instances?.['groupe-select'];
+    if (!groupeComp3 || !groupeComp3.getValue()) return;
 
-    const groupeId = parseInt(groupeSelect.value);
+    const groupeId = parseInt(groupeComp3.getValue());
     const classesGroupe = groupeClasses
         .filter(gc => gc.groupe_id === groupeId)
         .map(gc => gc.classe_id);
@@ -725,10 +708,10 @@ function verifierCoherenceGroupeClasses() {
 }
 
 function synchroniserClassesAvecGroupe() {
-    const groupeSelect = $('#groupe-select');
-    if (!groupeSelect || !classeMultiSelect) return;
+    const groupeComp2 = window._IC_instances?.['groupe-select'];
+    if (!groupeComp2 || !classeMultiSelect) return;
 
-    const groupeId = groupeSelect.value;
+    const groupeId = groupeComp2.getValue();
 
     if(!groupeId) {
         // Aucun groupe sélectionné : réactiver le MultiSelect
@@ -778,7 +761,7 @@ function passerEnModeEdition() {
     const title = document.querySelector('#prof-tab-creation h4');
     if (title) {
         const activite = activites.find(a => a.id === editingActivityId);
-        title.innerHTML = `Modifier l'activité "<span style="color: var(--primary);">${activite?.titre || ''}</span>"`;
+        title.innerHTML = `Modifier l'activité "<span class="text-primary">${activite?.titre || ''}</span>"`;
     }
 
     // Trouver le container avec les VRAIS boutons Créer/Réinitialiser
@@ -821,13 +804,11 @@ function passerEnModeEdition() {
     const separableCheckbox = $('#separable');
     if (separableCheckbox) {
         separableCheckbox.disabled = true;
-        separableCheckbox.style.opacity = '0.5';
-        separableCheckbox.style.cursor = 'not-allowed';
+        separableCheckbox.classList.add('disabled-field');
 
         const label = document.querySelector('label[for="separable"]');
         if (label) {
-            label.style.opacity = '0.5';
-            label.style.cursor = 'not-allowed';
+            label.classList.add('disabled-label');
             label.title = '[WARN] Le type (sécable/non-sécable) ne peut pas être modifié';
         }
     }
@@ -872,13 +853,11 @@ function passerEnModeCreation() {
     const separableCheckbox = $('#separable');
     if (separableCheckbox) {
         separableCheckbox.disabled = false;
-        separableCheckbox.style.opacity = '1';
-        separableCheckbox.style.cursor = 'pointer';
+        separableCheckbox.classList.remove('disabled-field');
 
         const label = document.querySelector('label[for="separable"]');
         if (label) {
-            label.style.opacity = '1';
-            label.style.cursor = 'pointer';
+            label.classList.remove('disabled-label');
             label.title = '';
         }
     }
@@ -890,17 +869,15 @@ function passerEnModeCreation() {
     NOUVELLE FONCTIONNALITÉ: Élèves non inscrits
     =========================== */
 function initElevesNonInscrits() {
-    const groupeFilterSelect = $('#groupe-filter-select');
-    if (!groupeFilterSelect) return;
+    const groupeFilterComp = window._IC_instances?.['groupe-filter-select'];
+    if (!groupeFilterComp) return;
 
     const userId = currentUser.id;
-
     let groupesProf;
     if (currentUser.role === 'admin') {
-    groupesProf = groupes; // Tous les groupes pour l'admin
+        groupesProf = groupes; // Tous les groupes pour l'admin
     } else {
         // Pour les profs, filtrer comme avant
-
         // Récupérer toutes les activités du prof (créées OU animées)
         const activitesProf = activites.filter(a =>
         a.prof_id === userId || a.animateur_id === userId
@@ -908,52 +885,42 @@ function initElevesNonInscrits() {
 
         // Extraire les groupes uniques de ces activités
         const groupeIds = [...new Set(
-            activitesProf
-                .filter(a => a.groupe_id != null)
-                .map(a => a.groupe_id)
+            activitesProf.filter(a => a.groupe_id != null).map(a => a.groupe_id)
         )];
 
         // Filtrer les groupes correspondants
         groupesProf = groupes.filter(g => groupeIds.includes(g.id));
     }
 
-
+    const msgNoGroupe = $('#msg-no-groupe');
     // Remplir le sélecteur de groupes UNIQUEMENT avec les groupes du prof
     if (groupesProf.length === 0) {
-        groupeFilterSelect.innerHTML = '<option value="">Aucun groupe disponible</option>';
-        groupeFilterSelect.disabled = true;
-        const msgNoGroupe = $('#msg-no-groupe');
+        groupeFilterComp.setOptions([{ value: '', label: 'Aucun groupe disponible' }]);
+        groupeFilterComp.disable();
         if (msgNoGroupe) {
-            msgNoGroupe.textContent = 'Aucune de vos activités n\'est associée à un groupe';
+            msgNoGroupe.textContent = "Aucune de vos activités n\'est associée à un groupe";
             msgNoGroupe.style.display = 'block';
         }
     } else {
-        groupeFilterSelect.innerHTML = '<option value="">-- Choisir un groupe --</option>';
-        groupesProf.forEach(g => {
-            const opt = document.createElement('option');
-            opt.value = g.id;
-            opt.textContent = g.nom;
-            groupeFilterSelect.appendChild(opt);
-        });
-        groupeFilterSelect.disabled = false;
-        const msgNoGroupe = $('#msg-no-groupe');
+        groupeFilterComp.setOptions([
+            ...groupesProf.map(g => ({ value: String(g.id), label: g.nom }))
+        ]);
+        groupeFilterComp.enable();
         if (msgNoGroupe) {
             msgNoGroupe.textContent = 'Sélectionnez un groupe pour voir les élèves non inscrits';
             msgNoGroupe.style.display = 'block';
         }
     }
-
     console.log(`[OK] ${groupesProf.length} groupe(s) disponible(s) pour le prof`);
 
     // Écouteur de changement
-    groupeFilterSelect.onchange = () => {
-        const groupeId = groupeFilterSelect.value;
+    groupeFilterComp.opts.onChange = (groupeId) => {
         if (groupeId) {
             chargerElevesNonInscrits(groupeId);
         } else {
             const container = $('#liste-eleves-non-inscrits');
             if (container) container.innerHTML = '';
-            $('#msg-no-groupe').style.display = 'block';
+            if (msgNoGroupe) msgNoGroupe.style.display = 'block';
         }
     };
 }
@@ -1032,7 +999,7 @@ async function envoyerRappelInscription(groupeId, eleveId, btn) {
     try {
         await apiPost(`/groupes/${groupeId}/rappel-inscription`, { eleve_id: eleveId });
         btn.textContent = '✓ Envoyé';
-        btn.style.background = '#10b981';
+        btn.classList.add('btn-sent');
 
         setTimeout(() => {
             chargerElevesNonInscrits(groupeId);
@@ -1186,10 +1153,7 @@ async function inscrireManuel(eleveId, activiteId) {
         fermerModalInscriptionManuelle();
 
         // Rafraîchir la liste des élèves non inscrits
-        const groupeSelect = $('#groupe-filter-select');
-        if (groupeSelect && groupeSelect.value) {
-            chargerElevesNonInscrits(groupeSelect.value);
-        }
+        { const gfv = icGet('groupe-filter-select'); if (gfv) chargerElevesNonInscrits(gfv); }
 
         // Rafraîchir les listes et emploi du temps
         majListeActivitesProf();
@@ -1197,7 +1161,7 @@ async function inscrireManuel(eleveId, activiteId) {
 
         console.log('[SSE] [OK] Élève inscrit avec succès');
         // SSE va broadcaster aux autres sessions
-        alert('Élève inscrit avec succès !');
+        showToast('Élève inscrit avec succès !');
 
     } catch(e) {
         alert('Erreur lors de l\'inscription : ' + e.message);
@@ -1354,7 +1318,7 @@ function majListeActivitesEleve() {
 
         // Conteneur des activités
         const contentDiv = document.createElement('div');
-        contentDiv.style.padding = '12px';
+        contentDiv.className = 'panel-content';
 
         activitesGroupe.forEach(act => {
             totalAct++;
@@ -2003,9 +1967,8 @@ function majListeActivitesProf() {
 async function populerSelectGroupesProf() {
     try {
         const userId = currentUser.id;
-        const select = $('#groupe-filter-select');
-
-        if (!select) return;
+        const groupeFilterComp = window._IC_instances?.['groupe-filter-select'];
+        if (!groupeFilterComp) return;
 
         // Récupérer toutes les activités du prof (créées OU animées)
         const activitesProf = activites.filter(a =>
@@ -2014,9 +1977,7 @@ async function populerSelectGroupesProf() {
 
         // Extraire les groupes uniques de ces activités
         const groupeIds = [...new Set(
-            activitesProf
-                .filter(a => a.groupe_id != null)
-                .map(a => a.groupe_id)
+            activitesProf.filter(a => a.groupe_id != null).map(a => a.groupe_id)
         )];
 
         // Filtrer les groupes correspondants
@@ -2024,18 +1985,17 @@ async function populerSelectGroupesProf() {
 
         // Peupler le select
         if (groupesProf.length === 0) {
-            select.innerHTML = '<option value="">Aucun groupe disponible</option>';
-            select.disabled = true;
-            $('#msg-no-groupe').textContent = 'Aucune de vos activités n\'est associée à un groupe';
+            groupeFilterComp.setOptions([{ value: '', label: 'Aucun groupe disponible' }]);
+            groupeFilterComp.disable();
+            const m = $('#msg-no-groupe'); if (m) m.textContent = "Aucune de vos activités n\'est associée à un groupe";
         } else {
-            select.innerHTML = '<option value="">-- Choisir un groupe --</option>' +
-                groupesProf.map(g => `<option value="${g.id}">${g.nom}</option>`).join('');
-            select.disabled = false;
-            $('#msg-no-groupe').textContent = 'Sélectionnez un groupe pour voir les élèves non inscrits';
+            groupeFilterComp.setOptions([
+                ...groupesProf.map(g => ({ value: String(g.id), label: g.nom }))
+            ]);
+            groupeFilterComp.enable();
+            const m = $('#msg-no-groupe'); if (m) m.textContent = 'Sélectionnez un groupe pour voir les élèves non inscrits';
         }
-
         console.log(`[OK] ${groupesProf.length} groupe(s) disponible(s) pour le prof`);
-
     } catch(e) {
         console.error('Erreur population select groupes prof:', e);
     }
@@ -2996,30 +2956,30 @@ function updateEmploiDuTempsEleve() {
     =========================== */
 function resetForm(){
     $('#titre').value='';
-    $('#description').value='';
+    icSet('description', '');
     $('#salle').value='';
     $('#effectif').value='';
     $('#seances-container').innerHTML='';
-    $('#first-hebdoseance').value='';
+    icSet('first-hebdoseance', '');
     $('#nb-seances').value=4;
-    $('#ouverture').value='';
-    $('#fermeture').value='';
+    icSet('ouverture', '');
+    icSet('fermeture', '');
 
-    // Remettre animateur par défaut et visible_avant à false
-    if($('#animateur-select')){
+    // Remettre animateur par défaut
+    { const animCompReset = window._IC_instances?.['animateur-select']; if(animCompReset) {
         const profs = users.filter(u => u.role === 'prof' || u.role === 'admin');
-        $('#animateur-select').value = (currentUser && currentUser.role === 'prof') ? currentUser.id : (profs[0]?.id || '');
-    }
+        const defaultId = (currentUser && currentUser.role === 'prof') ? String(currentUser.id) : String(profs[0]?.id || '');
+        if (defaultId) animCompReset.setValue(defaultId);
+    }}
+
     if($('#visible-avant')) $('#visible-avant').checked = false;
     if($('#separable')) $('#separable').checked = true;
-    if($('#groupe-select')) $('#groupe-select').value = '';
+    const groupeCompReset = window._IC_instances?.['groupe-select']; if (groupeCompReset) groupeCompReset.setValue('');
 
-    // Réinitialiser MultiSelect
+    // Réinitialiser MultiSelect classes
     if (classeMultiSelect) {
-        classeMultiSelect.selectedItems.forEach(item => {
-            classeMultiSelect.unselect(item.value);
-        });
-        classeMultiSelect.enable(); // On initialise activé
+        classeMultiSelect.clearSelection();
+        classeMultiSelect.enable();
     }
 }
 
@@ -3173,7 +3133,6 @@ async function creerActivite(){
     }
 
     const titreEl = $('#titre');
-    const descriptionEl = $('#description');
     const salleEl = $('#salle');
     const effectifEl = $('#effectif');
     const classeSelectEl = $('#classe-select');
@@ -3185,44 +3144,46 @@ async function creerActivite(){
     const visibleAvantEl = $('#visible-avant');
     const separableEl = $('#separable');
 
-    if (!titreEl || !salleEl || !effectifEl || !classeSelectEl || !ouvertureEl || !fermetureEl || !seancesContainer) {
+    if (!titreEl || !salleEl || !effectifEl || !seancesContainer) {
         alert('Erreur : formulaire incomplet');
         return;
     }
 
     const titre = titreEl.value.trim();
-    const description = descriptionEl ? descriptionEl.value.trim() : '';
+    const description = icGet('description') || '';
     const salle = salleEl.value.trim();
     const effectif = parseInt(effectifEl.value);
     const separable = separableEl ? separableEl.checked : true;
     const selectedClasses = classeMultiSelect ? classeMultiSelect.selectedItems.map(item => parseInt(item.value)) : [];
 
-    // Récupérer les séances AVEC DURÉES
+    // Récupérer les séances AVEC DURÉES (support InputComp datetime)
     const seances = Array.from(document.querySelectorAll('.seance-item'))
-        .map((item, idx)=>{
-            const input = item.querySelector('.seance-input');
+        .map((item) => {
             const selectDuree = item.querySelector('.duree-select');
+            // Essayer d'abord via IC wrapper, sinon .seance-input natif
+            const icW = item.querySelector('.seance-ic-wrapper');
+            const icId = icW?.dataset?.inputId;
+            const ic = icId && window._IC_instances?.[icId];
+            let dateHeure = ic ? ic.getISOValue() : item.querySelector('.seance-input')?.value;
             return {
-                date_heure: input.value,
+                date_heure: dateHeure || '',
                 duree: selectDuree ? parseInt(selectDuree.value) : 60
             };
         })
-        .filter(s=>s.date_heure);
+        .filter(s => s.date_heure);
 
-    const ouverture = ouvertureEl.value;
-    const fermeture = fermetureEl.value;
-    const groupeId = groupeSelectEl && groupeSelectEl.value ? parseInt(groupeSelectEl.value) : null;
-
-    // Trouver le header du MultiSelect
-    const multiSelectHeader = classeSelectEl.parentElement.querySelector('.multi-select-header');
+    const ouverture = icGet('ouverture') || ouvertureEl.value;
+    const fermeture = icGet('fermeture') || fermetureEl.value;
+    const groupeId = (() => { const v = icGet('groupe-select'); return v ? parseInt(v) : null; })();
 
     // Validation
     let hasError = false;
-    [titreEl, salleEl, effectifEl, ouvertureEl, fermetureEl].forEach(el => {
+    [titreEl, salleEl, effectifEl].forEach(el => {
         if(el) el.classList.remove('error');
     });
-
-    if(multiSelectHeader) multiSelectHeader.classList.remove('error');
+    icSetError('ouverture', '');
+    icSetError('fermeture', '');
+    if(classeMultiSelect) classeMultiSelect.setError('');
 
     $all('.seance-input').forEach(inp => inp.classList.remove('error'));
     if(seancesContainer) seancesContainer.classList.remove('error');
@@ -3234,14 +3195,23 @@ async function creerActivite(){
         hasError = true;
     }
     if (selectedClasses.length === 0) {
-        if(multiSelectHeader) multiSelectHeader.classList.add('error');
+        if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
         hasError = true;
     }
-    if (!ouverture) { ouvertureEl.classList.add('error'); hasError = true; }
-    if (!fermeture) { fermetureEl.classList.add('error'); hasError = true; }
+    if (!ouverture) { icSetError('ouverture', 'Champ requis'); hasError = true; }
+    if (!fermeture) { icSetError('fermeture', 'Champ requis'); hasError = true; }
     if (seances.length === 0) {
         seancesContainer.classList.add('error');
         hasError = true;
+    }
+
+    // Validation animateur
+    const _animVal = icGet('animateur-select');
+    if (!_animVal || isNaN(parseInt(_animVal))) {
+        icSetError('animateur-select', 'Veuillez choisir un animateur');
+        hasError = true;
+    } else {
+        icSetError('animateur-select', '');
     }
 
     // ===== NOUVELLE VALIDATION : Cohérence groupe/classes =====
@@ -3260,7 +3230,7 @@ async function creerActivite(){
 
             alert(`⚠️ Incohérence détectée !\n\nVous avez sélectionné le groupe "${nomGroupe}" mais les classes suivantes n'en font pas partie :\n${nomsClassesInvalides}\n\nVeuillez soit :\n• Changer de groupe d'exclusivité\n• Modifier les classes sélectionnées`);
 
-            if(multiSelectHeader) multiSelectHeader.classList.add('error');
+            if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
             hasError = true;
         }
 
@@ -3269,16 +3239,13 @@ async function creerActivite(){
         if (!hasClasseFromGroupe) {
             const nomGroupe = groupes.find(g => g.id === groupeId)?.nom || 'ce groupe';
             alert(`⚠️ Aucune classe du groupe "${nomGroupe}" n'est sélectionnée !\n\nVeuillez sélectionner au moins une classe faisant partie de ce groupe.`);
-            if(multiSelectHeader) multiSelectHeader.classList.add('error');
+            if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
             hasError = true;
         }
     }
     // ===== FIN NOUVELLE VALIDATION =====
 
-    if (hasError) {
-        alert('Veuillez remplir tous les champs obligatoires');
-        return;
-    }
+    if (hasError) {alert('Veuillez remplir tous les champs obligatoires'); return;}
 
     const dateOuverture = new Date(ouverture);
     const dateFermeture = new Date(fermeture);
@@ -3292,7 +3259,11 @@ async function creerActivite(){
         return;
     }
 
-    const animateurId = animateurSelectEl ? parseInt(animateurSelectEl.value) : currentUser.id;
+    const animateurId = parseInt(icGet('animateur-select')) || 0;
+    if (!animateurId) {
+        icSetError('animateur-select', 'Sélectionnez un animateur');
+        return;
+    }
     const visibleAvant = visibleAvantEl ? !!visibleAvantEl.checked : false;
 
     const newAct = {
@@ -3320,7 +3291,7 @@ async function creerActivite(){
         if(!preserveChamps) {
             resetForm();
         }
-        alert('Activité créée et enregistrée en base!');
+        showToast('Activité créée avec succès !');
     } catch(e) {
         alert('Erreur lors de la création : ' + e.message);
     }
@@ -3381,20 +3352,19 @@ async function ouvrirModalEdition(activiteId) {
 
         // Pré-remplir le formulaire
         $('#titre').value = activite.titre;
-        $('#description').value = activite.description || '';
+        icSet('description', activite.description || '');
         $('#salle').value = activite.salle;
         $('#effectif').value = activite.effectif_max;
         $('#visible-avant').checked = !!activite.visible_avant;
 
         // Animateur
-        if ($('#animateur-select')) {
-            $('#animateur-select').value = activite.animateur_id || activite.prof_id;
-        }
+        icSet('animateur-select', String(activite.animateur_id || activite.prof_id || ''));
+
 
         // Groupe
-        if ($('#groupe-select')) {
-            $('#groupe-select').value = activite.groupe_id || '';
-        }
+        icSet('groupe-select', String(activite.groupe_id || ''));
+        synchroniserClassesAvecGroupe();
+
 
         // Classes
         if (classeMultiSelect) {
@@ -3409,8 +3379,8 @@ async function ouvrirModalEdition(activiteId) {
         }
 
         // Dates
-        $('#ouverture').value = formatDateInputLocal(new Date(activite.date_ouverture_inscriptions));
-        $('#fermeture').value = formatDateInputLocal(new Date(activite.date_fermeture_inscriptions));
+        icSet('ouverture', formatDateInputLocal(new Date(activite.date_ouverture_inscriptions)));
+        icSet('fermeture', formatDateInputLocal(new Date(activite.date_fermeture_inscriptions)));
 
         // Séances
         const seancesContainer = $('#seances-container');
@@ -3448,7 +3418,7 @@ async function ouvrirModalEdition(activiteId) {
             const del = document.createElement('button');
             del.className = 'btn ghost';
             del.textContent = '✖';
-            del.onclick = () => d.remove();
+            del.addEventListener('click', () => d.remove());
 
             d.appendChild(span);
             d.appendChild(inp);
@@ -3491,7 +3461,6 @@ async function modifierActivite() {
 
     // Récupérer les valeurs (même logique que creerActivite)
     const titreEl = $('#titre');
-    const descriptionEl = $('#description');
     const salleEl = $('#salle');
     const effectifEl = $('#effectif');
     const classeSelectEl = $('#classe-select');
@@ -3502,69 +3471,70 @@ async function modifierActivite() {
     const animateurSelectEl = $('#animateur-select');
     const visibleAvantEl = $('#visible-avant');
 
-    if (!titreEl || !salleEl || !effectifEl || !classeSelectEl || !ouvertureEl || !fermetureEl || !seancesContainer) {
+    if (!titreEl || !salleEl || !effectifEl || !seancesContainer) {
         alert('Erreur : formulaire incomplet');
         return;
     }
 
     const titre = titreEl.value.trim();
-    const description = descriptionEl ? descriptionEl.value.trim() : '';
+    const description = icGet('description') || '';
     const salle = salleEl.value.trim();
     const effectif = parseInt(effectifEl.value);
     const selectedClasses = classeMultiSelect ? classeMultiSelect.selectedItems.map(item => parseInt(item.value)) : [];
 
-    // Récupérer les séances avec leurs IDs
+    // Récupérer les séances avec leurs IDs (support InputComp datetime)
     const seances = Array.from(document.querySelectorAll('.seance-item'))
         .map(item => {
-            const input = item.querySelector('.seance-input');
             const selectDuree = item.querySelector('.duree-select');
-            const seanceId = item.dataset.seanceId; // ID si séance existante
+            const seanceId = item.dataset.seanceId;
+            const icW = item.querySelector('.seance-ic-wrapper');
+            const icId = icW?.dataset?.inputId;
+            const ic = icId && window._IC_instances?.[icId];
+            const input = ic ? null : item.querySelector('.seance-input');
+            const dateHeure = ic ? ic.getISOValue() : (input?.value || '');
 
             return {
                 id: seanceId ? parseInt(seanceId) : null,
-                date_heure: input.value,
+                date_heure: dateHeure,
                 duree: selectDuree ? parseInt(selectDuree.value) : 60
             };
         })
         .filter(s => s.date_heure);
 
-    const ouverture = ouvertureEl.value;
-    const fermeture = fermetureEl.value;
-    const groupeId = groupeSelectEl && groupeSelectEl.value ? parseInt(groupeSelectEl.value) : null;
-
-    const multiSelectHeader = classeSelectEl.parentElement.querySelector('.multi-select-header');
+    const ouverture = icGet('ouverture');
+    const fermeture = icGet('fermeture');
+    const groupeId = (() => { const v = icGet('groupe-select'); return v ? parseInt(v) : null; })();
 
     // Validation (même que creerActivite)
     let hasError = false;
-    [titreEl, salleEl, effectifEl, ouvertureEl, fermetureEl].forEach(el => {
+    [titreEl, salleEl, effectifEl].forEach(el => {
         if (el) el.classList.remove('error');
     });
+    icSetError('ouverture', '');
+    icSetError('fermeture', '');
 
-    if (multiSelectHeader) multiSelectHeader.classList.remove('error');
+    if(classeMultiSelect) classeMultiSelect.setError('');
     $all('.seance-input').forEach(inp => inp.classList.remove('error'));
     if (seancesContainer) seancesContainer.classList.remove('error');
 
     if (!titre) { titreEl.classList.add('error'); hasError = true; }
     if (!salle) { salleEl.classList.add('error'); hasError = true; }
-    if (!effectif || isNaN(effectif) || effectif < 1 || effectif > 100) {
+    if (!effectif || isNaN(effectif) || effectif < 1 || effectif > 3000) {
         effectifEl.classList.add('error');
         hasError = true;
     }
     if (selectedClasses.length === 0) {
-        if (multiSelectHeader) multiSelectHeader.classList.add('error');
+        if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
         hasError = true;
     }
-    if (!ouverture) { ouvertureEl.classList.add('error'); hasError = true; }
-    if (!fermeture) { fermetureEl.classList.add('error'); hasError = true; }
+    if (!ouverture) { icSetError('ouverture', 'Champ requis'); hasError = true; }
+    if (!fermeture) { icSetError('fermeture', 'Champ requis'); hasError = true; }
     if (seances.length === 0) {
         seancesContainer.classList.add('error');
         hasError = true;
     }
 
-    if (hasError) {
-        alert('Veuillez remplir tous les champs obligatoires');
-        return;
-    }
+    if (hasError) { alert('Veuillez remplir tous les champs obligatoires'); return; }
 
     const dateOuverture = new Date(ouverture);
     const dateFermeture = new Date(fermeture);
@@ -3578,7 +3548,11 @@ async function modifierActivite() {
         return;
     }
 
-    const animateurId = animateurSelectEl ? parseInt(animateurSelectEl.value) : currentUser.id;
+    const animateurId = parseInt(icGet('animateur-select')) || 0;
+        if (!animateurId) {
+        icSetError('animateur-select', 'Sélectionnez un animateur');
+        return;
+    }
     const visibleAvant = visibleAvantEl ? !!visibleAvantEl.checked : false;
 
     const updatedAct = {
@@ -3601,7 +3575,7 @@ async function modifierActivite() {
         majListeActivitesProf();
         updateScheduleViewProf();
         annulerEdition();
-        alert('[OK] Activité modifiée avec succès !');
+        showToast('[OK] Activité modifiée avec succès !');
     } catch (e) {
         alert('[KO] Erreur lors de la modification : ' + e.message);
     }
@@ -3615,15 +3589,43 @@ async function modifierActivite() {
 /* ===========================
     Gestion des séances
     =========================== */
+    
+/* ── Helper : crée un input datetime-local custom (InputComp) pour les séances ──
+   Retourne { wrapper, getValue } pour usage dans ajouterSeanceManuelle/Hebdo.
+   getValue() lit directement le .ic-input natif (valeur ISO locale).          */
+function creerSeanceDatetimeIC(valeurISO) {
+    const tmpInput = document.createElement('input');
+    tmpInput.type = 'datetime-local';
+    // On instancie InputComp directement sur cet input temporaire
+    // (replaceWith est appelé dans le constructeur)
+    const ic = new InputComp(tmpInput, {
+        type:          'datetime',
+        label:         'Date et heure',
+        size:          'sm',
+        isoFormat:     true,
+        displayFormat: 'dd/mm/yyyy hh:mm',
+        width:         '220px',
+    });
+    if (valeurISO) ic.setValue(valeurISO);
+    // Exposer un getter lisible directement (ic-input natif)
+    ic.getISOValue = function() {
+        const el = this.wrapper.querySelector('.ic-input');
+        return el ? el.value : this.getValue();
+    };
+    return ic;
+}
+
 function ajouterSeanceHebdo(){
     const container = $('#seances-container');
-    const startInput = $('#first-hebdoseance');
-    const nbInput = $('#nb-seances');
-    const dureeInput = $('#duree-hebdo');
 
-    const start = new Date(startInput.value);
-    const nb = parseInt(nbInput.value);
-    const duree = parseInt(dureeInput.value);
+    const start = new Date(icGet('first-hebdoseance'));
+    const nbRaw = icGet('nb-seances');
+    const nb = parseInt(nbRaw) || parseInt($('#nb-seances')?.value) || 0;
+    const dureeInput = $('#duree-hebdo');
+    const duree = parseInt(
+        window._IC_instances?.['duree-hebdo']?.getValue() ||
+        dureeInput?.value || 60
+    );
 
     if(isNaN(start.getTime()) || !nb || nb<1){
         alert('Choisissez une date et un nombre valide');
@@ -3635,7 +3637,7 @@ function ajouterSeanceHebdo(){
     serieDiv.dataset.duree = duree; // Stocker la durée de la série
 
     const sup = document.createElement('div');
-    sup.style.textAlign='right';
+    sup.className = 'serie-hebdo-header';
     const supBtn = document.createElement('button');
     supBtn.className='btn secondary';
     supBtn.textContent='Supprimer série';
@@ -3651,20 +3653,21 @@ function ajouterSeanceHebdo(){
     function majLabels(serieDiv){
         const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
         if(items.length === 0) return;
-
-        const pivotInput = items[0].querySelector('.seance-input');
-        const baseDate = new Date(pivotInput.value);
-
+        // Lire la valeur du 1er IC
+        const firstIcW = items[0].querySelector('.seance-ic-wrapper');
+        const firstIcId = firstIcW?.dataset?.inputId;
+        const firstIc = firstIcId && window._IC_instances?.[firstIcId];
+        const firstVal = firstIc ? firstIc.getISOValue() : items[0].querySelector('.ic-input')?.value;
+        if(!firstVal) return;
+        const baseDate = new Date(firstVal);
         items.forEach((item, idx) => {
             if(idx === 0) return;
-
-            const inp = item.querySelector('.seance-input');
-
-
+            const icW = item.querySelector('.seance-ic-wrapper');
+            const icId = icW?.dataset?.inputId;
+            const ic = icId && window._IC_instances?.[icId];
             const newDate = new Date(baseDate);
             newDate.setDate(baseDate.getDate() + idx * 7);
-
-            inp.value = formatDateInputLocal(newDate);
+            if(ic) ic.setValue(formatDateInputLocal(newDate));
         });
         trierSeances();
     }
@@ -3689,15 +3692,12 @@ function ajouterSeanceHebdo(){
         span.style.minWidth='110px';
         span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
 
-        const inp = document.createElement('input');
-        inp.type='datetime-local';
-
-
         const newDate = new Date(start);
         newDate.setDate(start.getDate() + i * 7);
 
-        inp.value = formatDateInputLocal(newDate);
-        inp.className='seance-input';
+        const ic = creerSeanceDatetimeIC(formatDateInputLocal(newDate));
+        ic.wrapper.classList.add('seance-ic-wrapper');
+        ic.wrapper.dataset.seanceIc = '1';
 
         // Select durée
         const selectDuree = document.createElement('select');
@@ -3716,13 +3716,11 @@ function ajouterSeanceHebdo(){
 
         // Si c'est la première séance, changer la durée affecte toute la série
         if(i === 0){
-            inp.onchange = () => majLabels(serieDiv);
+            ic.opts.onChange = () => majLabels(serieDiv);
             selectDuree.onchange = (e) => majDurees(serieDiv, e.target.value);
         } else {
             // Pour les autres, synchroniser avec la première
-            selectDuree.onchange = (e) => {
-                majDurees(serieDiv, e.target.value);
-            };
+            selectDuree.onchange = (e) => { majDurees(serieDiv, e.target.value); };
         }
 
         const del = document.createElement('button');
@@ -3736,13 +3734,15 @@ function ajouterSeanceHebdo(){
             if(remainingItems.length > 0){
                 remainingItems.forEach((item, idx) => {
                     const span = item.querySelector('.small.muted');
-                    span.textContent = idx === 0 ? 'Séance 1 (début)' : `+${idx} semaine(s)`;
-
-                    const inp = item.querySelector('.seance-input');
-                    const select = item.querySelector('.duree-select');
+                    if (span) span.textContent = idx === 0 ? 'Séance 1 (début)' : `+${idx} semaine(s)`;
+                    // rebrancher onChange sur le premier IC
                     if(idx === 0){
-                        inp.onchange = () => majLabels(serieDiv);
-                        select.onchange = (e) => majDurees(serieDiv, e.target.value);
+                        const icW = item.querySelector('.seance-ic-wrapper');
+                        const icId = icW && icW.dataset.inputId;
+                        const firstIc = icId && window._IC_instances?.[icId];
+                        if (firstIc) firstIc.opts.onChange = () => majLabels(serieDiv);
+                        const sel = item.querySelector('.duree-select');
+                        if (sel) sel.onchange = (e) => majDurees(serieDiv, e.target.value);
                     }
                 });
             } else {
@@ -3752,7 +3752,7 @@ function ajouterSeanceHebdo(){
         });
 
         d.appendChild(span);
-        d.appendChild(inp);
+        d.appendChild(ic.wrapper);
         d.appendChild(selectDuree);
         d.appendChild(del);
         serieDiv.appendChild(d);
@@ -3767,15 +3767,16 @@ function ajouterSeanceManuelle(){
     const d = document.createElement('div');
     d.className='seance-item manual';
 
-    const inp = document.createElement('input');
-    inp.type='datetime-local';
-    inp.className='seance-input';
-    inp.onchange = () => trierSeances();
-
     const span = document.createElement('div');
     span.className='small muted';
     span.style.minWidth='110px';
     span.textContent='Ajout manuel';
+
+    const ic = creerSeanceDatetimeIC('');
+    ic.wrapper.classList.add('seance-ic-wrapper');
+    // Marquer le wrapper pour que creerActivite/modifierActivite puisse lire la valeur
+    ic.wrapper.dataset.seanceIc = '1';
+    ic.opts.onChange = () => trierSeances();
 
     // Select durée
     const selectDuree = document.createElement('select');
@@ -3801,7 +3802,7 @@ function ajouterSeanceManuelle(){
     });
 
     d.appendChild(span);
-    d.appendChild(inp);
+    d.appendChild(ic.wrapper);
     d.appendChild(selectDuree);
     d.appendChild(del);
     container.appendChild(d);
@@ -3843,55 +3844,38 @@ function ouvrirModalGroupes() {
     majListeGroupes();
 
     // Réinitialiser le formulaire
-    $('#nouveau-groupe-nom').value = '';
-    $('#groupe-modal-title').textContent = 'Créer un nouveau groupe';
-    $('#btn-save-groupe').textContent = 'Créer';
+    icSet('nouveau-groupe-nom', '');
+    const _gcTitle = $('#groupe-modal-title'); if (_gcTitle) _gcTitle.textContent = 'Créer un nouveau groupe';
+    const _gcBtn   = $('#btn-save-groupe');
+    if (_gcBtn) { _gcBtn.innerHTML = ''; const _s = document.createElement('span'); _s.id='btn-save-text'; _s.textContent='Créer le groupe'; _gcBtn.appendChild(_s); }
 
-    // Détruire l'ancienne instance si elle existe
-    if (groupeClasseMultiSelect) {
-        groupeClasseMultiSelect.destroy();
+    // InputComp multiselect groupe-classe-select
+    if (!groupeClasseMultiSelect) {
+        groupeClasseMultiSelect = window._IC_instances?.['groupe-classe-select'] || null;
     }
-
-    // Réinitialiser le select HTML
-    const selectEl = $('#groupe-classe-select');
-    if (selectEl) {
-        selectEl.innerHTML = '';
-    }
-
     // Initialiser MultiSelect pour les classes du groupe
-    const classesData = classes.map(cl => ({
-        value: cl.id.toString(),
-        text: cl.nom
-    }));
-
-    groupeClasseMultiSelect = new MultiSelect('#groupe-classe-select', {
-        data: classesData,
-        placeholder: 'Sélectionner les classes',
-        search: true,
-        selectAll: true,
-        listAll: true,
-        onChange: function(value, text, element) {
+    const gcClassesData = classes.map(cl => ({ value: cl.id.toString(), label: cl.nom }));
+    if (groupeClasseMultiSelect) {
+        groupeClasseMultiSelect.setOptions(gcClassesData);
+        groupeClasseMultiSelect.clearSelection();
+        groupeClasseMultiSelect.opts.onChange = function(val) {
             if (groupeClasseMultiSelect.selectedItems.length > 0) {
-                $('#groupe-classe-select').classList.remove('error');
+                groupeClasseMultiSelect.setError('');
             }
-        }
-    });
-
+        };
+    }
+    
     $('#groupes-modal').classList.add('visible');
 }
 
 function fermerModalGroupes() {
     annulerEditionGroupe();
     $('#groupes-modal').classList.remove('visible');
-    $('#nouveau-groupe-nom').value = '';
+    icSet('nouveau-groupe-nom', '');
     groupeEditMode = false;
     currentEditGroupeId = null;
 
-    if (groupeClasseMultiSelect) {
-        groupeClasseMultiSelect.selectedItems.forEach(item => {
-            groupeClasseMultiSelect.unselect(item.value);
-        });
-    }
+    if (groupeClasseMultiSelect) groupeClasseMultiSelect.clearSelection();
 }
 
 function annulerEditionGroupe() {
@@ -3930,29 +3914,15 @@ function annulerEditionGroupe() {
         btnSaveText.textContent = 'Créer le groupe';
     }
 
-    // Vider le nom
-    const nomInput = document.getElementById('nouveau-groupe-nom');
-    if (nomInput) {
-        nomInput.value = '';
-        nomInput.classList.remove('error');
-    }
+    // Vider le nom via IC
+    icSet('nouveau-groupe-nom', '');
+    icSetError('nouveau-groupe-nom', '');
 
     // Désélectionner toutes les classes
-    if (groupeClasseMultiSelect) {
-        try {
-            groupeClasseMultiSelect.selectedItems.forEach(item => {
-                groupeClasseMultiSelect.unselect(item.value);
-            });
-        } catch(e) {
-            console.warn('Erreur déselection:', e);
-        }
-    }
+    if (groupeClasseMultiSelect) groupeClasseMultiSelect.clearSelection();
 
     // Retirer les erreurs visuelles
-    const multiSelectHeader = document.querySelector('#groupe-classe-select')?.parentElement?.querySelector('.multi-select-header');
-    if (multiSelectHeader) {
-        multiSelectHeader.classList.remove('error');
-    }
+    if (groupeClasseMultiSelect) groupeClasseMultiSelect.setError('');
 
     console.log('[OK] Mode création restauré');
 }
@@ -3977,9 +3947,10 @@ function majListeGroupes() {
             .join(', ');
 
         const groupeDiv = document.createElement('div');
-        groupeDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: white;';
+        groupeDiv.className = 'groupe-list-item';
 
         const infoDiv = document.createElement('div');
+        infoDiv.className = 'groupe-list-info';
         infoDiv.innerHTML = `
             <strong class="text-14 font-semibold">${groupe.nom}</strong>
             <div class="small muted">Classes : ${classesGroupe || 'Aucune'}</div>
@@ -3987,7 +3958,7 @@ function majListeGroupes() {
         `;
 
         const btnContainer = document.createElement('div');
-        btnContainer.style.cssText = 'display: flex; gap: 8px;';
+        btnContainer.className = 'groupe-list-actions';
 
         // Bouton éditer
         const btnEdit = document.createElement('button');
@@ -4050,72 +4021,33 @@ async function editerGroupe(groupeId) {
             console.log('[OK] Classe edit-mode ajoutée');
         }
 
-        // 2. Remplir le nom
-        const nomInput = document.getElementById('nouveau-groupe-nom');
-        if (nomInput) {
-            nomInput.value = groupe.nom;
-            console.log('[OK] Nom rempli:', groupe.nom);
+        // 2. Remplir le nom (via InputComp si disponible, sinon input natif)
+        const nomIC = window._IC_instances?.['nouveau-groupe-nom'];
+        if (nomIC) {
+            nomIC.setValue(groupe.nom);
+        } else {
+            const nomInput = document.getElementById('nouveau-groupe-nom');
+            if (nomInput) nomInput.value = groupe.nom;
         }
+        console.log('[OK] Nom rempli:', groupe.nom);
 
         // === GESTION DU MULTISELECT ===
 
-        // Détruire l'ancienne instance
-        if (groupeClasseMultiSelect) {
-            try {
-                groupeClasseMultiSelect.destroy();
-                console.log('[OK] Ancienne instance détruite');
-            } catch (e) {
-                console.warn('[WARN] Erreur destruction:', e);
-            }
-            groupeClasseMultiSelect = null;
+        // InputComp multiselect groupe-classe-select (pas de recréation DOM nécessaire)
+        if (!groupeClasseMultiSelect) {
+            groupeClasseMultiSelect = window._IC_instances?.['groupe-classe-select'] || null;
         }
-
-        // Récupérer et recréer le select
-        const selectEl = document.getElementById('groupe-classe-select');
-        if (!selectEl) {
-            console.error('[KO] Element #groupe-classe-select introuvable');
-            alert('Erreur : élément select introuvable');
-            return;
-        }
-
-        const parent = selectEl.parentElement;
-        selectEl.remove();
-
-        const newSelect = document.createElement('select');
-        newSelect.id = 'groupe-classe-select';
-        parent.appendChild(newSelect);
-
-        console.log('[OK] Nouveau select créé');
-
-        // Préparer les données
-        const classesData = classes.map(cl => ({
-            value: cl.id.toString(),
-            text: cl.nom
-        }));
-
-        console.log('[OK] Données classes préparées:', classesData.length, 'classes');
-
-        // Créer une NOUVELLE instance MultiSelect
-        groupeClasseMultiSelect = new MultiSelect('#groupe-classe-select', {
-            data: classesData,
-            placeholder: 'Sélectionner les classes',
-            search: true,
-            selectAll: true,
-            listAll: true,
-            onChange: function(value, text, element) {
+    if (groupeClasseMultiSelect) {
+        const editClassesData = classes.map(cl => ({ value: cl.id.toString(), label: cl.nom }));
+        groupeClasseMultiSelect.setOptions(editClassesData);
+        groupeClasseMultiSelect.clearSelection();
+        groupeClasseMultiSelect.opts.onChange = function(val) {
                 if (groupeClasseMultiSelect.selectedItems.length > 0) {
-                    const multiSelectHeader = document.querySelector('#groupe-classe-select')?.parentElement?.querySelector('.multi-select-header');
-                    if (multiSelectHeader) {
-                        multiSelectHeader.classList.remove('error');
+                    groupeClasseMultiSelect.setError('');
                     }
-                }
-            }
-        });
-
-        console.log('[OK] MultiSelect créé');
-
-        // Attendre que MultiSelect soit prêt
-        await new Promise(resolve => setTimeout(resolve, 200));
+            };
+        }
+        console.log('[OK] InputComp multiselect prêt');
 
         // === MODIFICATIONS VISUELLES APRÈS LE MULTISELECT ===
 
@@ -4138,24 +4070,13 @@ async function editerGroupe(groupeId) {
             console.log('[OK] Titre du modal mis à jour')
         }
 
-        // 4. Bouton de sauvegarde - RECRÉATION SYSTÉMATIQUE
-        const btnSaveGroupe = document.getElementById('btn-save-groupe');
-        if (btnSaveGroupe) {
-            const svgIcon = btnSaveGroupe.querySelector('svg');
-            btnSaveGroupe.innerHTML = '';
-
-            if (svgIcon) {
-                btnSaveGroupe.appendChild(svgIcon.cloneNode(true));
-            }
-
-            const newSpan = document.createElement('span');
-            newSpan.id = 'btn-save-text';
-            newSpan.textContent = 'Enregistrer les modifications';
-            btnSaveGroupe.appendChild(newSpan);
-
+        // 4. Bouton de sauvegarde - mise à jour simple du texte via le span existant
+        const _btnSaveText = document.getElementById('btn-save-text');
+        if (_btnSaveText) {
+            _btnSaveText.textContent = 'Enregistrer les modifications';
             console.log('[OK] Bouton de sauvegarde mis à jour');
         } else {
-            console.error('[KO] Bouton #btn-save-groupe introuvable');
+            console.error('[KO] Bouton btn-save-text introuvable');
         }
 
         // === PRÉ-SÉLECTION DES CLASSES ===
@@ -4198,17 +4119,15 @@ async function creerGroupe() {
     // Validation nom
     if (!nom) {
         alert('[WARN] Veuillez saisir un nom de groupe');
-        $('#nouveau-groupe-nom').classList.add('error');
+        if (window._IC_instances?.['nouveau-groupe-nom']) window._IC_instances['nouveau-groupe-nom'].setError('Nom requis'); else $('#nouveau-groupe-nom').classList.add('error');
         return;
     }
 
     // Validation classes
     if (!groupeClasseMultiSelect || groupeClasseMultiSelect.selectedItems.length === 0) {
         alert('⚠️ Vous devez sélectionner au moins une classe pour ce groupe');
-        const multiSelectHeader = document.querySelector('#groupe-classe-select')?.parentElement?.querySelector('.multi-select-header');
-        if (multiSelectHeader) {
-            multiSelectHeader.classList.add('error');
-        }
+        // multiSelectHeader remplacé par InputComp.setError()
+        if(groupeClasseMultiSelect) groupeClasseMultiSelect.setError('Sélectionnez au moins une classe');
         return;
     }
 
@@ -4313,6 +4232,22 @@ function updateSidePanels(){
 
 
 /* Initialise tous les event listeners statiques (présents dès le chargement) */
+
+/* ── Toast de notification non-bloquant ───────────────────────────────────── */
+function showToast(msg, duration = 3000) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'app-toast';
+        toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--primary,#4f46e5);color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s;max-width:320px;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+}
+
 function initStaticEventListeners() {
     console.log('- Initialisation des event listeners statiques...');
 
@@ -4354,12 +4289,13 @@ function initStaticEventListeners() {
     });
 
     // ===== SÉANCES =====
-    const seanceButtons = document.querySelectorAll('#prof-tab-creation .btn.ghost');
-    if (seanceButtons[0]) seanceButtons[0].addEventListener('click', ajouterSeanceHebdo);
-    if (seanceButtons[1]) seanceButtons[1].addEventListener('click', ajouterSeanceManuelle);
+    const btnHebdo = document.getElementById('btn-ajouter-hebdo');
+    const btnManuel = document.getElementById('btn-ajouter-manuel');
+    if (btnHebdo) btnHebdo.addEventListener('click', ajouterSeanceHebdo);
+    if (btnManuel) btnManuel.addEventListener('click', ajouterSeanceManuelle);
 
     // ===== GROUPES =====
-    const btnOuvrirModalGroupes = document.querySelector('#prof-tab-creation .btn.secondary');
+    const btnOuvrirModalGroupes = document.getElementById('btn-ouvrir-groupes');
     if (btnOuvrirModalGroupes) {
         btnOuvrirModalGroupes.addEventListener('click', ouvrirModalGroupes);
     }
@@ -4525,10 +4461,7 @@ async function handleInscriptionEvent(event) {
             updateScheduleViewProf();
 
             // Rafraîchir le panneau "élèves non inscrits" si ouvert
-            const groupeSelect = $('#groupe-filter-select');
-            if (groupeSelect && groupeSelect.value) {
-                await chargerElevesNonInscrits(groupeSelect.value);
-            }
+            { const gfv = icGet('groupe-filter-select'); if (gfv) await chargerElevesNonInscrits(gfv); }
 
             // Si le modal des détails est ouvert, le rafraîchir
             const modal = document.getElementById('activity-modal');

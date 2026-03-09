@@ -8,7 +8,28 @@
 const urlParams = new URLSearchParams(window.location.search);
 const userId    = parseInt(urlParams.get('uid'), 10);
 
-// --- Références DOM ---
+/* ── Utilitaire : lit la valeur réelle d'un champ ──────────────────────────
+   Pour un InputComp, getValue() retourne _value (état interne) mais celui-ci
+   n'est synchronisé que si l'event 'input' passe par _bindInput.
+   On lit donc directement l'élément .ic-input (DOM réel) pour être sûr.
+   Pour un input natif sans IC, on lit l'élément lui-même.          */
+function fieldGet(id) {
+  const ic = window._IC_instances?.[id];
+  if (ic) {
+    // Lire le .ic-input natif à l'intérieur du wrapper
+    const el = ic.wrapper.querySelector('.ic-input');
+    return el ? el.value : ic.getValue();
+  }
+  return document.getElementById(id)?.value ?? '';
+}
+
+function fieldGetEl(id) {
+  const ic = window._IC_instances?.[id];
+  if (ic) return ic.wrapper.querySelector('.ic-input') || document.getElementById(id);
+  return document.getElementById(id);
+}
+
+// --- Références DOM stables (jamais remplacées par InputComp) ---
 const stepSend    = document.getElementById('step-send');
 const stepVerify  = document.getElementById('step-verify');
 const stepSuccess = document.getElementById('step-success');
@@ -20,36 +41,19 @@ const btnSendCode = document.getElementById('btn-send-code');
 const btnVerify   = document.getElementById('btn-verify');
 const btnResend   = document.getElementById('btn-resend');
 
-const codeInput    = document.getElementById('code');
-const passwordInput = document.getElementById('password');
-const confirmInput  = document.getElementById('confirm-password');
-
 // --- Utilitaires ---
-function showError(el, msg) {
-  el.textContent = msg;
-  el.classList.remove('hidden');
-}
-
-function hideError(el) {
-  el.textContent = '';
-  el.classList.add('hidden');
-}
+function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+function hideError(el)       { el.textContent = ''; el.classList.add('hidden'); }
 
 function showStep(step) {
-  stepSend.classList.add('hidden');
-  stepVerify.classList.add('hidden');
-  stepSuccess.classList.add('hidden');
+  [stepSend, stepVerify, stepSuccess].forEach(s => s.classList.add('hidden'));
   step.classList.remove('hidden');
 }
 
-function setLoading(btn, loading, originalText) {
+function setLoading(btn, loading) {
   btn.disabled = loading;
-  if (loading) {
-    btn.dataset.originalText = btn.textContent;
-    btn.textContent = 'Chargement…';
-  } else {
-    btn.textContent = originalText || btn.dataset.originalText || btn.textContent;
-  }
+  if (loading) { btn.dataset.originalText = btn.textContent; btn.textContent = 'Chargement…'; }
+  else         { btn.textContent = btn.dataset.originalText || btn.textContent; }
 }
 
 // --- Validation au départ ---
@@ -60,50 +64,41 @@ if (!userId || isNaN(userId)) {
   btnSendCode.classList.add('hidden');
 }
 
-// --- Validation temps réel du code ---
-codeInput.addEventListener('input', () => {
-  hideError(verifyError);
-  // Forcer chiffres uniquement
-  codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
-  if (codeInput.value.length === 6) {
-    codeInput.classList.add('input-valid');
-    codeInput.classList.remove('input-invalid');
-  } else if (codeInput.value.length > 0) {
-    codeInput.classList.remove('input-valid');
-    codeInput.classList.add('input-invalid');
-  } else {
-    codeInput.classList.remove('input-valid', 'input-invalid');
-  }
-});
+// --- Validation temps réel du code (délégation, compatible IC) ---
+// Le champ code a un data-input-comp → l'input natif est .ic-input à l'intérieur du wrapper
+document.addEventListener('input', (e) => {
+  const target = e.target;
+  if (!target.classList.contains('ic-input')) return;
+  const wrapper = target.closest('[data-input-id]');
+  if (!wrapper) return;
+  const id = wrapper.dataset.inputId;
 
-// --- Validation temps réel MDP ---
-passwordInput.addEventListener('input', () => {
-  hideError(verifyError);
-  if (passwordInput.value.length > 0 && passwordInput.value.length < 8) {
-    passwordInput.classList.add('input-invalid');
-    passwordInput.classList.remove('input-valid');
-  } else if (passwordInput.value.length >= 8) {
-    passwordInput.classList.add('input-valid');
-    passwordInput.classList.remove('input-invalid');
-  } else {
-    passwordInput.classList.remove('input-valid', 'input-invalid');
+  if (id === 'code') {
+    hideError(verifyError);
+    // Forcer chiffres uniquement directement sur le .ic-input
+    target.value = target.value.replace(/\D/g, '').slice(0, 6);
+    target.classList.toggle('input-valid',   target.value.length === 6);
+    target.classList.toggle('input-invalid', target.value.length > 0 && target.value.length < 6);
   }
-  // Mettre à jour la confirmation si déjà remplie
-  if (confirmInput.value.length > 0) confirmInput.dispatchEvent(new Event('input'));
-});
 
-confirmInput.addEventListener('input', () => {
-  hideError(verifyError);
-  if (confirmInput.value.length > 0) {
-    if (confirmInput.value === passwordInput.value) {
-      confirmInput.classList.add('input-valid');
-      confirmInput.classList.remove('input-invalid');
+  if (id === 'password') {
+    hideError(verifyError);
+    const l = target.value.length;
+    target.classList.toggle('input-valid',   l >= 8);
+    target.classList.toggle('input-invalid', l > 0 && l < 8);
+    const confirmEl = fieldGetEl('confirm-password');
+    if (confirmEl && confirmEl.value.length > 0) confirmEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  if (id === 'confirm-password') {
+    hideError(verifyError);
+    const pwd = fieldGet('password');
+    if (target.value.length > 0) {
+      target.classList.toggle('input-valid',   target.value === pwd);
+      target.classList.toggle('input-invalid', target.value !== pwd);
     } else {
-      confirmInput.classList.add('input-invalid');
-      confirmInput.classList.remove('input-valid');
+      target.classList.remove('input-valid', 'input-invalid');
     }
-  } else {
-    confirmInput.classList.remove('input-valid', 'input-invalid');
   }
 });
 
@@ -111,7 +106,6 @@ confirmInput.addEventListener('input', () => {
 async function sendCode() {
   hideError(sendError);
   setLoading(btnSendCode, true);
-
   try {
     const res = await fetch('/api/first-login/send-code', {
       method: 'POST',
@@ -120,16 +114,14 @@ async function sendCode() {
       body: JSON.stringify({ user_id: userId })
     });
     const data = await res.json();
-
     if (!res.ok || !data.success) {
       showError(sendError, data.error || 'Erreur lors de l\'envoi.');
       setLoading(btnSendCode, false);
       return;
     }
-
     showStep(stepVerify);
-    codeInput.focus();
-
+    // Focus sur le .ic-input du champ code
+    setTimeout(() => fieldGetEl('code')?.focus(), 80);
   } catch (e) {
     showError(sendError, 'Erreur réseau. Vérifiez votre connexion.');
     setLoading(btnSendCode, false);
@@ -140,18 +132,19 @@ async function sendCode() {
 async function verifyCode() {
   hideError(verifyError);
 
-  const code    = codeInput.value.trim();
-  const pwd     = passwordInput.value;
-  const confirm = confirmInput.value;
+  // Lire directement le .ic-input pour éviter le décalage avec _value interne
+  const code    = fieldGet('code').replace(/\D/g, '').trim();
+  const pwd     = fieldGet('password');
+  const confirm = fieldGet('confirm-password');
 
   if (code.length !== 6) {
     showError(verifyError, 'Le code doit contenir 6 chiffres.');
-    codeInput.focus();
+    fieldGetEl('code')?.focus();
     return;
   }
   if (pwd.length < 8) {
     showError(verifyError, 'Le mot de passe doit contenir au moins 8 caractères.');
-    passwordInput.focus();
+    fieldGetEl('password')?.focus();
     return;
   }
   if (pwd.length > 200) {
@@ -160,34 +153,25 @@ async function verifyCode() {
   }
   if (pwd !== confirm) {
     showError(verifyError, 'Les mots de passe ne correspondent pas.');
-    confirmInput.focus();
+    fieldGetEl('confirm-password')?.focus();
     return;
   }
 
   setLoading(btnVerify, true);
-
   try {
     const res = await fetch('/api/first-login/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({
-        user_id:          userId,
-        code:             code,
-        password:         pwd,
-        confirm_password: confirm
-      })
+      body: JSON.stringify({ user_id: userId, code, password: pwd, confirm_password: confirm })
     });
     const data = await res.json();
-
     if (!res.ok || !data.success) {
       showError(verifyError, data.error || 'Code ou mot de passe invalide.');
       setLoading(btnVerify, false);
       return;
     }
-
     showStep(stepSuccess);
-
   } catch (e) {
     showError(verifyError, 'Erreur réseau. Vérifiez votre connexion.');
     setLoading(btnVerify, false);
@@ -199,7 +183,6 @@ async function resendCode() {
   hideError(verifyError);
   btnResend.disabled = true;
   btnResend.textContent = 'Envoi…';
-
   try {
     const res = await fetch('/api/first-login/send-code', {
       method: 'POST',
@@ -208,35 +191,33 @@ async function resendCode() {
       body: JSON.stringify({ user_id: userId })
     });
     const data = await res.json();
-
     if (!res.ok || !data.success) {
       showError(verifyError, data.error || 'Erreur lors du renvoi.');
     } else {
-      // Feedback visuel temporaire
       btnResend.textContent = '✓ Envoyé !';
-      setTimeout(() => {
-        btnResend.textContent = 'Renvoyer';
-        btnResend.disabled = false;
-      }, 3000);
+      setTimeout(() => { btnResend.textContent = 'Renvoyer'; btnResend.disabled = false; }, 3000);
       return;
     }
   } catch (e) {
     showError(verifyError, 'Erreur réseau.');
   }
-
   btnResend.textContent = 'Renvoyer';
   btnResend.disabled = false;
 }
 
-// --- Liaison des événements (délégation ou addEventListener direct) ---
+// --- Liaison des événements ---
 btnSendCode.addEventListener('click', sendCode);
 btnVerify.addEventListener('click', verifyCode);
 btnResend.addEventListener('click', resendCode);
 
-// Enter dans les champs
-codeInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') verifyCode();
-});
-confirmInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') verifyCode();
+// Enter dans les champs IC (délégation)
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const wrapper = e.target.closest('[data-input-id]');
+  if (!wrapper) return;
+  const id = wrapper.dataset.inputId;
+  if (id === 'code' || id === 'password' || id === 'confirm-password') {
+    e.preventDefault();
+    verifyCode();
+  }
 });
