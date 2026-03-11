@@ -479,46 +479,92 @@
 .ic-datetime-sep { height:1px; background: var(--ic-border); margin: 4px 0; }
 
 /* ══════════════════════════════════════════════════════════════
-   TIME PICKER
+   TIME PICKER — drum scroll style Google
 ══════════════════════════════════════════════════════════════ */
-.ic-time-container { padding: 12px 16px 4px; }
-.ic-time-label-row {
-  display:flex; align-items:center; justify-content:center;
-  gap:0; margin-bottom:4px; padding: 0 4px;
+.ic-time-container {
+  padding: 8px 16px 4px;
+  user-select: none;
 }
-.ic-time-label {
-  font-size:11px; color: var(--ic-text-muted); font-weight:700;
-  text-transform:uppercase; letter-spacing:0.05em;
-  width:52px; text-align:center;
+.ic-time-labels {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin-bottom: 6px;
 }
-.ic-time-sep-spacer { width:14px; flex-shrink:0; }
+.ic-time-labels span {
+  font-size: 10px; color: var(--ic-text-muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  width: 60px; text-align: center; flex-shrink: 0;
+}
+.ic-time-colon-space { width: 20px !important; }
+.ic-time-colon-space { flex-shrink: 0; }
 
-.ic-time-picker { display:flex; align-items:center; justify-content:center; gap:4px; padding-bottom:8px; }
-.ic-time-col    { display:flex; flex-direction:column; align-items:center; gap:4px; }
-
-.ic-time-sep {
-  font-size:22px; font-weight:700; color: var(--ic-text-muted);
-  padding: 0 2px; line-height:1; align-self:center; margin-top:4px;
+/* Conteneur drums */
+.ic-time-drums {
+  display: flex; align-items: center; justify-content: center; gap: 0;
 }
-.ic-time-nav {
-  width:28px; height:28px; display:flex; align-items:center; justify-content:center;
-  border:none; background:none; border-radius: var(--ic-radius-sm);
-  cursor:pointer; color: var(--ic-text-muted);
+
+/* Séparateur : entre drums */
+.ic-drum-colon {
+  font-size: 24px; font-weight: 800; color: var(--ic-text);
+  width: 20px; text-align: center; flex-shrink: 0;
+  line-height: 1; margin-bottom: 2px;
+}
+
+/* Colonne drum */
+.ic-drum-col {
+  display: flex; flex-direction: column; align-items: center;
+  width: 60px; gap: 2px; cursor: ns-resize;
+}
+
+/* Flèches haut/bas */
+.ic-drum-arrow {
+  width: 36px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: none; border-radius: var(--ic-radius-sm);
+  cursor: pointer; color: var(--ic-text-muted);
   transition: background var(--ic-t), color var(--ic-t);
+  flex-shrink: 0;
 }
-.ic-time-nav:hover { background: var(--ic-primary-light); color: var(--ic-primary); }
-.ic-time-nav svg   { width:14px; height:14px; display:block; }
-.ic-time-val {
-  width:52px; height:44px; text-align:center;
-  font-size:22px; font-weight:700; font-family: var(--ic-font-mono);
-  color: var(--ic-text); border: 1.5px solid var(--ic-border);
-  border-radius: var(--ic-radius-sm); background: var(--ic-bg);
-  outline:none; transition: border-color var(--ic-t);
-  -moz-appearance: textfield;
+.ic-drum-arrow:hover { background: var(--ic-primary-light); color: var(--ic-primary); }
+.ic-drum-arrow svg   { width: 14px; height: 14px; display: block; pointer-events: none; }
+
+/* Piste des 3 items */
+.ic-drum-track {
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; gap: 0; position: relative;
+  border-radius: var(--ic-radius-sm);
+  overflow: hidden;
 }
-.ic-time-val::-webkit-inner-spin-button,
-.ic-time-val::-webkit-outer-spin-button { -webkit-appearance:none; }
-.ic-time-val:focus { border-color: var(--ic-primary); }
+
+/* Items prev / cur / next */
+.ic-drum-item {
+  width: 100%; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; font-family: var(--ic-font-mono);
+  border-radius: var(--ic-radius-sm);
+  transition: background var(--ic-t), color var(--ic-t), opacity var(--ic-t);
+  cursor: pointer;
+}
+.ic-drum-item.ic-drum-prev,
+.ic-drum-item.ic-drum-next {
+  opacity: 0.28; color: var(--ic-text); font-size: 16px; font-weight: 500;
+}
+.ic-drum-item.ic-drum-prev:hover,
+.ic-drum-item.ic-drum-next:hover {
+  opacity: 0.6; background: var(--ic-surface);
+}
+.ic-drum-item.ic-drum-cur {
+  opacity: 1; color: var(--ic-primary); background: var(--ic-primary-light);
+  font-size: 26px;
+}
+
+/* Animation flash au changement */
+@keyframes ic-drum-tick {
+  0%   { transform: translateY(0);    opacity: 1; }
+  30%  { transform: translateY(-4px); opacity: 0.5; }
+  60%  { transform: translateY(3px);  opacity: 0.7; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+.ic-drum-track.ic-drum-spin { animation: ic-drum-tick 140ms ease-out; }
 
 /* ══════════════════════════════════════════════════════════════
    PICKER ANCHOR — icône calendrier à droite

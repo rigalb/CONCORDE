@@ -1,7 +1,6 @@
 /* ===========================
     Configuration & Variables
     =========================== */
-const MODE = 'reel';
 let currentUser = null;
 let users = [];
 let classes = [];
@@ -41,10 +40,6 @@ let editingActivityId = null;
 let sseConnection = null;
 let sseReconnectTimeout = null;
 
-// Mode DEV
-if(MODE === 'dev') {
-    document.body.classList.add('dev-mode');
-}
 
 
 
@@ -445,20 +440,6 @@ async function login(){
     }
 }
 
-async function demoLogin(username){
-    if(MODE !== 'dev') return;
-    try{
-        const data = await apiPost('/login', {username, password: '123'});
-        if(data.success) {
-            currentUser = data;
-            await fetchAllData();
-            onAuthChange();
-        }
-    } catch(e){
-        console.error('Demo login error:', e);
-    }
-}
-
 async function logout(){
     try{
         closeSSE();
@@ -606,9 +587,6 @@ function onAuthChange(){
 
         closeSSE();
     }
-    $('#count-acts').textContent=activites.length;
-    $('#count-users').textContent=users.length;
-    updateSidePanels();
 }
 
 function cacherToutesPages(){
@@ -2955,13 +2933,13 @@ function updateEmploiDuTempsEleve() {
     Reset form
     =========================== */
 function resetForm(){
-    $('#titre').value='';
+    icSet('titre', '');
     icSet('description', '');
-    $('#salle').value='';
-    $('#effectif').value='';
+    icSet('salle', '');
+    icSet('effectif', '');
     $('#seances-container').innerHTML='';
     icSet('first-hebdoseance', '');
-    $('#nb-seances').value=4;
+    icSet('nb-seances', '4');
     icSet('ouverture', '');
     icSet('fermeture', '');
 
@@ -3350,11 +3328,11 @@ async function ouvrirModalEdition(activiteId) {
         // Attendre que l'onglet soit affiché
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Pré-remplir le formulaire
-        $('#titre').value = activite.titre;
+        // Pré-remplir le formulaire via icSet (label flottant correct)
+        icSet('titre', activite.titre);
         icSet('description', activite.description || '');
-        $('#salle').value = activite.salle;
-        $('#effectif').value = activite.effectif_max;
+        icSet('salle', activite.salle);
+        icSet('effectif', String(activite.effectif_max));
         $('#visible-avant').checked = !!activite.visible_avant;
 
         // Animateur
@@ -3382,50 +3360,32 @@ async function ouvrirModalEdition(activiteId) {
         icSet('ouverture', formatDateInputLocal(new Date(activite.date_ouverture_inscriptions)));
         icSet('fermeture', formatDateInputLocal(new Date(activite.date_fermeture_inscriptions)));
 
-        // Séances
+        // Séances - IC datetime + système pivot
         const seancesContainer = $('#seances-container');
         seancesContainer.innerHTML = '';
 
-        activite.seances.forEach(seance => {
-            const d = document.createElement('div');
-            d.className = 'seance-item manual';
-            d.dataset.seanceId = seance.id; // Stocker l'ID de la séance
+        const seancesTri = [...activite.seances].sort(
+            (a, b) => new Date(a.date_heure) - new Date(b.date_heure)
+        );
 
-            const inp = document.createElement('input');
-            inp.type = 'datetime-local';
-            inp.className = 'seance-input';
-            inp.value = formatDateInputLocal(new Date(seance.date_heure));
-
-            const span = document.createElement('div');
-            span.className = 'small muted';
-            span.style.minWidth = '110px';
-            span.textContent = 'Séance existante';
-
-            const selectDuree = document.createElement('select');
-            selectDuree.className = 'duree-select';
-            selectDuree.innerHTML = `
-                <option value="15">15 min</option>
-                <option value="30">30 min</option>
-                <option value="45">45 min</option>
-                <option value="60">1h</option>
-                <option value="75">1h15</option>
-                <option value="90">1h30</option>
-                <option value="105">1h45</option>
-                <option value="120">2h</option>
-            `;
-            selectDuree.value = seance.duree || 60;
-
-            const del = document.createElement('button');
-            del.className = 'btn ghost';
-            del.textContent = '✖';
-            del.addEventListener('click', () => d.remove());
-
-            d.appendChild(span);
-            d.appendChild(inp);
-            d.appendChild(selectDuree);
-            d.appendChild(del);
-            seancesContainer.appendChild(d);
+        seancesTri.forEach((seance, idx) => {
+            const valISO = formatDateInputLocal(new Date(seance.date_heure));
+            const { div } = _creerLigneSeance({
+                valeurISO: valISO,
+                duree:     seance.duree || 60,
+                seanceId:  seance.id,
+                label:     idx === 0 ? '① Pivot' : `+${idx} sem.`,
+                className: 'manual',
+                onDelete:  () => {
+                    trierSeances();
+                    _rebindPivotSeances(seancesContainer);
+                },
+                onChange: idx === 0 ? () => _propagatePivot(seancesContainer) : null,
+            });
+            seancesContainer.appendChild(div);
         });
+
+        _rebindPivotSeances(seancesContainer);
 
         // Passer en mode édition (modifie les boutons et le titre)
         passerEnModeEdition();
@@ -3590,6 +3550,7 @@ async function modifierActivite() {
     Gestion des séances
     =========================== */
     
+
 /* ── Helper : crée un input datetime-local custom (InputComp) pour les séances ──
    Retourne { wrapper, getValue } pour usage dans ajouterSeanceManuelle/Hebdo.
    getValue() lit directement le .ic-input natif (valeur ISO locale).          */
@@ -3615,32 +3576,133 @@ function creerSeanceDatetimeIC(valeurISO) {
     return ic;
 }
 
+/* ── Helper unique : crée une div.seance-item avec IC datetime, select durée, bouton ✖
+   opts.valeurISO  : string ISO pré-remplissage
+   opts.duree      : int minutes
+   opts.seanceId   : id BDD (mode édition)
+   opts.label      : texte du span gauche
+   opts.className  : 'manual' | autre
+   opts.onDelete   : callback() après suppression
+   opts.onChange   : callback() changement de date (pivot)           */
+function _creerLigneSeance(opts = {}) {
+    const d = document.createElement('div');
+    d.className = 'seance-item ' + (opts.className || 'manual');
+    if (opts.seanceId) d.dataset.seanceId = String(opts.seanceId);
+
+    const span = document.createElement('div');
+    span.className = 'small muted seance-label';
+    span.style.minWidth = '110px';
+    span.textContent = opts.label || 'Séance';
+
+    const ic = creerSeanceDatetimeIC(opts.valeurISO || '');
+    ic.wrapper.classList.add('seance-ic-wrapper');
+    ic.wrapper.dataset.seanceIc = '1';
+    if (opts.onChange) ic.opts.onChange = opts.onChange;
+
+    const selectDuree = document.createElement('select');
+    selectDuree.className = 'duree-select';
+    selectDuree.innerHTML = `
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="45">45 min</option>
+        <option value="60">1h</option>
+        <option value="75">1h15</option>
+        <option value="90">1h30</option>
+        <option value="105">1h45</option>
+        <option value="120">2h</option>
+    `;
+    selectDuree.value = String(opts.duree || 60);
+
+    const del = document.createElement('button');
+    del.className = 'btn ghost';
+    del.textContent = '✖';
+    del.addEventListener('click', (e) => {
+        e.preventDefault();
+        d.remove();
+        if (opts.onDelete) opts.onDelete();
+    });
+
+    d.appendChild(span);
+    d.appendChild(ic.wrapper);
+    d.appendChild(selectDuree);
+    d.appendChild(del);
+    return { div: d, ic, selectDuree, span };
+}
+
+/* Rebinde onChange du pivot (1ère ligne) et met à jour tous les labels.
+   Appelé après chaque suppression de séance.                            */
+function _rebindPivotSeances(container) {
+    const items = Array.from(container.querySelectorAll('.seance-item'));
+    items.forEach((item, idx) => {
+        const labelEl = item.querySelector('.seance-label');
+        if (labelEl) labelEl.textContent = idx === 0 ? '① Pivot' : `+${idx} sem.`;
+
+        const icW  = item.querySelector('.seance-ic-wrapper');
+        const icId = icW?.dataset?.inputId;
+        const ic   = icId && window._IC_instances?.[icId];
+        if (!ic) return;
+
+        ic.opts.onChange = idx === 0
+            ? () => _propagatePivot(container)
+            : null;
+    });
+}
+
+/* Quand la date pivot change, recalcule toutes les suivantes à +idx×7j. */
+function _propagatePivot(container) {
+    const items = Array.from(container.querySelectorAll('.seance-item'));
+    if (items.length < 2) return;
+
+    const firstIcW = items[0].querySelector('.seance-ic-wrapper');
+    const firstId  = firstIcW?.dataset?.inputId;
+    const firstIc  = firstId && window._IC_instances?.[firstId];
+    const pivotVal = firstIc ? firstIc.getISOValue() : '';
+    if (!pivotVal) return;
+
+    const base = new Date(pivotVal);
+    if (isNaN(base.getTime())) return;
+
+    items.forEach((item, idx) => {
+        if (idx === 0) return;
+        const icW  = item.querySelector('.seance-ic-wrapper');
+        const icId = icW?.dataset?.inputId;
+        const ic   = icId && window._IC_instances?.[icId];
+        if (!ic) return;
+        const newDate = new Date(base);
+        newDate.setDate(base.getDate() + idx * 7);
+        ic.setValue(formatDateInputLocal(newDate));
+    });
+
+    trierSeances();
+}
+
+
 function ajouterSeanceHebdo(){
     const container = $('#seances-container');
 
     const start = new Date(icGet('first-hebdoseance'));
     const nbRaw = icGet('nb-seances');
     const nb = parseInt(nbRaw) || parseInt($('#nb-seances')?.value) || 0;
-    const dureeInput = $('#duree-hebdo');
     const duree = parseInt(
         window._IC_instances?.['duree-hebdo']?.getValue() ||
-        dureeInput?.value || 60
+        $('#duree-hebdo')?.value || 60
     );
 
-    if(isNaN(start.getTime()) || !nb || nb<1){
+    if (isNaN(start.getTime()) || !nb || nb < 1) {
         alert('Choisissez une date et un nombre valide');
         return;
     }
 
     const serieDiv = document.createElement('div');
-    serieDiv.className='serie-hebdo';
-    serieDiv.dataset.duree = duree; // Stocker la durée de la série
+    serieDiv.className = 'serie-hebdo';
+    serieDiv.dataset.duree = duree;
 
+    // Bouton "Supprimer série"
     const sup = document.createElement('div');
     sup.className = 'serie-hebdo-header';
     const supBtn = document.createElement('button');
-    supBtn.className='btn secondary';
-    supBtn.textContent='Supprimer série';
+    supBtn.className = 'btn secondary';
+    supBtn.textContent = 'Supprimer série';
     supBtn.addEventListener('click', (e) => {
         e.preventDefault();
         serieDiv.remove();
@@ -3649,165 +3711,46 @@ function ajouterSeanceHebdo(){
     sup.appendChild(supBtn);
     serieDiv.appendChild(sup);
 
-    // Fonction pour recalculer les dates à partir de la première séance
-    function majLabels(serieDiv){
-        const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
-        if(items.length === 0) return;
-        // Lire la valeur du 1er IC
-        const firstIcW = items[0].querySelector('.seance-ic-wrapper');
-        const firstIcId = firstIcW?.dataset?.inputId;
-        const firstIc = firstIcId && window._IC_instances?.[firstIcId];
-        const firstVal = firstIc ? firstIc.getISOValue() : items[0].querySelector('.ic-input')?.value;
-        if(!firstVal) return;
-        const baseDate = new Date(firstVal);
-        items.forEach((item, idx) => {
-            if(idx === 0) return;
-            const icW = item.querySelector('.seance-ic-wrapper');
-            const icId = icW?.dataset?.inputId;
-            const ic = icId && window._IC_instances?.[icId];
-            const newDate = new Date(baseDate);
-            newDate.setDate(baseDate.getDate() + idx * 7);
-            if(ic) ic.setValue(formatDateInputLocal(newDate));
-        });
-        trierSeances();
-    }
-
-    // Fonction pour mettre à jour toutes les durées de la série
-    function majDurees(serieDiv, nouvelleDuree){
-        serieDiv.dataset.duree = nouvelleDuree;
-        const items = Array.from(serieDiv.querySelectorAll('.seance-item'));
-        items.forEach(item => {
-            const select = item.querySelector('.duree-select');
-            if(select) select.value = nouvelleDuree;
-        });
-    }
-
-    // Créer les séances
-    for(let i=0; i<nb; i++){
-        const d = document.createElement('div');
-        d.className='seance-item';
-
-        const span = document.createElement('div');
-        span.className='small muted';
-        span.style.minWidth='110px';
-        span.textContent = i===0 ? 'Séance 1 (début)' : `+${i} semaine(s)`;
-
+    // Créer les séances via _creerLigneSeance (même helper que partout)
+    for (let i = 0; i < nb; i++) {
         const newDate = new Date(start);
         newDate.setDate(start.getDate() + i * 7);
 
-        const ic = creerSeanceDatetimeIC(formatDateInputLocal(newDate));
-        ic.wrapper.classList.add('seance-ic-wrapper');
-        ic.wrapper.dataset.seanceIc = '1';
-
-        // Select durée
-        const selectDuree = document.createElement('select');
-        selectDuree.className='duree-select';
-        selectDuree.innerHTML = `
-            <option value="15">15 min</option>
-            <option value="30">30 min</option>
-            <option value="45">45 min</option>
-            <option value="60">1h</option>
-            <option value="75">1h15</option>
-            <option value="90">1h30</option>
-            <option value="105">1h45</option>
-            <option value="120">2h</option>
-        `;
-        selectDuree.value = duree;
-
-        // Si c'est la première séance, changer la durée affecte toute la série
-        if(i === 0){
-            ic.opts.onChange = () => majLabels(serieDiv);
-            selectDuree.onchange = (e) => majDurees(serieDiv, e.target.value);
-        } else {
-            // Pour les autres, synchroniser avec la première
-            selectDuree.onchange = (e) => { majDurees(serieDiv, e.target.value); };
-        }
-
-        const del = document.createElement('button');
-        del.className='btn ghost';
-        del.textContent='✖';
-        del.addEventListener('click', (e) => {
-            e.preventDefault();
-            d.remove();
-
-            const remainingItems = serieDiv.querySelectorAll('.seance-item');
-            if(remainingItems.length > 0){
-                remainingItems.forEach((item, idx) => {
-                    const span = item.querySelector('.small.muted');
-                    if (span) span.textContent = idx === 0 ? 'Séance 1 (début)' : `+${idx} semaine(s)`;
-                    // rebrancher onChange sur le premier IC
-                    if(idx === 0){
-                        const icW = item.querySelector('.seance-ic-wrapper');
-                        const icId = icW && icW.dataset.inputId;
-                        const firstIc = icId && window._IC_instances?.[icId];
-                        if (firstIc) firstIc.opts.onChange = () => majLabels(serieDiv);
-                        const sel = item.querySelector('.duree-select');
-                        if (sel) sel.onchange = (e) => majDurees(serieDiv, e.target.value);
-                    }
-                });
-            } else {
-                serieDiv.remove();
-            }
-            trierSeances();
+        const { div, ic, selectDuree } = _creerLigneSeance({
+            valeurISO: formatDateInputLocal(newDate),
+            duree,
+            label:     i === 0 ? '① Pivot' : `+${i} sem.`,
+            className: 'seance-item',
+            onDelete: () => {
+                const remaining = serieDiv.querySelectorAll('.seance-item');
+                if (remaining.length === 0) serieDiv.remove();
+                trierSeances();
+                _rebindPivotSeances(serieDiv);
+            },
         });
 
-        d.appendChild(span);
-        d.appendChild(ic.wrapper);
-        d.appendChild(selectDuree);
-        d.appendChild(del);
-        serieDiv.appendChild(d);
+        // Le pivot (i===0) propage via _propagatePivot
+        // Les autres synchronisent la durée de toute la série
+        if (i === 0) {
+            ic.opts.onChange = () => _propagatePivot(serieDiv);
+            selectDuree.addEventListener('change', (e) => _majDureeSerie(serieDiv, e.target.value));
+        } else {
+            selectDuree.addEventListener('change', (e) => _majDureeSerie(serieDiv, e.target.value));
+        }
+
+        serieDiv.appendChild(div);
     }
 
     container.appendChild(serieDiv);
-    trierSeances(); //
-}
-
-function ajouterSeanceManuelle(){
-    const container = $('#seances-container');
-    const d = document.createElement('div');
-    d.className='seance-item manual';
-
-    const span = document.createElement('div');
-    span.className='small muted';
-    span.style.minWidth='110px';
-    span.textContent='Ajout manuel';
-
-    const ic = creerSeanceDatetimeIC('');
-    ic.wrapper.classList.add('seance-ic-wrapper');
-    // Marquer le wrapper pour que creerActivite/modifierActivite puisse lire la valeur
-    ic.wrapper.dataset.seanceIc = '1';
-    ic.opts.onChange = () => trierSeances();
-
-    // Select durée
-    const selectDuree = document.createElement('select');
-    selectDuree.className='duree-select';
-    selectDuree.innerHTML = `
-        <option value="15">15 min</option>
-        <option value="30">30 min</option>
-        <option value="45">45 min</option>
-        <option value="60" selected>1h</option>
-        <option value="75">1h15</option>
-        <option value="90">1h30</option>
-        <option value="105">1h45</option>
-        <option value="120">2h</option>
-    `;
-
-    const del = document.createElement('button');
-    del.className='btn ghost';
-    del.textContent='✖';
-    del.addEventListener('click', (e) => {
-        e.preventDefault();
-        d.remove();
-        trierSeances();
-    });
-
-    d.appendChild(span);
-    d.appendChild(ic.wrapper);
-    d.appendChild(selectDuree);
-    d.appendChild(del);
-    container.appendChild(d);
     trierSeances();
 }
+
+/* Synchronise la durée de toutes les séances d'une série hebdo */
+function _majDureeSerie(serieDiv, nouvelleDuree) {
+    serieDiv.dataset.duree = nouvelleDuree;
+    serieDiv.querySelectorAll('.duree-select').forEach(sel => sel.value = nouvelleDuree);
+}
+
 
 function trierSeances() {
     const container = $('#seances-container');
@@ -4219,17 +4162,6 @@ function switchProfTab(tabName) {
 /* ===========================
     Sidebar panels
     =========================== */
-function updateSidePanels(){
-    const raccourcis = $('#sidebar-raccourcis');
-    if (raccourcis) raccourcis.style.display = MODE === 'dev' ? 'block' : 'none';
-
-    const statut = $('#sidebar-statut');
-    if (statut) statut.style.display = MODE === 'dev' ? 'block' : 'none';
-}
-
-
-
-
 
 /* Initialise tous les event listeners statiques (présents dès le chargement) */
 
@@ -4611,7 +4543,6 @@ window.addEventListener('unhandledrejection', (e) => {
         }
 
         onAuthChange();
-        updateSidePanels();
         console.log('[OK] Application initialisée');
     } catch(e){
         console.error('[KO] Erreur lors de l\'initialisation:', e);

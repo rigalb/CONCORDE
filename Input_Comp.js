@@ -149,6 +149,9 @@ class InputComp {
       width:        null,
       minWidth:     null,
       maxWidth:     null,
+      // Affichage formaté (pour datetime avec isoFormat)
+      // 'dd/mm/yyyy hh:mm' pour afficher jj/mm/aaaa hh:mm tout en stockant ISO
+      displayFormat: null,
       // Callbacks
       onChange:     null,
       onFocus:      null,
@@ -158,9 +161,10 @@ class InputComp {
 
     this.opts        = Object.assign({}, defaults, options);
     this._value      = this.opts.type === 'multiselect' ? [] : (this.opts.value || '');
-    this._pickerDate = null;
-    this._viewMode   = 'days';
-    this._open       = false;
+    this._pickerDate  = null;
+    this._viewMode    = 'days';
+    this._yearPage    = null;   // première année de la grille années (multiple de 12)
+    this._open        = false;
     this._portalEl   = null;
 
     this._source = typeof element === 'string' ? document.querySelector(element) : element;
@@ -349,7 +353,9 @@ class InputComp {
   _mkSelectDrop() {
     const o = this.opts;
     const search = o.searchable ? `<div class="ic-drop-search-wrap"><input type="text" class="ic-drop-search" placeholder="Rechercher…" autocomplete="off"></div>` : '';
-    const rows   = [{ value:'', label:o.emptyLabel }, ...o.options].map(opt => {
+    const hasEmpty = o.options.some(op => op.value === '' || op.value === null || op.value === undefined);
+    const baseList = hasEmpty ? [...o.options] : [{ value:'', label:o.emptyLabel }, ...o.options];
+    const rows   = baseList.map(opt => {
       const dot = opt.color ? `<span class="ic-option-dot" data-color="${opt.color}"></span>` : '';
       const ic  = opt.icon  ? `<span class="ic-opt-icon">${this._resolveIcon(opt.icon)}</span>` : '';
       return `<div class="ic-select-option${opt.disabled?' ic-disabled':''}" data-value="${opt.value||''}" role="option" tabindex="-1">
@@ -400,7 +406,8 @@ class InputComp {
     if      (mode==='days')   body = this._calDays(y, m);
     else if (mode==='months') body = this._calMonths(y);
     else                      body = this._calYears(y);
-    const title = mode==='days' ? `${FR_MONTHS_LONG[m]} ${y}` : mode==='months' ? `${y}` : `${y-5} – ${y+6}`;
+    const yp = (this._yearPage !== null) ? this._yearPage : (y - (y % 12));
+    const title = mode==='days' ? `${FR_MONTHS_LONG[m]} ${y}` : mode==='months' ? `${y}` : `${yp} – ${yp+11}`;
     return `<div class="ic-cal-container">
       <div class="ic-cal-header">
         <button type="button" class="ic-cal-nav ic-cal-prev">${IC_SVG.chevronLeft}</button>
@@ -449,35 +456,56 @@ class InputComp {
   }
 
   _calYears(base) {
-    const s=base-5; let h='';
-    for (let y=s; y<=s+11; y++) {
-      const sel=this._pickerDate&&this._pickerDate.getFullYear()===y;
+    // _yearPage : ancre stable en multiple de 12 pour navigation cohérente
+    if (this._yearPage === null) this._yearPage = base - (base % 12);
+    const s = this._yearPage; let h = '';
+    for (let y = s; y < s + 12; y++) {
+      const sel = this._pickerDate && this._pickerDate.getFullYear() === y;
       h += `<div class="ic-cal-year-cell${sel?' ic-selected':''}" data-year="${y}">${y}</div>`;
     }
     return `<div class="ic-cal-years">${h}</div>`;
   }
 
   _mkTime() {
-    const d=this._pickerDate;
-    const h=d?String(d.getHours()).padStart(2,'0'):'00';
-    const m=d?String(d.getMinutes()).padStart(2,'0'):'00';
-    const s=d?String(d.getSeconds()).padStart(2,'0'):'00';
-    const ss=this.opts.showSeconds;
-    const col=(val,cls,lbl)=>`<div class="ic-time-col">
-      <button type="button" class="ic-time-nav ${cls}-up">${IC_SVG.chevronUp}</button>
-      <input type="number" class="ic-time-val ${cls}" value="${val}" min="0" aria-label="${lbl}">
-      <button type="button" class="ic-time-nav ${cls}-down">${IC_SVG.chevronDown}</button>
-    </div>`;
+    const d   = this._pickerDate;
+    const hv  = d ? d.getHours()   : 0;
+    const mv  = d ? d.getMinutes() : 0;
+    const sv  = d ? d.getSeconds() : 0;
+    const ss  = this.opts.showSeconds;
+
+    const drum = (cur, max, cls, lbl) => {
+      // Génère 3 items visibles : prev, cur, next (circulaire)
+      const prev = (cur - 1 + max) % max;
+      const next = (cur + 1) % max;
+      const fmt  = v => String(v).padStart(2, '0');
+      return `
+        <div class="ic-drum-col" data-drum="${cls}" data-max="${max}" aria-label="${lbl}">
+          <button type="button" class="ic-drum-arrow ic-drum-up" data-drum="${cls}" tabindex="-1">
+            ${IC_SVG.chevronUp}
+          </button>
+          <div class="ic-drum-track" data-drum="${cls}">
+            <div class="ic-drum-item ic-drum-prev" data-val="${prev}">${fmt(prev)}</div>
+            <div class="ic-drum-item ic-drum-cur"  data-val="${cur}">${fmt(cur)}</div>
+            <div class="ic-drum-item ic-drum-next" data-val="${next}">${fmt(next)}</div>
+          </div>
+          <button type="button" class="ic-drum-arrow ic-drum-down" data-drum="${cls}" tabindex="-1">
+            ${IC_SVG.chevronDown}
+          </button>
+        </div>`;
+    };
+
     return `<div class="ic-time-container">
-      <div class="ic-time-label-row">
-        <span class="ic-time-label">Heure</span><span class="ic-time-sep-spacer"></span>
-        <span class="ic-time-label">Minute</span>
-        ${ss?'<span class="ic-time-sep-spacer"></span><span class="ic-time-label">Sec.</span>':''}
+      <div class="ic-time-labels">
+        <span>Heure</span>
+        <span class="ic-time-colon-space"></span>
+        <span>Minute</span>
+        ${ss ? '<span class="ic-time-colon-space"></span><span>Sec.</span>' : ''}
       </div>
-      <div class="ic-time-picker">
-        ${col(h,'ic-time-h','heure')}<span class="ic-time-sep">:</span>
-        ${col(m,'ic-time-m','minute')}
-        ${ss?`<span class="ic-time-sep">:</span>${col(s,'ic-time-s','seconde')}`:''}
+      <div class="ic-time-drums">
+        ${drum(hv, 24, 'h', 'heure')}
+        <span class="ic-drum-colon">:</span>
+        ${drum(mv, 60, 'm', 'minute')}
+        ${ss ? `<span class="ic-drum-colon">:</span>${drum(sv, 60, 's', 'seconde')}` : ''}
       </div>
     </div>`;
   }
@@ -674,6 +702,7 @@ class InputComp {
     this._open=true;
     if(!this._pickerDate) this._pickerDate=new Date();
     this._viewMode='days';
+    this._yearPage=null;
     const anchor=this.wrapper.querySelector('.ic-picker-anchor');
     const drop=this._htmlToDom(this._mkPickerDrop());
     this._portalEl=drop;
@@ -707,19 +736,48 @@ class InputComp {
       }
 
       const mon=t.closest('.ic-cal-month-cell');
-      if(mon){ if(!this._pickerDate) this._pickerDate=new Date(); this._pickerDate.setMonth(+mon.dataset.month); this._viewMode='days'; rerender(); return; }
+      if(mon){
+        if(!this._pickerDate) this._pickerDate=new Date();
+        const cur=this._pickerDate;
+        this._pickerDate=new Date(cur.getFullYear(),+mon.dataset.month,
+          Math.min(cur.getDate(),new Date(cur.getFullYear(),+mon.dataset.month+1,0).getDate()),
+          cur.getHours(),cur.getMinutes(),cur.getSeconds());
+        this._viewMode='days'; rerender(); return;
+      }
 
       const yr=t.closest('.ic-cal-year-cell');
-      if(yr){ if(!this._pickerDate) this._pickerDate=new Date(); this._pickerDate.setFullYear(+yr.dataset.year); this._viewMode='months'; rerender(); return; }
-
-      const tnav=t.closest('.ic-time-nav');
-      if(tnav){
+      if(yr){
         if(!this._pickerDate) this._pickerDate=new Date();
-        const up=tnav.className.includes('-up'), d=up?1:-1;
-        if(tnav.className.includes('ic-time-h')) this._pickerDate.setHours((this._pickerDate.getHours()+d+24)%24);
-        else if(tnav.className.includes('ic-time-m')) this._pickerDate.setMinutes((this._pickerDate.getMinutes()+d+60)%60);
-        else this._pickerDate.setSeconds((this._pickerDate.getSeconds()+d+60)%60);
-        rerender(); return;
+        const cur=this._pickerDate;
+        this._pickerDate=new Date(+yr.dataset.year,cur.getMonth(),
+          Math.min(cur.getDate(),new Date(+yr.dataset.year,cur.getMonth()+1,0).getDate()),
+          cur.getHours(),cur.getMinutes(),cur.getSeconds());
+        this._yearPage=null; this._viewMode='months'; rerender(); return;
+      }
+
+      // Drum arrows
+      const darrow = t.closest('.ic-drum-arrow');
+      if (darrow) {
+        if (!this._pickerDate) this._pickerDate = new Date();
+        const drum  = darrow.dataset.drum;
+        const max   = parseInt(darrow.closest('.ic-drum-col').dataset.max);
+        const isUp  = darrow.classList.contains('ic-drum-up');
+        const delta = isUp ? -1 : 1;
+        this._drumStep(drum, delta, max);
+        this._rerenderDrums(drop);
+        return;
+      }
+      // Click direct sur un item drum prev/next
+      const ditem = t.closest('.ic-drum-item:not(.ic-drum-cur)');
+      if (ditem) {
+        if (!this._pickerDate) this._pickerDate = new Date();
+        const col   = ditem.closest('.ic-drum-col');
+        const drum  = col.dataset.drum;
+        const max   = parseInt(col.dataset.max);
+        const delta = ditem.classList.contains('ic-drum-prev') ? -1 : 1;
+        this._drumStep(drum, delta, max);
+        this._rerenderDrums(drop);
+        return;
       }
 
       if(t.closest('.ic-cal-btn-ok'))    { this._confirmPicker(); close(); return; }
@@ -727,22 +785,110 @@ class InputComp {
       if(t.closest('.ic-cal-btn-clear')) { this._pickerDate=null; this.setValue(''); close(); return; }
     });
 
-    drop.addEventListener('change', e=>{
-      const t=e.target; if(!t.classList.contains('ic-time-val'))return;
-      if(!this._pickerDate) this._pickerDate=new Date();
-      const v=Math.max(0,parseInt(t.value)||0);
-      if(t.classList.contains('ic-time-h')) this._pickerDate.setHours(Math.min(23,v));
-      else if(t.classList.contains('ic-time-m')) this._pickerDate.setMinutes(Math.min(59,v));
-      else this._pickerDate.setSeconds(Math.min(59,v));
-      rerender();
-    });
+    // Scroll molette sur les drums
+    drop.addEventListener('wheel', e => {
+      const col = e.target.closest('.ic-drum-col, .ic-drum-track, .ic-drum-item');
+      if (!col) return;
+      const drumCol = col.closest('.ic-drum-col') || col;
+      if (!drumCol.dataset.drum) return;
+      e.preventDefault();
+      if (!this._pickerDate) this._pickerDate = new Date();
+      const drum = drumCol.dataset.drum;
+      const max  = parseInt(drumCol.dataset.max);
+      this._drumStep(drum, e.deltaY > 0 ? 1 : -1, max);
+      this._rerenderDrums(drop);
+    }, { passive: false });
+
+    // Touch swipe vertical sur les drums
+    drop.addEventListener('touchstart', e => {
+      const col = e.target.closest('.ic-drum-col');
+      if (!col) return;
+      col._touchY = e.touches[0].clientY;
+    }, { passive: true });
+    drop.addEventListener('touchmove', e => {
+      const col = e.target.closest('.ic-drum-col');
+      if (!col || col._touchY === undefined) return;
+      e.preventDefault();
+    }, { passive: false });
+    drop.addEventListener('touchend', e => {
+      const col = e.target.closest('.ic-drum-col');
+      if (!col || col._touchY === undefined) return;
+      const dy = col._touchY - e.changedTouches[0].clientY;
+      if (Math.abs(dy) < 10) return;
+      if (!this._pickerDate) this._pickerDate = new Date();
+      const drum = col.dataset.drum;
+      const max  = parseInt(col.dataset.max);
+      this._drumStep(drum, dy > 0 ? 1 : -1, max);
+      this._rerenderDrums(drop);
+      delete col._touchY;
+    }, { passive: true });
   }
 
   _calNav(d) {
-    if(!this._pickerDate) this._pickerDate=new Date();
-    if(this._viewMode==='days')   this._pickerDate.setMonth(this._pickerDate.getMonth()+d);
-    else if(this._viewMode==='months') this._pickerDate.setFullYear(this._pickerDate.getFullYear()+d);
-    else this._pickerDate.setFullYear(this._pickerDate.getFullYear()+d*12);
+    if (!this._pickerDate) this._pickerDate = new Date();
+    if (this._viewMode === 'days') {
+      // Navigation mois : changer seulement le mois sans accumuler de décalage
+      const cur = this._pickerDate;
+      const y = cur.getFullYear(), m = cur.getMonth() + d;
+      // Normaliser : setFullYear(y, m) gère les débordements jan/dec
+      const t = new Date(cur);
+      t.setDate(1);
+      t.setFullYear(y + Math.floor(m / 12), ((m % 12) + 12) % 12);
+      this._pickerDate = new Date(
+        t.getFullYear(), t.getMonth(),
+        Math.min(cur.getDate(), new Date(t.getFullYear(), t.getMonth()+1, 0).getDate()),
+        cur.getHours(), cur.getMinutes(), cur.getSeconds()
+      );
+    } else if (this._viewMode === 'months') {
+      // Navigation année
+      this._pickerDate = new Date(
+        this._pickerDate.getFullYear() + d, this._pickerDate.getMonth(),
+        this._pickerDate.getDate(), this._pickerDate.getHours(),
+        this._pickerDate.getMinutes(), this._pickerDate.getSeconds()
+      );
+    } else {
+      // Navigation page d'années : avancer/reculer de 12 ans
+      if (this._yearPage === null) {
+        const base = this._pickerDate.getFullYear();
+        this._yearPage = base - (base % 12);
+      }
+      this._yearPage += d * 12;
+    }
+  }
+
+  _drumStep(drum, delta, max) {
+    const p = this._pickerDate;
+    if (drum === 'h') p.setHours((p.getHours() + delta + max) % max);
+    else if (drum === 'm') p.setMinutes((p.getMinutes() + delta + max) % max);
+    else p.setSeconds((p.getSeconds() + delta + max) % max);
+  }
+
+  /* Met à jour uniquement les drums (pas le calendrier entier) */
+  _rerenderDrums(drop) {
+    const p = this._pickerDate;
+    drop.querySelectorAll('.ic-drum-col').forEach(col => {
+      const drum = col.dataset.drum;
+      const max  = parseInt(col.dataset.max);
+      let   cur;
+      if (drum === 'h') cur = p.getHours();
+      else if (drum === 'm') cur = p.getMinutes();
+      else cur = p.getSeconds();
+      const prev = (cur - 1 + max) % max;
+      const next = (cur + 1) % max;
+      const fmt  = v => String(v).padStart(2, '0');
+      const track = col.querySelector('.ic-drum-track');
+      if (!track) return;
+      // Animation flash
+      track.classList.remove('ic-drum-spin');
+      void track.offsetWidth; // reflow
+      track.classList.add('ic-drum-spin');
+      track.querySelector('.ic-drum-prev').textContent = fmt(prev);
+      track.querySelector('.ic-drum-prev').dataset.val = prev;
+      track.querySelector('.ic-drum-cur').textContent  = fmt(cur);
+      track.querySelector('.ic-drum-cur').dataset.val  = cur;
+      track.querySelector('.ic-drum-next').textContent = fmt(next);
+      track.querySelector('.ic-drum-next').dataset.val = next;
+    });
   }
 
   _confirmPicker() {
@@ -753,6 +899,23 @@ class InputComp {
     this.setValue(val);
   }
 
+  _formatDisplayDatetime(isoStr) {
+    // Convertit '2025-01-15T14:30' → '15 / 01 / 2025  14 : 30'
+    try {
+      const [datePart, timePart] = isoStr.split('T');
+      if (!datePart) return isoStr;
+      const [y, mo, d] = datePart.split('-');
+      if (!timePart) return `${d} / ${mo} / ${y}`;
+      const [h, mn] = timePart.split(':');
+      return `${d} / ${mo} / ${y}  ${h} : ${mn}`;
+    } catch(e) { return isoStr; }
+  }
+  _formatDisplayDate(isoStr) {
+    try {
+      const [y, mo, d] = isoStr.split('-');
+      return `${d} / ${mo} / ${y}`;
+    } catch(e) { return isoStr; }
+  }
   _fmtD(d){
     if (this.opts.isoFormat) {
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -803,7 +966,17 @@ class InputComp {
     this._value=val;
     if(['date','time','datetime'].includes(t)){
       const disp=this.wrapper.querySelector('.ic-picker-display'), hid=this.wrapper.querySelector('input[type="hidden"]');
-      if(disp){ disp.querySelector('.ic-picker-value').textContent=val||''; disp.classList.toggle('ic-placeholder-shown',!val); }
+      if(disp){
+        let dispVal = val || '';
+        // Formatage français automatique pour datetime et date (isoFormat ou displayFormat explicite)
+        if (val && t === 'datetime') {
+          dispVal = this._formatDisplayDatetime(val);
+        } else if (val && t === 'date') {
+          dispVal = this._formatDisplayDate(val);
+        }
+        disp.querySelector('.ic-picker-value').textContent = dispVal;
+        disp.classList.toggle('ic-placeholder-shown', !val);
+      }
       if(hid) hid.value=val;
     } else if(t!=='select'&&t!=='multiselect') {
       const inp=this.wrapper.querySelector('.ic-input'); if(inp&&inp.value!==val) inp.value=val;
@@ -928,6 +1101,9 @@ class InputComp {
   /** Remplace toutes les options */
   setOptions(items) {
     this.opts.options = [...items];
+    // Fermer et supprimer le portal existant pour forcer sa recréation au prochain open
+    this._closePortal();
+    if (this._portalEl) { this._portalEl.remove(); this._portalEl = null; }
   }
 
   /** Réinitialise toutes les sélections */
