@@ -124,18 +124,77 @@ app.config.update(
 )
 
 DB = "essaie.db"
+VALIDATION_PROF_ECHANGES = True
 
 def init_db():
-  """Active le mode WAL pour SQLite (meilleures perfs en concurrence)."""
+  """Active WAL pour SQLite (meilleures perfs en concurrence). + crée les tables échanges si besoin."""
   try:
     conn = sqlite3.connect(DB)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA cache_size=-32000;")
     conn.execute("PRAGMA temp_store=MEMORY;")
+
+    # -- Colonnes échanges sur groupes_exclusivite (idempotent) --
+    try:
+      conn.execute("ALTER TABLE groupes_exclusivite ADD COLUMN echanges_actifs INTEGER DEFAULT 0")
+    except Exception:
+      pass
+
+    # -- Table vœux --
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS voeux_echange (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        eleve_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        groupe_id            INTEGER NOT NULL REFERENCES groupes_exclusivite(id) ON DELETE CASCADE,
+        activite_actuelle_id INTEGER NOT NULL REFERENCES activites(id) ON DELETE CASCADE,
+        activite_cible_id    INTEGER NOT NULL REFERENCES activites(id) ON DELETE CASCADE,
+        statut               TEXT CHECK(statut IN ('actif','en_procedure','realise','annule'))
+                             DEFAULT 'actif',
+        created_at           TEXT DEFAULT (datetime('now')),
+        updated_at           TEXT DEFAULT (datetime('now'))
+      )
+    """)
+
+    # -- Table procédures --
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS procedures_echange (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        voeu_a_id       INTEGER NOT NULL REFERENCES voeux_echange(id) ON DELETE CASCADE,
+        voeu_b_id       INTEGER NOT NULL REFERENCES voeux_echange(id) ON DELETE CASCADE,
+        statut          TEXT CHECK(statut IN ('en_attente','accord_b','valide','refuse','annule'))
+                        DEFAULT 'en_attente',
+        created_at      TEXT DEFAULT (datetime('now')),
+        date_accord_b   TEXT,
+        date_validation TEXT,
+        valide_par      INTEGER REFERENCES users(id)
+      )
+    """)
+
+    # -- Index de performance --
+    for ddl in [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_voeux_eleve_groupe_actif ON voeux_echange(eleve_id, groupe_id) WHERE statut IN ('actif','en_procedure')",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_eleve_groupe  ON voeux_echange(eleve_id, groupe_id)",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_actuelle      ON voeux_echange(activite_actuelle_id)",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_cible         ON voeux_echange(activite_cible_id)",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_eleve         ON voeux_echange(eleve_id)",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_groupe        ON voeux_echange(groupe_id)",
+      "CREATE INDEX IF NOT EXISTS idx_voeux_statut        ON voeux_echange(statut)",
+      "CREATE INDEX IF NOT EXISTS idx_procedures_voeu_a   ON procedures_echange(voeu_a_id)",
+      "CREATE INDEX IF NOT EXISTS idx_procedures_voeu_b   ON procedures_echange(voeu_b_id)",
+      "CREATE INDEX IF NOT EXISTS idx_procedures_statut   ON procedures_echange(statut)",
+      "CREATE INDEX IF NOT EXISTS idx_inscriptions_eleve  ON inscriptions(eleve_id)",
+      "CREATE INDEX IF NOT EXISTS idx_presences_eleve_seance ON presences(eleve_id, seance_id)",
+      "CREATE INDEX IF NOT EXISTS idx_users_classe_role   ON users(classe_id, role)",
+      "CREATE INDEX IF NOT EXISTS idx_activites_prof      ON activites(prof_id)",
+    ]:
+      try: conn.execute(ddl)
+      except Exception: pass
+
+    conn.commit()
     conn.close()
   except Exception:
-    pass  # logger pas encore initialise a ce stade
+    pass  # logger pas encore initialisé à ce stade
 
 # Configuration logging sécurisé
 logging.basicConfig(
@@ -393,7 +452,7 @@ def login():
     conn.close()
 
     if user and check_password_hash(user["password_hash"], password):
-
+      """
       # --- Détection première connexion élève ---
       if user["role"] == "eleve" and PasswordResetManager.is_first_login(user["id"]):
         # On stocke le user_id en sessionb temporaire sans envoyer de code.
@@ -407,7 +466,7 @@ def login():
           "success": True,
           "first_login": True,
           "user_id": user["id"]
-        })
+        })"""
 
       # --- Connexion normale ---
       session["user_id"] = user["id"]
@@ -1463,6 +1522,20 @@ def desinscrire_seance():
     result = cur.execute("DELETE FROM presences WHERE eleve_id=? AND seance_id=?",
                         (eleve_id, seance_id))
     affected = result.rowcount
+
+    # Nettoyer inscriptions si l'élève n'a plus aucune présence dans cette activité
+    cur.execute("""
+        DELETE FROM inscriptions
+        WHERE eleve_id = ?
+          AND activite_id = (SELECT activite_id FROM seances WHERE id = ?)
+          AND NOT EXISTS (
+              SELECT 1 FROM presences p
+              JOIN seances s ON s.id = p.seance_id
+              WHERE p.eleve_id = ?
+                AND s.activite_id = (SELECT activite_id FROM seances WHERE id = ?)
+          )
+    """, (eleve_id, seance_id, eleve_id, seance_id))
+
     conn.commit()
     conn.close()
 
@@ -1931,8 +2004,9 @@ def create_groupe():
       return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
 
     # Créer le groupe
-    cur.execute("INSERT INTO groupes_exclusivite (nom, description) VALUES (?, ?)",
-                (nom, description))
+    echanges_actifs = 1 if data.get("echanges_actifs") else 0
+    cur.execute("INSERT INTO groupes_exclusivite (nom, description, echanges_actifs) VALUES (?, ?, ?)",
+                (nom, description, echanges_actifs))
     groupe_id = cur.lastrowid
 
     # Associer les classes
@@ -2036,10 +2110,11 @@ def update_groupe(groupe_id):
       conn.close()
       return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
 
+    echanges_actifs = 1 if data.get("echanges_actifs") else 0
     # Mettre à jour le groupe
     cur.execute(
-      "UPDATE groupes_exclusivite SET nom=?, description=? WHERE id=?",
-      (nom, description, groupe_id)
+      "UPDATE groupes_exclusivite SET nom=?, description=?, echanges_actifs=? WHERE id=?",
+      (nom, description, echanges_actifs, groupe_id)
     )
 
     # Supprimer les anciennes associations
@@ -2822,6 +2897,425 @@ def serve_static(filename):
     return send_from_directory(folder, fname)
   else:
     return "File not found", 404
+
+
+# ============================================================
+# ÉCHANGES
+# ============================================================
+
+@app.route("/echanges/voeux/<int:groupe_id>", methods=["GET"])
+@login_required
+def get_voeux(groupe_id):
+  """Tous les vœux actifs d'un groupe (vue élève)."""
+  try:
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    if not groupe or not groupe["echanges_actifs"]:
+      conn.close()
+      return jsonify({"error": "Groupe introuvable ou échanges désactivés"}), 404
+
+    rows = cur.execute("""
+      SELECT v.id, v.eleve_id, v.activite_actuelle_id, v.activite_cible_id,
+             v.statut, v.created_at AS date_creation,
+             u.prenom, u.nom, u.classe_id,
+             c.nom     AS classe_nom,
+             ao.titre  AS activite_actuelle_titre,
+             ac2.titre AS activite_cible_titre
+      FROM voeux_echange v
+      JOIN users u   ON u.id   = v.eleve_id
+      LEFT JOIN classes c   ON c.id  = u.classe_id
+      JOIN activites ao     ON ao.id = v.activite_actuelle_id
+      JOIN activites ac2    ON ac2.id = v.activite_cible_id
+      WHERE v.groupe_id = ? AND v.statut IN ('actif', 'en_procedure')
+      ORDER BY v.created_at DESC
+    """, (groupe_id,)).fetchall()
+
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+  except Exception as e:
+    logger.error(f"Erreur get_voeux: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/voeux", methods=["POST"])
+@login_required
+def create_voeu():
+  """Formuler un vœu d'échange."""
+  try:
+    data = request.json
+    eleve_id   = session["user_id"]
+    groupe_id  = safe_int(data.get("groupe_id"), min_val=1)
+    cible_id   = safe_int(data.get("activite_cible_id"), min_val=1)
+
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    if not groupe or not groupe["echanges_actifs"]:
+      conn.close()
+      return jsonify({"error": "Échanges non autorisés pour ce groupe"}), 400
+
+    # Trouver l'activité actuelle de l'élève dans ce groupe (via presences, source de vérité)
+    actuelle = cur.execute("""
+      SELECT DISTINCT a.id FROM presences p
+      JOIN seances s ON s.id = p.seance_id
+      JOIN activites a ON a.id = s.activite_id
+      WHERE p.eleve_id = ? AND a.groupe_id = ?
+      LIMIT 1
+    """, (eleve_id, groupe_id)).fetchone()
+
+    if not actuelle:
+      conn.close()
+      return jsonify({"error": "Vous n'êtes pas inscrit dans ce groupe"}), 400
+
+    actuelle_id = actuelle["id"]
+
+    # L'activité cible doit appartenir au groupe et être différente de l'actuelle
+    cible = cur.execute(
+      "SELECT 1 FROM activites WHERE id=? AND groupe_id=? AND id!=?",
+      (cible_id, groupe_id, actuelle_id)
+    ).fetchone()
+    if not cible:
+      conn.close()
+      return jsonify({"error": "Activité cible invalide ou identique à votre activité actuelle"}), 400
+
+    # L'élève n'est pas déjà inscrit à la cible
+    deja = cur.execute("""
+      SELECT 1 FROM presences p
+      JOIN seances s ON s.id = p.seance_id
+      WHERE p.eleve_id = ? AND s.activite_id = ?
+      LIMIT 1
+    """, (eleve_id, cible_id)).fetchone()
+    if deja:
+      conn.close()
+      return jsonify({"error": "Vous êtes déjà inscrit à cette activité"}), 400
+
+    try:
+      cur.execute("""
+        INSERT INTO voeux_echange
+          (eleve_id, groupe_id, activite_actuelle_id, activite_cible_id, statut, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'actif', datetime('now'), datetime('now'))
+      """, (eleve_id, groupe_id, actuelle_id, cible_id))
+      conn.commit()
+    except sqlite3.IntegrityError:
+      conn.close()
+      return jsonify({"error": "Vous avez déjà un vœu actif dans ce groupe. Retirez-le d'abord."}), 400
+
+    voeu_id = cur.lastrowid
+    conn.close()
+    sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+    return jsonify({"success": True, "id": voeu_id})
+  except Exception as e:
+    logger.error(f"Erreur create_voeu: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/voeux/<int:voeu_id>", methods=["DELETE"])
+@login_required
+def delete_voeu(voeu_id):
+  """Retirer un vœu."""
+  try:
+    eleve_id = session["user_id"]
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    voeu = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (voeu_id,)).fetchone()
+    if not voeu:
+      conn.close()
+      return jsonify({"error": "Vœu introuvable"}), 404
+    if voeu["eleve_id"] != eleve_id and session.get("role") not in ("prof","admin"):
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    groupe_id = voeu["groupe_id"]
+    # Annuler les procédures en cours liées à ce vœu
+    cur.execute("""
+      UPDATE procedures_echange SET statut='annule'
+      WHERE (voeu_a_id=? OR voeu_b_id=?) AND statut NOT IN ('valide','annule')
+    """, (voeu_id, voeu_id))
+    cur.execute("DELETE FROM voeux_echange WHERE id=?", (voeu_id,))
+    conn.commit()
+    conn.close()
+    sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+    return jsonify({"success": True})
+  except Exception as e:
+    logger.error(f"Erreur delete_voeu: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/procedures", methods=["POST"])
+@login_required
+def create_procedure():
+  """Initier une procédure d'échange (élève A propose à élève B)."""
+  try:
+    data      = request.json
+    init_id   = session["user_id"]
+    voeu_a_id = safe_int(data.get("voeu_a_id"), min_val=1)
+    voeu_b_id = safe_int(data.get("voeu_b_id"), min_val=1)
+
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    va = cur.execute("SELECT * FROM voeux_echange WHERE id=? AND statut='actif'", (voeu_a_id,)).fetchone()
+    vb = cur.execute("SELECT * FROM voeux_echange WHERE id=? AND statut='actif'", (voeu_b_id,)).fetchone()
+    if not va or not vb:
+      conn.close()
+      return jsonify({"error": "Vœu(x) introuvable(s) ou inactif(s)"}), 400
+
+    # Vérifier compatibilité : A veut aller là où B est, B veut aller là où A est
+    act_a = cur.execute("""
+      SELECT a.id FROM inscriptions i JOIN activites a ON a.id=i.activite_id
+      WHERE i.eleve_id=? AND a.groupe_id=?
+    """, (va["eleve_id"], va["groupe_id"])).fetchone()
+    act_b = cur.execute("""
+      SELECT a.id FROM inscriptions i JOIN activites a ON a.id=i.activite_id
+      WHERE i.eleve_id=? AND a.groupe_id=?
+    """, (vb["eleve_id"], vb["groupe_id"])).fetchone()
+
+    if not act_a or not act_b:
+      conn.close()
+      return jsonify({"error": "Inscriptions introuvables"}), 400
+    if va["activite_cible_id"] != act_b["id"] or vb["activite_cible_id"] != act_a["id"]:
+      conn.close()
+      return jsonify({"error": "Les vœux ne sont pas compatibles"}), 400
+
+    # Pas déjà une procédure active entre ces deux vœux
+    existing = cur.execute("""
+      SELECT 1 FROM procedures_echange
+      WHERE voeu_a_id IN (?,?) AND voeu_b_id IN (?,?)
+      AND statut NOT IN ('annule')
+    """, (voeu_a_id, voeu_b_id, voeu_a_id, voeu_b_id)).fetchone()
+    if existing:
+      conn.close()
+      return jsonify({"error": "Une procédure est déjà en cours"}), 400
+
+    cur.execute("""
+      INSERT INTO procedures_echange (voeu_a_id, voeu_b_id, statut, created_at)
+      VALUES (?, ?, 'en_attente', datetime('now'))
+    """, (voeu_a_id, voeu_b_id))
+    proc_id = cur.lastrowid
+    # Marquer les vœux en_procedure
+    cur.execute("UPDATE voeux_echange SET statut='en_procedure' WHERE id IN (?,?)", (voeu_a_id, voeu_b_id))
+    conn.commit()
+    conn.close()
+    sse_manager.broadcast("echanges_update", {"groupe_id": va["groupe_id"]})
+    return jsonify({"success": True, "id": proc_id})
+  except Exception as e:
+    logger.error(f"Erreur create_procedure: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/procedures/<int:proc_id>/repondre", methods=["POST"])
+@login_required
+def repondre_procedure(proc_id):
+  """Élève B accepte ou refuse."""
+  try:
+    data    = request.json
+    user_id = session["user_id"]
+    action  = data.get("action")  # 'accepter' | 'refuser'
+
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
+    if not proc or proc["statut"] != "en_attente":
+      conn.close()
+      return jsonify({"error": "Procédure introuvable ou déjà traitée"}), 404
+
+    va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
+    vb = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_b_id"],)).fetchone()
+
+    # Vérifier que c'est bien l'un des deux élèves qui répond
+    if user_id not in (va["eleve_id"], vb["eleve_id"]):
+      if session.get("role") not in ("prof","admin"):
+        conn.close()
+        return jsonify({"error": "Non autorisé"}), 403
+
+    groupe_id = va["groupe_id"]
+
+    if action == "refuser":
+      cur.execute("UPDATE procedures_echange SET statut='annule' WHERE id=?", (proc_id,))
+      cur.execute("UPDATE voeux_echange SET statut='actif' WHERE id IN (?,?)", (va["id"], vb["id"]))
+      conn.commit()
+      conn.close()
+      sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+      return jsonify({"success": True, "statut": "annule"})
+
+    if action == "accepter":
+      cur.execute("UPDATE procedures_echange SET statut='accord_b', date_accord_b=? WHERE id=?",
+                  (now_local_str(), proc_id))
+
+      if not VALIDATION_PROF_ECHANGES:
+        _executer_echange(cur, proc, va, vb)
+        cur.execute("UPDATE procedures_echange SET statut='valide', date_validation=? WHERE id=?",
+                    (now_local_str(), proc_id))
+        conn.commit()
+        conn.close()
+        sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+        return jsonify({"success": True, "statut": "valide"})
+      else:
+        cur.execute("UPDATE procedures_echange SET statut='accord_b', date_accord_b=? WHERE id=?",
+                    (now_local_str(), proc_id))
+        conn.commit()
+        conn.close()
+        sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+        return jsonify({"success": True, "statut": "accord_b"})
+
+    conn.close()
+    return jsonify({"error": "Action invalide"}), 400
+  except Exception as e:
+    logger.error(f"Erreur repondre_procedure: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/procedures/<int:proc_id>/valider", methods=["POST"])
+@role_required("prof", "admin")
+def valider_procedure(proc_id):
+  """Prof valide l'échange (si VALIDATION_PROF_ECHANGES=True)."""
+  try:
+    conn = get_db_connection()
+    cur  = conn.cursor()
+
+    proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
+    if not proc or proc["statut"] != "accord_b":
+      conn.close()
+      return jsonify({"error": "Procédure introuvable ou non en attente"}), 404
+
+    va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
+    vb = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_b_id"],)).fetchone()
+
+    _executer_echange(cur, proc, va, vb)
+    cur.execute("UPDATE procedures_echange SET statut='valide', date_validation=? WHERE id=?",
+                (now_local_str(), proc_id))
+    conn.commit()
+    groupe_id = va["groupe_id"]
+    conn.close()
+    sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+    sse_manager.broadcast("data_update", {})
+    return jsonify({"success": True})
+  except Exception as e:
+    logger.error(f"Erreur valider_procedure: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/procedures/<int:proc_id>/annuler", methods=["POST"])
+@login_required
+def annuler_procedure(proc_id):
+  """Désistement d'un des deux élèves (ou refus prof)."""
+  try:
+    user_id = session["user_id"]
+    conn    = get_db_connection()
+    cur     = conn.cursor()
+
+    proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
+    if not proc or proc["statut"] in ("valide","annule"):
+      conn.close()
+      return jsonify({"error": "Procédure introuvable ou déjà terminée"}), 404
+
+    va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
+    vb = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_b_id"],)).fetchone()
+
+    if user_id not in (va["eleve_id"], vb["eleve_id"]) and session.get("role") not in ("prof","admin"):
+      conn.close()
+      return jsonify({"error": "Non autorisé"}), 403
+
+    cur.execute("UPDATE procedures_echange SET statut='annule' WHERE id=?", (proc_id,))
+    # Le vœu de l'autre reste actif (spec)
+    cur.execute("UPDATE voeux_echange SET statut='actif' WHERE id IN (?,?)", (va["id"], vb["id"]))
+    conn.commit()
+    groupe_id = va["groupe_id"]
+    conn.close()
+    sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
+    return jsonify({"success": True})
+  except Exception as e:
+    logger.error(f"Erreur annuler_procedure: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+@app.route("/echanges/procedures/pending", methods=["GET"])
+@role_required("prof", "admin")
+def get_pending_procedures():
+  """Liste des procédures en attente de validation prof."""
+  try:
+    conn = get_db_connection()
+    rows = conn.execute("""
+      SELECT
+        p.id, p.statut, p.created_at AS date_init, p.date_accord_b,
+        va.eleve_id AS eleve_a_id, vb.eleve_id AS eleve_b_id,
+        ua.prenom AS prenom_a, ua.nom AS nom_a,
+        ub.prenom AS prenom_b, ub.nom AS nom_b,
+        act_a.titre  AS titre_a,      act_b.titre  AS titre_b,
+        act_ac.titre AS titre_cible_a, act_bc.titre AS titre_cible_b,
+        ge.nom AS groupe_nom, ge.id AS groupe_id
+      FROM procedures_echange p
+      JOIN voeux_echange va   ON va.id = p.voeu_a_id
+      JOIN voeux_echange vb   ON vb.id = p.voeu_b_id
+      JOIN users ua           ON ua.id = va.eleve_id
+      JOIN users ub           ON ub.id = vb.eleve_id
+      JOIN activites act_a    ON act_a.id  = va.activite_actuelle_id
+      JOIN activites act_b    ON act_b.id  = vb.activite_actuelle_id
+      JOIN activites act_ac   ON act_ac.id = va.activite_cible_id
+      JOIN activites act_bc   ON act_bc.id = vb.activite_cible_id
+      JOIN groupes_exclusivite ge ON ge.id = va.groupe_id
+      WHERE p.statut = 'accord_b'
+      ORDER BY p.created_at ASC
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+  except Exception as e:
+    logger.error(f"Erreur get_pending_procedures: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+
+def _executer_echange(cur, proc, va, vb):
+  """Permute les inscriptions et présences entre les deux élèves."""
+  eleve_a   = va["eleve_id"]
+  eleve_b   = vb["eleve_id"]
+  act_a     = va["activite_actuelle_id"]   # activité actuelle de A (stockée dans le vœu)
+  act_b     = vb["activite_actuelle_id"]   # activité actuelle de B
+
+  # Supprimer anciennes inscriptions
+  cur.execute("DELETE FROM inscriptions WHERE eleve_id=? AND activite_id=?", (eleve_a, act_a))
+  cur.execute("DELETE FROM inscriptions WHERE eleve_id=? AND activite_id=?", (eleve_b, act_b))
+
+  # Supprimer anciennes présences
+  cur.execute("""
+    DELETE FROM presences WHERE eleve_id=?
+    AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
+  """, (eleve_a, act_a))
+  cur.execute("""
+    DELETE FROM presences WHERE eleve_id=?
+    AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
+  """, (eleve_b, act_b))
+
+  now = now_local_str()
+
+  # Nouvelles inscriptions (permutées)
+  cur.execute("INSERT OR IGNORE INTO inscriptions (eleve_id, activite_id, date_inscription) VALUES (?,?,?)",
+              (eleve_a, act_b, now))
+  cur.execute("INSERT OR IGNORE INTO inscriptions (eleve_id, activite_id, date_inscription) VALUES (?,?,?)",
+              (eleve_b, act_a, now))
+
+  # Nouvelles présences
+  seances_b = cur.execute("SELECT id FROM seances WHERE activite_id=?", (act_b,)).fetchall()
+  for s in seances_b:
+    cur.execute("INSERT OR IGNORE INTO presences (seance_id, eleve_id, present, commentaire) VALUES (?,?,0,'')",
+                (s["id"], eleve_a))
+
+  seances_a = cur.execute("SELECT id FROM seances WHERE activite_id=?", (act_a,)).fetchall()
+  for s in seances_a:
+    cur.execute("INSERT OR IGNORE INTO presences (seance_id, eleve_id, present, commentaire) VALUES (?,?,0,'')",
+                (s["id"], eleve_b))
+
+  # Marquer les vœux comme réalisés + annuler les autres vœux liés
+  cur.execute("UPDATE voeux_echange SET statut='realise' WHERE id IN (?,?)", (va["id"], vb["id"]))
+  cur.execute("""
+    UPDATE voeux_echange SET statut='annule'
+    WHERE eleve_id IN (?,?) AND groupe_id=? AND statut IN ('actif','en_procedure')
+    AND id NOT IN (?,?)
+  """, (eleve_a, eleve_b, va["groupe_id"], va["id"], vb["id"]))
 
 
 # ========================

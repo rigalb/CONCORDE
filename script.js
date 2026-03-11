@@ -11,11 +11,11 @@ let groupes = [];
 // Variable globale pour stocker l'instance Select_Comp
 let classeMultiSelect = null;
 
-/* ── InputComp helpers ────────────────────────────────────────────
+/* -- InputComp helpers --------------------------------------------
    Permettent de lire/écrire les valeurs des InputComp depuis script.js
    sans casser les accès getElementById existants.
    _IC_instances est peuplé par InputComp.js via un hook DOMContentLoaded.
-──────────────────────────────────────────────────────────────────── */
+-------------------------------------------------------------------- */
 function icGet(id) {
     return window._IC_instances?.[id]?.getValue() ?? document.getElementById(id)?.value ?? '';
 }
@@ -33,7 +33,7 @@ let groupeClasseMultiSelect = null; // Instance Select_Comp pour les classes de 
 let groupeEditMode = false;
 let currentEditGroupeId = null;
 
-isSyncingClasses = false; //flag global
+let isSyncingClasses = false; //flag global
 let editingActivityId = null;
 
 // SSE Connection
@@ -53,6 +53,53 @@ function setupEventDelegation() {
         const target = e.target;
         const btn = target.closest('button');
         const card = target.closest('.activity-card');
+
+        // === ACTIONS ÉCHANGES (délégation data-action) ===
+        if (btn && btn.dataset.action) {
+            const action = btn.dataset.action;
+            if (action === 'ouvrir-voeu') {
+                e.stopPropagation();
+                ouvrirModalVoeu(parseInt(btn.dataset.groupeId));
+                return;
+            }
+            if (action === 'retirer-voeu') {
+                e.stopPropagation();
+                retirerVoeu(parseInt(btn.dataset.voeuId));
+                return;
+            }
+            if (action === 'filtre-echanges') {
+                e.stopPropagation();
+                setFiltreEchanges(btn.dataset.filtre, parseInt(btn.dataset.groupeId));
+                return;
+            }
+            if (action === 'proposer-echange') {
+                e.stopPropagation();
+                proposerEchange(parseInt(btn.dataset.voeuAId), parseInt(btn.dataset.voeuBId));
+                return;
+            }
+            if (action === 'repondre-echange') {
+                e.stopPropagation();
+                repondreEchange(parseInt(btn.dataset.procId), btn.dataset.reponse);
+                return;
+            }
+            if (action === 'valider-echange') {
+                e.stopPropagation();
+                validerEchange(parseInt(btn.dataset.procId));
+                return;
+            }
+            if (action === 'annuler-echange') {
+                e.stopPropagation();
+                annulerEchangeProf(parseInt(btn.dataset.procId));
+                return;
+            }
+        }
+
+        // === BOUTON GÉRER GROUPES ===
+        if (btn && btn.id === 'btn-ouvrir-groupes') {
+            e.stopPropagation();
+            ouvrirModalGroupes();
+            return;
+        }
 
         // === BOUTONS D'ACTION DANS LES CARDS ===
         if (btn && btn.classList.contains('btn-action')) {
@@ -579,6 +626,7 @@ function onAuthChange(){
         afficherPageRole(currentUser.role);
 
         initSSE();
+        majVisibiliteTabEchanges();
     } else {
         $('#user-badge').style.display='none';
         $('#logout-btn').classList.add('hidden');
@@ -613,7 +661,7 @@ function afficherPageRole(role){
 }
 
 function populateSelects(){
-    // ── classe-select : InputComp multiselect ──────────────────
+    // -- classe-select : InputComp multiselect ------------------
     if (!classeMultiSelect) {
         classeMultiSelect = window._IC_instances?.['classe-select'] || null;
     }
@@ -3140,8 +3188,7 @@ async function creerActivite(){
             const selectDuree = item.querySelector('.duree-select');
             // Essayer d'abord via IC wrapper, sinon .seance-input natif
             const icW = item.querySelector('.seance-ic-wrapper');
-            const icId = icW?.dataset?.inputId;
-            const ic = icId && window._IC_instances?.[icId];
+            const ic = icW?._icRef || (icW?.dataset?.inputId && window._IC_instances?.[icW.dataset.inputId]);
             let dateHeure = ic ? ic.getISOValue() : item.querySelector('.seance-input')?.value;
             return {
                 date_heure: dateHeure || '',
@@ -3448,8 +3495,7 @@ async function modifierActivite() {
             const selectDuree = item.querySelector('.duree-select');
             const seanceId = item.dataset.seanceId;
             const icW = item.querySelector('.seance-ic-wrapper');
-            const icId = icW?.dataset?.inputId;
-            const ic = icId && window._IC_instances?.[icId];
+            const ic = icW?._icRef || (icW?.dataset?.inputId && window._IC_instances?.[icW.dataset.inputId]);
             const input = ic ? null : item.querySelector('.seance-input');
             const dateHeure = ic ? ic.getISOValue() : (input?.value || '');
 
@@ -3549,9 +3595,8 @@ async function modifierActivite() {
 /* ===========================
     Gestion des séances
     =========================== */
-    
 
-/* ── Helper : crée un input datetime-local custom (InputComp) pour les séances ──
+/* -- Helper : crée un input datetime-local custom (InputComp) pour les séances --
    Retourne { wrapper, getValue } pour usage dans ajouterSeanceManuelle/Hebdo.
    getValue() lit directement le .ic-input natif (valeur ISO locale).          */
 function creerSeanceDatetimeIC(valeurISO) {
@@ -3576,7 +3621,7 @@ function creerSeanceDatetimeIC(valeurISO) {
     return ic;
 }
 
-/* ── Helper unique : crée une div.seance-item avec IC datetime, select durée, bouton ✖
+/* -- Helper unique : crée une div.seance-item avec IC datetime, select durée, bouton ✖
    opts.valeurISO  : string ISO pré-remplissage
    opts.duree      : int minutes
    opts.seanceId   : id BDD (mode édition)
@@ -3597,6 +3642,7 @@ function _creerLigneSeance(opts = {}) {
     const ic = creerSeanceDatetimeIC(opts.valeurISO || '');
     ic.wrapper.classList.add('seance-ic-wrapper');
     ic.wrapper.dataset.seanceIc = '1';
+    ic.wrapper._icRef = ic; // référence directe pour éviter la recherche par ID
     if (opts.onChange) ic.opts.onChange = opts.onChange;
 
     const selectDuree = document.createElement('select');
@@ -3637,9 +3683,9 @@ function _rebindPivotSeances(container) {
         const labelEl = item.querySelector('.seance-label');
         if (labelEl) labelEl.textContent = idx === 0 ? '① Pivot' : `+${idx} sem.`;
 
-        const icW  = item.querySelector('.seance-ic-wrapper');
-        const icId = icW?.dataset?.inputId;
-        const ic   = icId && window._IC_instances?.[icId];
+        const icW = item.querySelector('.seance-ic-wrapper');
+        // Priorité : référence directe stockée sur le wrapper, sinon lookup par ID
+        const ic  = icW?._icRef || (icW?.dataset?.inputId && window._IC_instances?.[icW.dataset.inputId]);
         if (!ic) return;
 
         ic.opts.onChange = idx === 0
@@ -3654,8 +3700,8 @@ function _propagatePivot(container) {
     if (items.length < 2) return;
 
     const firstIcW = items[0].querySelector('.seance-ic-wrapper');
-    const firstId  = firstIcW?.dataset?.inputId;
-    const firstIc  = firstId && window._IC_instances?.[firstId];
+    // Priorité : référence directe sur le wrapper, sinon lookup par ID
+    const firstIc  = firstIcW?._icRef || (firstIcW?.dataset?.inputId && window._IC_instances?.[firstIcW.dataset.inputId]);
     const pivotVal = firstIc ? firstIc.getISOValue() : '';
     if (!pivotVal) return;
 
@@ -3664,9 +3710,8 @@ function _propagatePivot(container) {
 
     items.forEach((item, idx) => {
         if (idx === 0) return;
-        const icW  = item.querySelector('.seance-ic-wrapper');
-        const icId = icW?.dataset?.inputId;
-        const ic   = icId && window._IC_instances?.[icId];
+        const icW = item.querySelector('.seance-ic-wrapper');
+        const ic  = icW?._icRef || (icW?.dataset?.inputId && window._IC_instances?.[icW.dataset.inputId]);
         if (!ic) return;
         const newDate = new Date(base);
         newDate.setDate(base.getDate() + idx * 7);
@@ -3745,6 +3790,28 @@ function ajouterSeanceHebdo(){
     trierSeances();
 }
 
+function ajouterSeanceManuelle() {
+    const container = $('#seances-container');
+    if (!container) return;
+
+    const nb = container.querySelectorAll('.seance-item').length;
+    const { div } = _creerLigneSeance({
+        valeurISO: '',
+        duree: 60,
+        label: nb === 0 ? '① Pivot' : `Séance ${nb + 1}`,
+        className: 'manual',
+        onDelete: () => {
+            trierSeances();
+            _rebindPivotSeances(container);
+        },
+        onChange: nb === 0 ? () => _propagatePivot(container) : null,
+    });
+
+    container.appendChild(div);
+    _rebindPivotSeances(container);
+    trierSeances();
+}
+
 /* Synchronise la durée de toutes les séances d'une série hebdo */
 function _majDureeSerie(serieDiv, nouvelleDuree) {
     serieDiv.dataset.duree = nouvelleDuree;
@@ -3782,6 +3849,7 @@ function trierSeances() {
     Gestion des groupes d'exclusivité
     =========================== */
 function ouvrirModalGroupes() {
+    try {
     groupeEditMode = false;
     currentEditGroupeId = null;
     majListeGroupes();
@@ -3807,8 +3875,9 @@ function ouvrirModalGroupes() {
             }
         };
     }
-    
+
     $('#groupes-modal').classList.add('visible');
+    } catch(err) { console.error('[ouvrirModalGroupes] Erreur:', err); }
 }
 
 function fermerModalGroupes() {
@@ -3822,6 +3891,8 @@ function fermerModalGroupes() {
 }
 
 function annulerEditionGroupe() {
+    const cb = document.getElementById('groupe-echanges-actifs');
+    if (cb) cb.checked = false;
     console.log('> Annulation édition');
 
     groupeEditMode = false;
@@ -3837,7 +3908,7 @@ function annulerEditionGroupe() {
     const formModeIndicator = document.getElementById('form-mode-indicator');
     if (formModeIndicator) {
         formModeIndicator.innerHTML = `
-            <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:4px;fill:currentColor">
+            <svg viewBox="0 0 24 24" width="16" height="16" class="align-middle mr-4 svg-fill-primary">
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
             </svg>
             Créer un nouveau groupe
@@ -3973,6 +4044,9 @@ async function editerGroupe(groupeId) {
             if (nomInput) nomInput.value = groupe.nom;
         }
         console.log('[OK] Nom rempli:', groupe.nom);
+        // Pré-remplir la checkbox échanges
+        const cbEch = document.getElementById('groupe-echanges-actifs');
+        if (cbEch) cbEch.checked = !!groupe.echanges_actifs;
 
         // === GESTION DU MULTISELECT ===
 
@@ -4077,12 +4151,14 @@ async function creerGroupe() {
     const classe_ids = groupeClasseMultiSelect.selectedItems.map(item => parseInt(item.value));
 
     try {
+        const echangesActifs = document.getElementById('groupe-echanges-actifs')?.checked || false;
         if (groupeEditMode && currentEditGroupeId) {
             // Mode édition
             await apiPut(`/groupes/${currentEditGroupeId}`, {
                 nom,
                 description: '',
-                classe_ids
+                classe_ids,
+                echanges_actifs: echangesActifs
             });
             alert('✓ Groupe modifié avec succès !');
         } else {
@@ -4090,7 +4166,8 @@ async function creerGroupe() {
             await apiPost('/groupes', {
                 nom,
                 description: '',
-                classe_ids
+                classe_ids,
+                echanges_actifs: echangesActifs
             });
             alert('✓ Groupe créé avec succès !');
         }
@@ -4139,18 +4216,22 @@ async function supprimerGroupe(groupeId, groupeNom) {
     ONGLETS PROF
     =========================== */
 function switchProfTab(tabName) {
-    // Gérer les onglets
-    const tabs = document.querySelectorAll('.prof-tab');
+    // Cibler uniquement les tabs du conteneur prof
+    const profTabsContainer = document.querySelector('#prof-page .prof-tabs');
+    if (!profTabsContainer) return;
+
+    const tabs = profTabsContainer.querySelectorAll('.prof-tab');
     const contents = document.querySelectorAll('.prof-tab-content');
 
     tabs.forEach(tab => tab.classList.remove('active'));
     contents.forEach(content => content.classList.remove('active'));
 
-    // Activer le bon onglet
-    const activeTab = tabName === 'gestion' ? tabs[0] : tabs[1];
-    const activeContent = document.getElementById(`prof-tab-${tabName}`);
+    // Activer le bon onglet via son index
+    const tabNames = ['gestion', 'creation', 'echanges'];
+    const tabIndex = tabNames.indexOf(tabName);
+    if (tabIndex >= 0 && tabs[tabIndex]) tabs[tabIndex].classList.add('active');
 
-    if (activeTab) activeTab.classList.add('active');
+    const activeContent = document.getElementById(`prof-tab-${tabName}`);
     if (activeContent) activeContent.classList.add('active');
 
     // Si on revient sur gestion, rafraîchir l'emploi du temps
@@ -4165,7 +4246,7 @@ function switchProfTab(tabName) {
 
 /* Initialise tous les event listeners statiques (présents dès le chargement) */
 
-/* ── Toast de notification non-bloquant ───────────────────────────────────── */
+/* -- Toast de notification non-bloquant ------------------------------------- */
 function showToast(msg, duration = 3000) {
     let toast = document.getElementById('app-toast');
     if (!toast) {
@@ -4214,11 +4295,20 @@ function initStaticEventListeners() {
     });
 
     // ===== ONGLETS PROF =====
-    const profTabs = document.querySelectorAll('.prof-tab');
-    profTabs.forEach((tab, index) => {
-        const tabName = index === 0 ? 'gestion' : 'creation';
-        tab.addEventListener('click', () => switchProfTab(tabName));
-    });
+    // Cibler uniquement les tabs du conteneur prof (pas les tabs élève qui partagent la même classe)
+    const profTabsContainer = document.querySelector('#prof-page .prof-tabs');
+    if (profTabsContainer) {
+        const profTabs = profTabsContainer.querySelectorAll('.prof-tab');
+        const tabNames = ['gestion', 'creation', 'echanges'];
+        profTabs.forEach((tab, index) => {
+            const tabName = tabNames[index] || 'gestion';
+            tab.addEventListener('click', () => switchProfTab(tabName));
+        });
+    }
+
+    // ===== ONGLETS ÉLÈVE =====
+    initEleveTabs();
+    _initEchangesSSE();
 
     // ===== SÉANCES =====
     const btnHebdo = document.getElementById('btn-ajouter-hebdo');
@@ -4236,6 +4326,17 @@ function initStaticEventListeners() {
     if (btnSaveGroupe) {
         btnSaveGroupe.addEventListener('click', creerGroupe);
     }
+
+    // Enter dans le champ nom du groupe → valider
+    document.getElementById('nouveau-groupe-nom')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); creerGroupe(); }
+    });
+    // Support si wrapped dans un IC
+    document.addEventListener('keypress', (e) => {
+        if (e.key !== 'Enter') return;
+        const icW = e.target.closest('.ic-wrapper[data-input-id="nouveau-groupe-nom"]');
+        if (icW) { e.preventDefault(); creerGroupe(); }
+    });
 
     const btnAnnulerGroupe = document.querySelector('#groupes-modal .btn.secondary:last-child');
     if (btnAnnulerGroupe) {
@@ -4293,7 +4394,7 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
             ? 'Élève désinscrit de cette séance'
             : 'Élève désinscrit de toute l\'activité';
 
-            alert('[SSE] [OK]' + successMsg);
+            showToast(successMsg);
             // SSE va broadcaster aux autres sessions
 
     } catch(e) {
@@ -4446,12 +4547,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialiser la délégation d'événements
     setupEventDelegation();
 
-    // Enter key pour login
-    $('#username')?.addEventListener('keypress', (e) => {
-        if(e.key === 'Enter') login();
-    });
-    $('#password')?.addEventListener('keypress', (e) => {
-        if(e.key === 'Enter') login();
+    // Enter key pour login — délégation sur #login-card car InputComp remplace les <input> originaux
+    document.getElementById('login-card')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const tag = e.target.tagName;
+            // Déclencher login si on est dans un input ou dans un wrapper IC du login-card
+            if (tag === 'INPUT' || tag === 'TEXTAREA' ||
+                e.target.classList.contains('ic-input') ||
+                e.target.closest('.ic-wrapper')) {
+                e.preventDefault();
+                login();
+            }
+        }
     });
 
     // Fermer modal avec Escape
@@ -4460,25 +4567,21 @@ document.addEventListener('DOMContentLoaded', function() {
             closeActivityModal();
             fermerModalGroupes();
             fermerModalAppel();
+            fermerModalInscriptionManuelle();
+            fermerModalPDF();
         }
     });
 
-    // Fermer modal en cliquant à côté
+    // Fermer modal en cliquant sur le fond (overlay) - handler unique
     document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal-overlay')) {
-            if (e.target.id === 'activity-modal') closeActivityModal();
-            else if (e.target.id === 'groupes-modal') fermerModalGroupes();
-            else if (e.target.id === 'appel-modal') fermerModalAppel();
-        }
-    });
-
-    // Fermer modal en cliquant à côté
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal-overlay')) {
-            if (e.target.id === 'activity-modal') closeActivityModal();
-            else if (e.target.id === 'groupes-modal') fermerModalGroupes();
-            else if (e.target.id === 'appel-modal') fermerModalAppel();
-        }
+        if (!e.target.classList.contains('modal-overlay')) return;
+        const id = e.target.id;
+        if      (id === 'activity-modal')           closeActivityModal();
+        else if (id === 'groupes-modal')            fermerModalGroupes();
+        else if (id === 'appel-modal')              fermerModalAppel();
+        else if (id === 'inscription-manuelle-modal') fermerModalInscriptionManuelle();
+        else if (id === 'pdf-options-modal')        fermerModalPDF();
+        else if (id === 'edition-modal')            fermerModalEdition?.();
     });
 
     // Gérer la reconnexion SSE quand la page redevient visible
@@ -4557,3 +4660,461 @@ window.addEventListener('unhandledrejection', (e) => {
         onAuthChange();
     }
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================================
+// ÉCHANGES — LOGIQUE CÔTÉ CLIENT
+// ============================================================
+
+// -- Tabs élève ----------------------------------------------
+function initEleveTabs() {
+    // Délégation sur #eleve-page — survit à tous les re-renders
+    const elevePage = document.getElementById('eleve-page');
+    if (!elevePage || elevePage._elevTabsInit) return;
+    elevePage._elevTabsInit = true;
+    elevePage.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-eleve-tab]');
+        if (btn) switchEleveTab(btn.dataset.eleveTab);
+    });
+}
+
+function switchEleveTab(tab) {
+    document.querySelectorAll('[data-eleve-tab]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.eleve-tab-content').forEach(c => c.classList.remove('active'));
+    const btn = document.querySelector(`[data-eleve-tab="${tab}"]`);
+    const content = document.getElementById(`eleve-tab-content-${tab}`);
+    if (btn) btn.classList.add('active');
+    if (content) {
+        content.classList.add('active');
+    } else {
+        console.warn('[tabs] Contenu introuvable : eleve-tab-content-' + tab);
+    }
+    if (tab === 'echanges') chargerEchangesEleve();
+}
+
+// Afficher/masquer le tab échanges selon si l'élève est concerné par un groupe avec échanges actifs
+function majVisibiliteTabEchanges() {
+    const tab = document.getElementById('eleve-tab-echanges');
+    if (!tab) return;
+    if (!currentUser || currentUser.role !== 'eleve') { tab.style.display = 'none'; return; }
+    const concerned = groupes.some(g => g.echanges_actifs && activites.some(a =>
+        a.groupe_id === g.id && a.inscriptions?.includes(currentUser.id)
+    ));
+    tab.style.display = concerned ? '' : 'none';
+}
+
+// -- Chargement des échanges ----------------------------------
+let echangesData = { voeux: [], groupeId: null };
+let filtreEchanges = 'tous'; // 'tous' | 'compatibles'
+
+async function chargerEchangesEleve() {
+    const panel = document.getElementById('echanges-panel');
+    if (!panel) return;
+    panel.innerHTML = '<p class="muted text-center" style="padding:40px 0">Chargement…</p>';
+
+    // Trouver les groupes avec échanges actifs où l'élève est inscrit
+    const groupesConcernes = groupes.filter(g =>
+        g.echanges_actifs &&
+        activites.some(a => a.groupe_id === g.id && a.inscriptions?.includes(currentUser.id))
+    );
+
+    if (groupesConcernes.length === 0) {
+        panel.innerHTML = '<p class="muted text-center" style="padding:40px 0">Aucun groupe avec échanges actifs pour votre classe.</p>';
+        return;
+    }
+
+    // Pour l'instant on prend le premier groupe (si plusieurs, on affiche un sélecteur)
+    let groupeActif = groupesConcernes[0];
+    if (groupesConcernes.length > 1) {
+        // Afficher un sélecteur de groupe
+        const selectHtml = `<div class="mb-16 flex items-center gap-12">
+            <span class="font-semibold small">Groupe :</span>
+            <select id="echanges-groupe-select" class="input-sm">
+                ${groupesConcernes.map(g => `<option value="${g.id}">${g.nom}</option>`).join('')}
+            </select>
+        </div>`;
+        panel.innerHTML = selectHtml + '<div id="echanges-content"></div>';
+        document.getElementById('echanges-groupe-select').addEventListener('change', async (e) => {
+            const g = groupesConcernes.find(g => g.id === parseInt(e.target.value));
+            if (g) await chargerVoeuxGroupe(g, document.getElementById('echanges-content'));
+        });
+        await chargerVoeuxGroupe(groupeActif, document.getElementById('echanges-content'));
+    } else {
+        await chargerVoeuxGroupe(groupeActif, panel);
+    }
+}
+
+async function chargerVoeuxGroupe(groupe, container) {
+    try {
+        const voeux = await apiGet(`/echanges/voeux/${groupe.id}`);
+        echangesData = { voeux, groupeId: groupe.id };
+        renderEchangesPanel(container, groupe, voeux);
+    } catch(e) {
+        container.innerHTML = `<p class="text-error text-center">${e.message}</p>`;
+    }
+}
+
+function renderEchangesPanel(container, groupe, voeux) {
+    const monActivite = activites.find(a =>
+        a.groupe_id === groupe.id && a.inscriptions?.includes(currentUser.id)
+    );
+
+    // Mes vœux actifs
+    const mesVoeux = voeux.filter(v => v.eleve_id === currentUser.id);
+
+    // Badge
+    const badge = document.getElementById('badge-voeux');
+    if (badge) {
+        const autres = voeux.filter(v => v.eleve_id !== currentUser.id).length;
+        badge.textContent = autres;
+        badge.classList.toggle('hidden', autres === 0);
+    }
+
+    let html = `
+    <div class="echanges-panel-wrap">
+
+      <!-- Mes vœux -->
+      <div class="echanges-section">
+        <div class="echanges-section-header">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
+          <h4>Mes vœux d'échange</h4>
+          <button class="btn" data-action="ouvrir-voeu" data-groupe-id="${groupe.id}">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
+            Formuler un vœu
+          </button>
+        </div>
+        ${mesVoeux.length === 0
+            ? '<p class="muted small">Vous n\'avez pas encore formulé de vœu d\'échange.</p>'
+            : mesVoeux.map(v => renderCarteMonVoeu(v)).join('')
+        }
+      </div>
+
+      <!-- Séparateur -->
+      <div class="echanges-sep"></div>
+
+      <!-- Vœux des autres -->
+      <div class="echanges-section">
+        <div class="echanges-section-header">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+          </svg>
+          <h4>Vœux des autres élèves</h4>
+          <div class="echanges-filtres">
+            <button class="btn ${filtreEchanges==='tous'?'':'secondary'}" data-action="filtre-echanges" data-filtre="tous" data-groupe-id="${groupe.id}">Tous</button>
+            <button class="btn ${filtreEchanges==='compatibles'?'':'secondary'}" data-action="filtre-echanges" data-filtre="compatibles" data-groupe-id="${groupe.id}">Compatibles avec moi</button>
+          </div>
+        </div>
+        <div id="voeux-autres-liste">
+          ${renderVoeuxAutres(voeux, monActivite)}
+        </div>
+      </div>
+    </div>`;
+
+    container.innerHTML = html;
+}
+
+function renderCarteMonVoeu(v) {
+    return `
+    <div class="voeu-card mon-voeu" data-voeu-id="${v.id}">
+      <div class="voeu-card-body">
+        <span class="voeu-from">${v.activite_actuelle_titre || '?'}</span>
+        <svg class="voeu-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+        <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
+        <span class="voeu-statut statut-${v.statut}">${labelStatut(v.statut)}</span>
+      </div>
+      <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Retirer ce vœu">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+      </button>
+    </div>`;
+}
+
+function renderVoeuxAutres(voeux, monActivite) {
+    let filtered = voeux.filter(v => v.eleve_id !== currentUser.id);
+    if (filtreEchanges === 'compatibles' && monActivite) {
+        filtered = filtered.filter(v =>
+            v.activite_cible_id === monActivite.id
+        );
+    }
+    if (filtered.length === 0) {
+        return '<p class="muted small">Aucun vœu' + (filtreEchanges === 'compatibles' ? ' compatible' : '') + ' pour l\'instant.</p>';
+    }
+    return filtered.map(v => renderCarteVoeuAutre(v, monActivite)).join('');
+}
+
+function renderCarteVoeuAutre(v, monActivite) {
+    // Est-ce un échange possible avec moi ?
+    const compatible = monActivite && v.activite_cible_id === monActivite.id;
+
+    // Mon vœu vers son activité actuelle ?
+    const monVoeuVersSon = echangesData.voeux.find(mv =>
+        mv.eleve_id === currentUser.id && mv.activite_cible_id === v.activite_actuelle_id
+    );
+    const peutProposer = compatible && monVoeuVersSon && v.statut === 'actif' && monVoeuVersSon.statut === 'actif';
+
+    const initiales = (v.prenom[0] + v.nom[0]).toUpperCase();
+    return `
+    <div class="voeu-card voeu-autre ${compatible ? 'voeu-compatible' : ''}">
+      <div class="voeu-avatar">${initiales}</div>
+      <div class="voeu-card-body">
+        <div class="voeu-eleve-nom">${v.prenom} ${v.nom} <span class="muted small">(${v.classe_nom || ''})</span></div>
+        <div class="voeu-trajet">
+          <span class="voeu-from">${v.activite_actuelle_titre || '?'}</span>
+          <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
+        </div>
+        ${compatible ? '<span class="voeu-badge-compat">Échange possible !</span>' : ''}
+      </div>
+      ${peutProposer
+        ? `<button class="btn btn-sm" data-action="proposer-echange" data-voeu-a-id="${monVoeuVersSon.id}" data-voeu-b-id="${v.id}">
+            <svg class="icon" viewBox="0 0 24 24" width="14" height="14"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            Proposer l'échange
+           </button>`
+        : (v.statut === 'en_procedure' ? '<span class="voeu-statut statut-en_procedure">Procédure en cours</span>' : '')
+      }
+    </div>`;
+}
+
+function labelStatut(s) {
+    const m = { actif: 'Actif', en_procedure: 'En cours', realise: 'Réalisé', annule: 'Annulé' };
+    return m[s] || s;
+}
+
+function setFiltreEchanges(filtre, groupeId) {
+    filtreEchanges = filtre;
+    const groupe = groupes.find(g => g.id === groupeId);
+    if (groupe) chargerVoeuxGroupe(groupe, document.getElementById('echanges-content') || document.getElementById('echanges-panel'));
+}
+
+// -- Formuler un vœu -----------------------------------------
+async function ouvrirModalVoeu(groupeId) {
+    const groupe = groupes.find(g => g.id === groupeId);
+    if (!groupe) return;
+
+    const monActivite = activites.find(a =>
+        a.groupe_id === groupeId && a.inscriptions?.includes(currentUser.id)
+    );
+
+    const activitesGroupe = activites.filter(a => a.groupe_id === groupeId && a.id !== monActivite?.id);
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay visible';
+    modal.id = 'voeu-modal';
+
+    const cardsHtml = activitesGroupe.map(act => {
+        const inscrits = act.inscriptions?.length || 0;
+        const anim = act.animateur_prenom ? `${act.animateur_prenom} ${act.animateur_nom}` : 'Animateur non défini';
+        const classes_txt = act.classe_ids?.map(id => classes.find(c => c.id === id)?.nom || '').join(', ');
+        return `
+        <div class="activity-card inscription-manuelle-card">
+          <div class="activity-card-header">
+            <h5 class="activity-title">${act.titre}</h5>
+            <span class="activity-room">${act.salle}</span>
+          </div>
+          <div class="activity-details mb-4">👤 ${anim}</div>
+          <div class="activity-details">Classes : ${classes_txt}</div>
+          <div class="activity-details"><strong>${inscrits}/${act.effectif_max}</strong> inscrit${inscrits>1?'s':''}</div>
+          <div class="activity-actions">
+            <button class="btn-action inscrire" data-activite-id="${act.id}" data-groupe-id="${groupeId}">
+              <svg viewBox="0 0 24 24" class="icon-inline"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              Formuler ce vœu
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+
+    modal.innerHTML = `
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3>Formuler un vœu d'échange — ${groupe.nom}</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted mb-16">Vous êtes actuellement dans <strong>${monActivite?.titre || '?'}</strong>. Choisissez une activité vers laquelle vous souhaitez aller :</p>
+          <div class="inscription-manuelle-grid">${cardsHtml}</div>
+        </div>
+      </div>`;
+
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.btn-action.inscrire');
+        if (btn) {
+            e.stopPropagation();
+            try {
+                await apiPost('/echanges/voeux', {
+                    groupe_id: parseInt(btn.dataset.groupeId),
+                    activite_cible_id: parseInt(btn.dataset.activiteId)
+                });
+                modal.remove();
+                showToast('Vœu enregistré !');
+                await fetchAllData();
+                chargerEchangesEleve();
+            } catch(err) {
+                showToast(err.message, 4000);
+            }
+        }
+        if (e.target.closest('.modal-close') || e.target.classList.contains('modal-overlay')) {
+            modal.remove();
+        }
+    });
+}
+
+async function retirerVoeu(voeuId) {
+    if (!confirm('Retirer ce vœu d\'échange ?')) return;
+    try {
+        await fetch(`/echanges/voeux/${voeuId}`, { method: 'DELETE', credentials: 'same-origin' });
+        showToast('Vœu retiré.');
+        await fetchAllData();
+        chargerEchangesEleve();
+    } catch(e) {
+        showToast('Erreur : ' + e.message, 4000);
+    }
+}
+
+async function proposerEchange(voeuAId, voeuBId) {
+    if (!confirm('Proposer cet échange à l\'élève concerné ? Il devra accepter avant validation.')) return;
+    try {
+        await apiPost('/echanges/procedures', { voeu_a_id: voeuAId, voeu_b_id: voeuBId });
+        showToast('Procédure d\'échange lancée ! L\'autre élève doit maintenant accepter.');
+        chargerEchangesEleve();
+    } catch(e) {
+        showToast('Erreur : ' + e.message, 4000);
+    }
+}
+
+async function repondreEchange(procId, action) {
+    try {
+        await apiPost(`/echanges/procedures/${procId}/repondre`, { action });
+        showToast(action === 'accepter' ? 'Échange accepté !' : 'Échange refusé.');
+        chargerEchangesEleve();
+        if (action === 'accepter') await fetchAllData();
+    } catch(e) {
+        showToast('Erreur : ' + e.message, 4000);
+    }
+}
+
+// -- Section prof : échanges en attente ----------------------
+async function chargerPendingProcedures() {
+    const container = document.getElementById('liste-pending-echanges');
+    if (!container) return;
+    container.innerHTML = '<p class="muted text-center" style="padding:20px 0">Chargement…</p>';
+    try {
+        const procs = await apiGet('/echanges/procedures/pending');
+        if (procs.length === 0) {
+            container.innerHTML = '<p class="muted text-center" style="padding:40px 0">Aucun échange en attente de validation.</p>';
+            return;
+        }
+        // Badge
+        const badge = document.getElementById('badge-pending');
+        if (badge) { badge.textContent = procs.length; badge.classList.toggle('hidden', procs.length === 0); }
+
+        container.innerHTML = procs.map(p => `
+          <div class="echange-pending-card">
+            <div class="echange-pending-groupe">${p.groupe_nom}</div>
+            <div class="echange-pending-body">
+              <div class="echange-pending-side">
+                <strong>${p.prenom_a} ${p.nom_a}</strong>
+                <span class="voeu-from">${p.titre_a}</span>
+                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+                <span class="voeu-to">${p.titre_cible_a}</span>
+              </div>
+              <div class="echange-pending-swap">⇄</div>
+              <div class="echange-pending-side">
+                <strong>${p.prenom_b} ${p.nom_b}</strong>
+                <span class="voeu-from">${p.titre_b}</span>
+                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+                <span class="voeu-to">${p.titre_cible_b}</span>
+              </div>
+            </div>
+            <div class="echange-pending-actions">
+              <span class="muted small">Accord des deux élèves : ${p.date_accord_b ? new Date(p.date_accord_b).toLocaleDateString('fr-FR') : '—'}</span>
+              <button class="btn" data-action="valider-echange" data-proc-id="${p.id}">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>
+                Valider l'échange
+              </button>
+              <button class="btn secondary" data-action="annuler-echange" data-proc-id="${p.id}">
+                Refuser
+              </button>
+            </div>
+          </div>
+        `).join('');
+    } catch(e) {
+        container.innerHTML = `<p class="text-error text-center">${e.message}</p>`;
+    }
+}
+
+async function validerEchange(procId) {
+    if (!confirm('Valider définitivement cet échange ? Les inscriptions seront permutées.')) return;
+    try {
+        await apiPost(`/echanges/procedures/${procId}/valider`, {});
+        showToast('Échange validé et inscriptions permutées !');
+        chargerPendingProcedures();
+        await fetchAllData();
+    } catch(e) {
+        showToast('Erreur : ' + e.message, 4000);
+    }
+}
+
+async function annulerEchangeProf(procId) {
+    if (!confirm('Refuser cet échange ? Les deux vœux resteront actifs.')) return;
+    try {
+        await apiPost(`/echanges/procedures/${procId}/annuler`, {});
+        showToast('Échange refusé.');
+        chargerPendingProcedures();
+    } catch(e) {
+        showToast('Erreur : ' + e.message, 4000);
+    }
+}
+
+// -- SSE : écouter echanges_update ---------------------------
+function _initEchangesSSE() {
+    // Hooker sur l'événement SSE global déjà en place
+    const origHandler = window._sseHandlers?.echanges_update;
+    if (!origHandler) {
+        if (!window._sseHandlers) window._sseHandlers = {};
+        window._sseHandlers['echanges_update'] = (data) => {
+            // Rafraîchir si l'onglet échanges est actif
+            const tab = document.querySelector('[data-eleve-tab="echanges"].active');
+            if (tab) chargerEchangesEleve();
+            // Rafraîchir le badge pending prof
+            if (currentUser?.role !== 'eleve') chargerPendingProcedures();
+        };
+    }
+}
+

@@ -93,7 +93,25 @@
           <div class="stat"><h4>Inscriptions</h4><p id="stat-insc-eleve">0</p></div>
         </div>
 
+        <!-- ONGLETS ÉLÈVE -->
+        <div class="prof-tabs eleve-tabs" id="eleve-tabs">
+          <button class="prof-tab active" data-eleve-tab="activites">
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z" fill="currentColor"/>
+            </svg>
+            Mes activités
+          </button>
+          <button class="prof-tab" data-eleve-tab="echanges" id="eleve-tab-echanges" style="display:none">
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            Échanges
+            <span id="badge-voeux" class="tab-badge hidden">0</span>
+          </button>
+        </div>
 
+        <!-- TAB ACTIVITÉS -->
+        <div id="eleve-tab-content-activites" class="eleve-tab-content active">
         <div class="dashboard-layout">
           <div class="activities-panel">
             <details open class="panel-collapsible">
@@ -148,6 +166,15 @@
             </div>
           </div>
         </div>
+        </div><!-- /eleve-tab-content-activites -->
+
+        <!-- TAB ÉCHANGES -->
+        <div id="eleve-tab-content-echanges" class="eleve-tab-content">
+          <div id="echanges-panel">
+            <!-- Rempli dynamiquement par JS -->
+          </div>
+        </div>
+
       </section>
 
       <!-- PROFESSOR DASHBOARD -->
@@ -172,6 +199,13 @@
           <button class="prof-tab">
             <svg class="icon" viewBox="0 0 24 24" class="w-16 h-16 pr-4"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
             Créer une activité
+          </button>
+          <button class="prof-tab" id="prof-tab-btn-echanges">
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            Échanges
+            <span id="badge-pending" class="tab-badge hidden">0</span>
           </button>
         </div>
 
@@ -279,6 +313,24 @@
         </div>
 
         <!-- ONGLET CRÉATION -->
+        <!-- ONGLET ÉCHANGES PROF -->
+        <div id="prof-tab-echanges" class="prof-tab-content">
+          <div class="dashboard-layout" style="max-width:900px">
+            <div style="width:100%">
+              <div class="flex items-center gap-12 mb-16">
+                <h4 class="text-primary">Échanges en attente de validation</h4>
+                <button class="btn secondary" onclick="chargerPendingProcedures()" style="margin-left:auto">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
+                  Rafraîchir
+                </button>
+              </div>
+              <div id="liste-pending-echanges">
+                <p class="muted text-center" style="padding:40px 0">Chargement…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div id="prof-tab-creation" class="prof-tab-content">
           <h4 class="mb-16"> Créer une nouvelle activité</h4>
           <div class="form-grid">
@@ -452,6 +504,17 @@
                 Sélectionnez les classes qui doivent obligatoirement s'inscrire à une activité de ce groupe
               </p>
               <select id="groupe-classe-select" multiple data-input-comp='{"label":"Classes concernées","type":"multiselect","searchable":true,"selectAll":true}'></select>
+            </div>
+
+            <!-- Autoriser les échanges -->
+            <div class="mb-16">
+              <label class="flex items-center gap-10 cursor-pointer">
+                <input type="checkbox" id="groupe-echanges-actifs" class="checkbox-toggle">
+                <span class="font-semibold text-14">Autoriser les échanges</span>
+              </label>
+              <p class="muted small mt-4">
+                Permet aux élèves inscrits dans ce groupe de formuler des vœux d'échange entre activités.
+              </p>
             </div>
 
             <!-- Boutons d'action -->
