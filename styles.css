@@ -1075,7 +1075,7 @@ header {
   color: var(--text);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 110;
   padding: 2px;
 }
 
@@ -3137,7 +3137,7 @@ textarea {
 }
 .voeu-card.mon-voeu { background: var(--glass); }
 .voeu-card.voeu-compatible {
-  border-color: var(--primary); background: var(--primary-light, #e8f0fe);
+  border-color: #a5b4fc; background: #f5f3ff;
 }
 
 .voeu-avatar {
@@ -3167,12 +3167,22 @@ textarea {
 .statut-annule       { background: #fee2e2; color: #991b1b; }
 
 .voeu-badge-compat {
-  font-size: 11px; font-weight: 700; color: var(--primary);
-  background: white; border: 1.5px solid var(--primary);
+  font-size: 11px; font-weight: 700; color: #5b21b6;
+  background: #ede9fe; border: 1.5px solid #c4b5fd;
   padding: 2px 8px; border-radius: 12px;
 }
 
 .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+/* ── Pastilles créateur / animateur ── */
+.act-pastille {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 2px 7px; border-radius: 10px; text-transform: uppercase;
+  white-space: nowrap;
+}
+.act-pastille-cree    { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.act-pastille-anime   { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
 
 /* ── Cartes pending (prof) ── */
 .echange-pending-card {

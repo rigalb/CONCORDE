@@ -650,7 +650,7 @@ function afficherPageRole(role){
         majListeActivitesProf();
         initEmploiDuTempsProf();
         initElevesNonInscrits();
-
+        chargerPendingProcedures();
         setupCreationFormEvents();
 
     } else if(role==='eleve'){
@@ -1905,87 +1905,109 @@ async function desinscrireSeance(seanceId) {
     Interface Professeur
     =========================== */
 function majListeActivitesProf() {
-    const containerAnimees = $('#liste-activites-animees');
-    const containerCreees = $('#liste-activites-creees');
+    const container = $('#liste-activites-prof-groupes');
+    if (!container) return;
 
-    if (!containerAnimees || !containerCreees) return;
-
-    const userId = currentUser?.id;
+    const userId  = currentUser?.id;
     const isAdmin = currentUser?.role === 'admin';
 
-    // Séparer les activités animées et créées
-    const activitesAnimees = isAdmin
-        ? activites.filter(act => act.animateur_id !== act.prof_id) // Toutes les activités avec animateur différent
-        : activites.filter(act => act.animateur_id === userId);
+    // Activités visibles par cet utilisateur
+    const mesActivites = isAdmin
+        ? activites
+        : activites.filter(a => a.prof_id === userId || a.animateur_id === userId);
 
-    const activitesCreees = isAdmin
-        ? activites.filter(act => act.animateur_id === act.prof_id || !act.animateur_id) // Toutes les autres
-        : activites.filter(act => act.prof_id === userId && act.animateur_id !== userId);
+    if (mesActivites.length === 0) {
+        container.innerHTML = '<p class="muted small text-center" style="padding:20px">Aucune activité</p>';
+        return;
+    }
 
+    // Grouper par groupe_id (null → "Sans groupe")
+    const parGroupe = new Map();
+    // D'abord les groupes connus dans l'ordre
+    groupes.forEach(g => parGroupe.set(g.id, { groupe: g, actes: [] }));
+    parGroupe.set(null, { groupe: { id: null, nom: 'Sans groupe' }, actes: [] });
 
-    // Fonction helper pour créer une carte d'activité
-    function creerCarteActivite(act, container) {
-        const inscritsCount = act.inscriptions?.length || 0;
-        const classesText = act.classe_ids
-            .map(id => classes.find(c => c.id === id)?.nom || '')
-            .join(', ');
+    mesActivites.forEach(act => {
+        const key = act.groupe_id ?? null;
+        if (!parGroupe.has(key)) parGroupe.set(key, { groupe: { id: key, nom: `Groupe #${key}` }, actes: [] });
+        parGroupe.get(key).actes.push(act);
+    });
 
-        const actCard = document.createElement('div');
-        actCard.className = 'activity-card';
-        actCard.dataset.activityId = act.id;
+    container.innerHTML = '';
 
-        // Vérifier si l'utilisateur est le créateur Ou admin
-        const isCreator = act.prof_id === currentUser?.id || currentUser?.role === "admin";
+    parGroupe.forEach(({ groupe, actes }) => {
+        if (actes.length === 0) return;
 
-        actCard.innerHTML = `
-            <div class="activity-card-header">
-                <h5 class="activity-title">${act.titre}</h5>
-                <span class="activity-room">${act.salle}</span>
-            </div>
-            ${currentUser?.role === 'admin' && act.prof_id !== currentUser.id ? `
-            <div class="text-10 font-semibold text-warning mb-8">
-                🔑 ADMIN - Créée par ${getUserName(act.prof_id)}
-            </div>
-            ` : ''}
-            <div class="activity-details">Classes: ${classesText}</div>
-            <div class="activity-details">Inscrits: ${inscritsCount}/${act.effectif_max}</div>
-            <div class="activity-meta">
-                ${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}
-            </div>
-            ${isCreator ? `
-                <div class="activity-actions" style="display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+        const details = document.createElement('details');
+        details.className = 'panel-collapsible mt-16';
+        // Fermé par défaut
+
+        const nbBadge = `<span style="font-size:12px;font-weight:600;color:var(--text-muted);margin-left:6px">(${actes.length})</span>`;
+
+        const summary = document.createElement('summary');
+        summary.className = 'panel-header';
+        summary.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm0 18a8 8 0 110-16 8 8 0 010 16zm-1-5h2v2h-2zm0-8h2v6h-2z"/></svg>
+            ${groupe.nom}${nbBadge}
+        </h4>`;
+        details.appendChild(summary);
+
+        const listDiv = document.createElement('div');
+
+        actes.forEach(act => {
+            const inscritsCount = act.inscriptions?.length || 0;
+            const classesText   = (act.classe_ids || [])
+                .map(id => classes.find(c => c.id === id)?.nom || '').join(', ');
+
+            const isCree  = act.prof_id === userId;
+            const isAnime = act.animateur_id === userId;
+            const isCreator = isCree || isAdmin;
+
+            // Pastilles (admin voit toujours les deux si pertinent)
+            let pastilles = '';
+            if (isAdmin) {
+                const creeePar = getUserName(act.prof_id);
+                const animePar = act.animateur_id ? getUserName(act.animateur_id) : null;
+                pastilles += `<span class="act-pastille act-pastille-cree">✏ ${creeePar}</span>`;
+                if (animePar && act.animateur_id !== act.prof_id) {
+                    pastilles += `<span class="act-pastille act-pastille-anime">▶ ${animePar}</span>`;
+                }
+            } else {
+                if (isCree)  pastilles += `<span class="act-pastille act-pastille-cree">✏ Je crée</span>`;
+                if (isAnime && act.animateur_id !== act.prof_id)
+                    pastilles += `<span class="act-pastille act-pastille-anime">▶ J'anime</span>`;
+                if (isCree && act.animateur_id === userId)
+                    pastilles = `<span class="act-pastille act-pastille-cree">✏ Je crée</span><span class="act-pastille act-pastille-anime">▶ J'anime</span>`;
+            }
+
+            const actCard = document.createElement('div');
+            actCard.className = 'activity-card';
+            actCard.dataset.activityId = act.id;
+            actCard.innerHTML = `
+                <div class="activity-card-header">
+                    <h5 class="activity-title">${act.titre}</h5>
+                    <span class="activity-room">${act.salle || ''}</span>
+                </div>
+                ${pastilles ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">${pastilles}</div>` : ''}
+                <div class="activity-details">Classes : ${classesText || '—'}</div>
+                <div class="activity-details">Inscrits : ${inscritsCount}/${act.effectif_max || '?'}</div>
+                <div class="activity-meta">${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}</div>
+                ${isCreator ? `
+                <div class="activity-actions" style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb">
                     <button class="btn-action edit" title="Modifier">
-                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
                     </button>
                     <button class="btn-action delete" title="Supprimer">
-                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
-                </div>
-            ` : ''}
-        `;
-        // Click pour détails gérer par les fonctions de listenners
-        container.appendChild(actCard);
-    }
+                </div>` : ''}
+            `;
+            listDiv.appendChild(actCard);
+        });
 
-    // Afficher les activités animées
-    containerAnimees.innerHTML = '';
-    if (activitesAnimees.length === 0) {
-        containerAnimees.innerHTML = '<p class="muted small text-center" style="padding: 20px;">Aucune activité animée</p>';
-    } else {
-        activitesAnimees.forEach(act => creerCarteActivite(act, containerAnimees));
-    }
-
-    // Afficher les activités créées
-    containerCreees.innerHTML = '';
-    if (activitesCreees.length === 0) {
-        containerCreees.innerHTML = '<p class="muted small text-center" style="padding: 20px;">Aucune activité créée</p>';
-    } else {
-        activitesCreees.forEach(act => creerCarteActivite(act, containerCreees));
-    }
+        details.appendChild(listDiv);
+        container.appendChild(details);
+    });
 }
 
 
@@ -2825,75 +2847,6 @@ function createScheduleGridEleve() {
 
     table.appendChild(daysGrid);
     container.appendChild(table);
-}
-
-function updateEmploiDuTempsEleve_old() {
-    if (!currentUser) return;
-
-    createScheduleGridEleve();
-
-    const monday = getMonday(new Date());
-    monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
-
-    const now = new Date();
-
-    activites.forEach(act => {
-        const colors = getActivityColors(act.id);
-
-        act.seances?.forEach(seance => {
-            const estInscrit = seance.inscriptions?.includes(currentUser.id) || false;
-
-            if (!estInscrit) return;
-
-            const seanceDate = new Date(seance.date_heure);
-            const duree = seance.duree || 60;
-
-            const daysDiff = Math.floor((seanceDate - monday) / (1000 * 60 * 60 * 24));
-
-            if (daysDiff >= 0 && daysDiff < 7) {
-                const dayName = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][daysDiff];
-                const dayContent = document.querySelector(`#emploi-du-temps-eleve .day-content[data-day="${dayName}"]`);
-
-                if (dayContent) {
-                    const isPast = seanceDate < now;
-
-                    const animateurId = act.animateur_id || act.prof_id;
-                    const animateur = getUserById(animateurId);
-                    const animateurNom = act.animateur_prenom && act.animateur_nom
-                        ? `${act.animateur_prenom} ${act.animateur_nom}`
-                        : 'Animateur non défini';
-
-                    const topMinutes = timeToMinutes(seance.date_heure);
-
-                    const seanceBlock = document.createElement('div');
-                    seanceBlock.className = `seance-block-eleve activity-color-${act.id % 8} ${isPast ? 'past' : ''}`;
-                    seanceBlock.dataset.activityId = act.id;
-                    seanceBlock.style.top = `${topMinutes}px`;
-                    seanceBlock.style.height = `${duree}px`;
-
-                    const endDate = new Date(seanceDate.getTime() + duree * 60000);
-                    const startStr = `${seanceDate.getHours().toString().padStart(2,'0')}:${seanceDate.getMinutes().toString().padStart(2,'0')}`;
-                    const endStr = `${endDate.getHours().toString().padStart(2,'0')}:${endDate.getMinutes().toString().padStart(2,'0')}`;
-
-                    seanceBlock.innerHTML = `
-                        <div class="seance-header">
-                            <div class="seance-time">${startStr} - ${endStr}</div>
-                            ${act.salle ? `<div class="seance-room">${act.salle}</div>` : ''}
-                        </div>
-                        <div class="seance-title">${act.titre}</div>
-                        <div class="seance-animateur">${animateurNom}</div>
-                    `;
-
-                    seanceBlock.onclick = (e) => {
-                        e.stopPropagation();
-                        showActivityDetailsEleve(act);
-                    };
-
-                    dayContent.appendChild(seanceBlock);
-                }
-            }
-        });
-    });
 }
 
 function updateEmploiDuTempsEleve() {
@@ -4238,6 +4191,10 @@ function switchProfTab(tabName) {
     if (tabName === 'gestion') {
         updateScheduleViewProf();
     }
+    // Si on ouvre l'onglet échanges, recharger les procédures
+    if (tabName === 'echanges') {
+        chargerPendingProcedures();
+    }
 }
 
 /* ===========================
@@ -4308,7 +4265,6 @@ function initStaticEventListeners() {
 
     // ===== ONGLETS ÉLÈVE =====
     initEleveTabs();
-    _initEchangesSSE();
 
     // ===== SÉANCES =====
     const btnHebdo = document.getElementById('btn-ajouter-hebdo');
@@ -4471,6 +4427,15 @@ function initSSE() {
     sseConnection.addEventListener('inscription_seance_created', handleInscriptionEvent);
     sseConnection.addEventListener('inscription_seance_deleted', handleInscriptionEvent);
     sseConnection.addEventListener('inscription_manuelle_created', handleInscriptionEvent);
+
+    // Changements d'activités/groupes → rechargement ciblé des données + UI
+    sseConnection.addEventListener('activite_created', handleActiviteEvent);
+    sseConnection.addEventListener('activite_updated', handleActiviteEvent);
+    sseConnection.addEventListener('activite_deleted', handleActiviteEvent);
+    sseConnection.addEventListener('data_update', handleActiviteEvent);
+
+    // Mises à jour des échanges
+    sseConnection.addEventListener('echanges_update', handleEchangesSSE);
 }
 
 /**
@@ -4532,6 +4497,64 @@ function closeSSE() {
     if (sseConnection) {
         sseConnection.close();
         sseConnection = null;
+    }
+}
+
+/**
+ * Gère les événements de modification d'activités (créée, modifiée, supprimée)
+ * Recharge uniquement les données sans recharger toute la page.
+ */
+async function handleActiviteEvent(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Activité modifiée:', event.type, data);
+
+        await fetchAllData();
+
+        if (currentUser.role === 'eleve') {
+            majComptesActivitesEleve();
+            updateEmploiDuTempsEleve();
+        } else {
+            majListeActivitesProf();
+            updateScheduleViewProf();
+            // Rafraîchir le modal si ouvert
+            const modal = document.getElementById('activity-modal');
+            if (modal && modal.classList.contains('visible') && data.id) {
+                const activite = activites.find(a => a.id === data.id);
+                if (activite) showActivityDetails(activite);
+            }
+        }
+    } catch (e) {
+        console.error('[SSE] Erreur handleActiviteEvent:', e);
+    }
+}
+
+/**
+ * Gère les mises à jour SSE du panel échanges.
+ * Recharge uniquement le panel échanges si ouvert, pas toutes les données.
+ */
+async function handleEchangesSSE(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Échanges mis à jour:', data);
+
+        // Rafraîchir le panel échanges si l'onglet est actif
+        const tabActive = document.querySelector('[data-eleve-tab="echanges"].active');
+        if (tabActive) {
+            await chargerEchangesEleve();
+        }
+
+        // Rafraîchir les procédures en attente (vue prof/admin)
+        if (currentUser && currentUser.role !== 'eleve') {
+            chargerPendingProcedures();
+        }
+
+        // Mettre à jour le badge vœux
+        if (typeof majVisibiliteTabEchanges === 'function') {
+            majVisibiliteTabEchanges();
+        }
+    } catch (e) {
+        console.error('[SSE] Erreur handleEchangesSSE:', e);
     }
 }
 
@@ -4751,24 +4774,55 @@ async function chargerEchangesEleve() {
         return;
     }
 
-    // Pour l'instant on prend le premier groupe (si plusieurs, on affiche un sélecteur)
-    let groupeActif = groupesConcernes[0];
     if (groupesConcernes.length > 1) {
-        // Afficher un sélecteur de groupe
-        const selectHtml = `<div class="mb-16 flex items-center gap-12">
-            <span class="font-semibold small">Groupe :</span>
-            <select id="echanges-groupe-select" class="input-sm">
-                ${groupesConcernes.map(g => `<option value="${g.id}">${g.nom}</option>`).join('')}
-            </select>
-        </div>`;
-        panel.innerHTML = selectHtml + '<div id="echanges-content"></div>';
-        document.getElementById('echanges-groupe-select').addEventListener('change', async (e) => {
-            const g = groupesConcernes.find(g => g.id === parseInt(e.target.value));
-            if (g) await chargerVoeuxGroupe(g, document.getElementById('echanges-content'));
-        });
+        // --- Sélecteur InputComp avec mémoire de la sélection ---
+        // Restaurer la dernière sélection si dispo
+        const lastGroupeId = parseInt(sessionStorage.getItem('echanges_groupe_id') || '0');
+        let groupeActif = groupesConcernes.find(g => g.id === lastGroupeId) || groupesConcernes[0];
+
+        panel.innerHTML = `
+            <div class="mb-16 flex items-center gap-12">
+                <span class="font-semibold small">Groupe&nbsp;:</span>
+                <div id="echanges-groupe-ic-wrap" style="min-width:180px;max-width:300px"></div>
+            </div>
+            <div id="echanges-content"></div>`;
+
+        const wrap = document.getElementById('echanges-groupe-ic-wrap');
+        const options = groupesConcernes.map(g => ({ value: String(g.id), label: g.nom }));
+
+        // Créer un InputComp select
+        if (window.InputComp) {
+            const ic = new window.InputComp(wrap, {
+                type: 'select',
+                id: 'echanges-groupe-ic',
+                placeholder: 'Choisir un groupe…',
+                options,
+                value: String(groupeActif.id),
+                onChange: async (val) => {
+                    const g = groupesConcernes.find(g => g.id === parseInt(val));
+                    if (g) {
+                        sessionStorage.setItem('echanges_groupe_id', String(g.id));
+                        await chargerVoeuxGroupe(g, document.getElementById('echanges-content'));
+                    }
+                }
+            });
+        } else {
+            // Fallback select standard si InputComp non disponible
+            wrap.innerHTML = `<select id="echanges-groupe-select" class="input-sm" style="max-width:280px">
+                ${options.map(o => `<option value="${o.value}"${o.value === String(groupeActif.id) ? ' selected' : ''}>${o.label}</option>`).join('')}
+            </select>`;
+            document.getElementById('echanges-groupe-select').addEventListener('change', async (e) => {
+                const g = groupesConcernes.find(g => g.id === parseInt(e.target.value));
+                if (g) {
+                    sessionStorage.setItem('echanges_groupe_id', String(g.id));
+                    await chargerVoeuxGroupe(g, document.getElementById('echanges-content'));
+                }
+            });
+        }
+
         await chargerVoeuxGroupe(groupeActif, document.getElementById('echanges-content'));
     } else {
-        await chargerVoeuxGroupe(groupeActif, panel);
+        await chargerVoeuxGroupe(groupesConcernes[0], panel);
     }
 }
 
@@ -4894,7 +4948,7 @@ function renderCarteVoeuAutre(v, monActivite) {
           </svg>
           <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
         </div>
-        ${compatible ? '<span class="voeu-badge-compat">Échange possible !</span>' : ''}
+        ${compatible ? '<span class="voeu-badge-compat">Échange possible ! (veuillez formuler le voeux)</span>' : ''}
       </div>
       ${peutProposer
         ? `<button class="btn btn-sm" data-action="proposer-echange" data-voeu-a-id="${monVoeuVersSon.id}" data-voeu-b-id="${v.id}">
@@ -5101,20 +5155,3 @@ async function annulerEchangeProf(procId) {
         showToast('Erreur : ' + e.message, 4000);
     }
 }
-
-// -- SSE : écouter echanges_update ---------------------------
-function _initEchangesSSE() {
-    // Hooker sur l'événement SSE global déjà en place
-    const origHandler = window._sseHandlers?.echanges_update;
-    if (!origHandler) {
-        if (!window._sseHandlers) window._sseHandlers = {};
-        window._sseHandlers['echanges_update'] = (data) => {
-            // Rafraîchir si l'onglet échanges est actif
-            const tab = document.querySelector('[data-eleve-tab="echanges"].active');
-            if (tab) chargerEchangesEleve();
-            // Rafraîchir le badge pending prof
-            if (currentUser?.role !== 'eleve') chargerPendingProcedures();
-        };
-    }
-}
-

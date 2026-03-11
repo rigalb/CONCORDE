@@ -20,8 +20,6 @@ import pytz
 
 from colorama import init
 from dotenv import load_dotenv
-import smtplib
-from email.message import EmailMessage
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -41,6 +39,7 @@ from validators import (
 )
 
 from password_reset import PasswordResetManager
+from mail_service import send_email, send_invitation_email
 
 
 
@@ -103,9 +102,7 @@ app = Flask(__name__)
 # CONFIGURATION SÉCURISÉE
 # ========================
 load_dotenv()
-EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS')
-EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
-BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5000')
+# BASE_URL et send_email sont importés depuis mail_service
 TIMEZONE = pytz.timezone('Europe/Paris')
 
 def now_local():
@@ -117,7 +114,7 @@ def now_local_str():
   return datetime.now(TIMEZONE).replace(tzinfo=None).isoformat()
 
 app.config.update(
-  SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
+  SECRET_KEY=os.environ.get('SECRET_KEY') or 'CONCORDE_FALLBACK_KEY_CHANGE_IN_PROD',
   SESSION_COOKIE_HTTPONLY=True,
   SESSION_COOKIE_SAMESITE='Lax',
   PERMANENT_SESSION_LIFETIME=timedelta(hours=8)
@@ -255,8 +252,14 @@ def role_required(*allowed_roles):
 # UTILITAIRES DE SÉCURITÉ - VERSION SÉCURISÉE
 # ========================
 def get_db_connection():
-  conn = sqlite3.connect(DB)
+  conn = sqlite3.connect(DB, timeout=15)  # timeout=15s pour éviter le blocage en cas de contention
   conn.row_factory = sqlite3.Row
+  # PRAGMAs de performance appliqués sur chaque connexion
+  conn.execute("PRAGMA journal_mode=WAL")
+  conn.execute("PRAGMA synchronous=NORMAL")
+  conn.execute("PRAGMA cache_size=-16000")  # 16 MB cache par connexion
+  conn.execute("PRAGMA temp_store=MEMORY")
+  conn.execute("PRAGMA busy_timeout=10000")  # 10s d'attente si DB verrouillée
   return conn
 
 def validate_basic(data, required_fields):
@@ -323,31 +326,7 @@ def validate_integer(value, min_val=None, max_val=None):
   return val
 
 # ========================
-# FONCTION D'ENVOI D'EMAIL
-# ========================
-def send_email(to_email, subject, html_content, text_content):
-  """Envoie un email"""
-  if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
-    logger.error("EMAIL_ADDRESS ou EMAIL_PASSWORD non configuré")
-    return False, "Configuration email manquante"
-
-  msg = EmailMessage()
-  msg['Subject'] = subject
-  msg['From'] = f"CONCORDE <{EMAIL_ADDRESS}>"
-  msg['To'] = to_email
-  msg.set_content(text_content)
-  msg.add_alternative(html_content, subtype='html')
-
-  try:
-    with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
-      smtp.starttls()
-      smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-      smtp.send_message(msg)
-    return True, "Email envoyé"
-  except Exception as e:
-    logger.error(f"Erreur envoi email : {str(e)}")
-    return False, f"Erreur : {str(e)}"
-
+# FONCTION D'ENVOI D'EMAIL : déléguée à mail_service (importée en haut du fichier)
 # ========================
 # HELPERS EMAIL CODES 6 CHIFFRES
 # ========================
@@ -538,11 +517,21 @@ def sse():
 
       # Heartbeat pour garder la connexion vivante
       last_heartbeat = time.time()
+      # Timeout de 10 minutes sans activité client → ferme la connexion
+      # (le JS reconnecte automatiquement à l'onerror)
+      MAX_IDLE = 600
 
       while True:
         try:
+          elapsed = time.time() - last_heartbeat
+
+          # Fermer la connexion proprement après MAX_IDLE secondes
+          if elapsed > MAX_IDLE:
+            logger.info(f"[SSE] Timeout idle {client_id}, fermeture")
+            break
+
           # Envoyer un heartbeat toutes les 30 secondes
-          if time.time() - last_heartbeat > 30:
+          if elapsed > 30:
             yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
             last_heartbeat = time.time()
 
@@ -821,6 +810,7 @@ def create_activite():
     conn.close()
 
     logger.info(f"Activité créée: {titre} par user {session['user_id']}")
+    sse_manager.broadcast('activite_created', {'id': act_id, 'titre': titre})
     return jsonify({"success": True, "id": act_id})
 
   except ValidationError as ve:
@@ -872,6 +862,7 @@ def supprimer_activite(activite_id):
     conn.close()
 
     logger.info(f"Activité {activite_id} supprimée par user {session['user_id']}")
+    sse_manager.broadcast('activite_deleted', {'id': activite_id})
     return jsonify({"success": True})
 
   except Exception as e:
@@ -1035,6 +1026,7 @@ def modifier_activite(activite_id):
     conn.close()
 
     logger.info(f"Activité {activite_id} modifiée par user {session['user_id']}")
+    sse_manager.broadcast('activite_updated', {'id': activite_id})
     return jsonify({"success": True})
 
   except ValidationError as ve:
@@ -1145,15 +1137,54 @@ def generer_pdf_seance(seance_id):
 
     # TABLEAU ÉLÈVES — STYLE REGISTRE
     headers = ["N°", "Nom", "Prénom", "Classe"]
-    col_widths = [0.9*cm, 4.2*cm, 3.7*cm, 2*cm]
+
+    # Largeur A4 utilisable (21cm - 2cm de marges)
+    PAGE_W = 19 * cm
+    # Largeur fixe réservée aux colonnes non-texte
+    FIXED_W = 0.9 * cm  # N°
+
+    # Calculer la largeur minimale nécessaire pour Nom et Prénom
+    # Helvetica ≈ 0.55pt par caractère à 8pt → ~0.194mm/char
+    CHAR_W_CM = 0.194 / 10  # en cm par caractère à taille 8pt
+    PAD_CM    = 0.4          # padding interne (2+2)
+
+    max_nom    = max((len(p["nom"])    for p in presences), default=6)
+    max_prenom = max((len(p["prenom"]) for p in presences), default=6)
+    max_classe = max((len(p["classe_nom"] or "—") for p in presences), default=4)
+
+    # Min 3cm, Max 7cm pour Nom/Prénom, adaptatif sinon
+    w_num    = 0.9 * cm
+    w_classe = max(1.5 * cm, min(2.5 * cm, (max_classe * CHAR_W_CM + PAD_CM) * cm))
+    w_appel  = 1.5 * cm if options["show_appel"]      else 0
+    w_emarg  = 3.5 * cm if options["show_emargement"] else 0
+
+    # Budget restant pour Nom + Prénom
+    budget = PAGE_W - w_num - w_classe - w_appel - w_emarg
+
+    # Répartir proportionnellement au contenu (ratio noms)
+    total_chars = max_nom + max_prenom or 1
+    raw_nom    = budget * (max_nom    / total_chars)
+    raw_prenom = budget * (max_prenom / total_chars)
+
+    w_nom    = max(3.0 * cm, min(8.0 * cm, raw_nom))
+    w_prenom = max(2.5 * cm, min(7.0 * cm, raw_prenom))
+
+    # Si les deux débordent, réduire proportionnellement
+    total_np = w_nom + w_prenom
+    if total_np > budget:
+        factor   = budget / total_np
+        w_nom    = w_nom    * factor
+        w_prenom = w_prenom * factor
+
+    col_widths = [w_num, w_nom, w_prenom, w_classe]
 
     if options["show_appel"]:
       headers.append("Présent")
-      col_widths.append(1.5*cm)
+      col_widths.append(w_appel)
 
     if options["show_emargement"]:
       headers.append("Signature")
-      col_widths.append(3.5*cm)
+      col_widths.append(w_emarg)
 
     rows = [headers]
 
@@ -2024,6 +2055,7 @@ def create_groupe():
     conn.close()
 
     logger.info(f"Groupe créé: {nom} (ID: {groupe_id}) avec {len(classe_ids)} classe(s)")
+    sse_manager.broadcast('groupe_created', {'id': groupe_id, 'nom': nom})
     return jsonify({"success": True, "id": groupe_id})
 
   except ValueError as ve:
@@ -2064,6 +2096,7 @@ def delete_groupe(groupe_id):
     conn.close()
 
     logger.info(f"Groupe supprimé: ID {groupe_id}")
+    sse_manager.broadcast('groupe_deleted', {'id': groupe_id})
     return jsonify({"success": True})
 
   except Exception as e:
@@ -2135,6 +2168,7 @@ def update_groupe(groupe_id):
     conn.close()
 
     logger.info(f"Groupe modifié: {nom} (ID: {groupe_id})")
+    sse_manager.broadcast('groupe_updated', {'id': groupe_id, 'nom': nom})
     return jsonify({"success": True})
 
   except ValueError as ve:
@@ -2249,6 +2283,7 @@ def save_appel(seance_id):
     conn.close()
 
     logger.info(f"Appel enregistré pour séance {seance_id} par user {session['user_id']}")
+    sse_manager.broadcast('appel_updated', {'seance_id': seance_id})
     return jsonify({"success": True})
 
   except ValueError as ve:
@@ -2306,77 +2341,7 @@ def get_appel_status(seance_id):
 # ========================
 # INVITATIONS PROFESSEURS
 # ========================
-
-def send_invitation_email(to_email, token):
-  """Envoie un email d'invitation avec un lien one-time"""
-  if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
-    logger.error("EMAIL_ADDRESS ou EMAIL_PASSWORD non configuré")
-    return False, "Configuration email manquante"
-
-  subject = "🎓 Invitation à rejoindre CONCORDE"
-  signup_url = f"{BASE_URL}/inscription?token={token}"
-
-  html_content = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-body{{font-family:Arial,sans-serif;line-height:1.6;color:#222;background:#f6f8fb;margin:0;padding:20px}}
-.container{{max-width:600px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 6px 20px rgba(20,30,60,0.1)}}
-.header{{background:linear-gradient(135deg,#0b72ff,#d63384);padding:30px;text-align:center}}
-.logo{{width:60px;height:60px;background:white;border-radius:12px;margin:0 auto 15px;font-size:30px;line-height:60px}}
-.header h1{{color:white;margin:0;font-size:24px}}
-.content{{padding:40px 30px}}
-.content h2{{color:#0b72ff;margin-top:0}}
-.btn{{display:inline-block;background:linear-gradient(135deg,#0b72ff,#0052cc);color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;box-shadow:0 4px 12px rgba(11,114,255,0.3)}}
-.info-box{{background:#f8fafc;border-left:4px solid #0b72ff;padding:15px;margin:20px 0;border-radius:6px}}
-.warning{{background:#fff5f7;border-left-color:#dd1738;color:#666;font-size:14px;margin-top:30px}}
-.footer{{background:#f8fafc;padding:20px;text-align:center;color:#666;font-size:12px}}
-.link{{color:#0b72ff;word-break:break-all}}
-</style></head><body>
-<div class="container">
-<div class="header"><div class="logo">📚</div><h1>CONCORDE</h1></div>
-<div class="content">
-<h2>Vous êtes invité(e) à rejoindre CONCORDE !</h2>
-<p>Bonjour,</p>
-<p>Vous avez été invité(e) à rejoindre la plateforme <strong>CONCORDE</strong> en tant que professeur.</p>
-<div class="info-box">
-<strong>✔</strong> Créer et gérer vos activités<br>
-<strong>✔</strong> Suivre les inscriptions des élèves<br>
-<strong>✔</strong> Gérer votre emploi du temps<br>
-<strong>✔</strong> Faire l'appel et suivre les présences
-</div>
-<p>Pour créer votre compte, cliquez sur le bouton ci-dessous :</p>
-<p style="text-align:center;margin:35px 0">
-<a href="{signup_url}" class="btn">🔐 Créer mon compte professeur</a>
-</p>
-<p>Si le bouton ne fonctionne pas, copiez ce lien :</p>
-<p class="link">{signup_url}</p>
-<div class="warning">
-<strong>⚠️ Important :</strong><br>
-• Ce lien est à usage unique et expire dans <strong>7 jours</strong><br>
-• Ne partagez pas ce lien<br>
-• Si vous n'avez pas demandé cette invitation, ignorez cet email
-</div>
-</div>
-<div class="footer">
-<p>Cet email a été envoyé automatiquement par CONCORDE</p>
-<p>© 2025 CONCORDE</p>
-</div>
-</div>
-</body></html>"""
-
-  text_content = f"""Vous êtes invité(e) à rejoindre CONCORDE !
-
-Bonjour,
-
-Pour créer votre compte professeur, visitez ce lien :
-{signup_url}
-
-⚠️ Important :
-- Ce lien est à usage unique et expire dans 7 jours
-- Ne partagez pas ce lien
-
-CONCORDE © 2025"""
-
-  return send_email(to_email, subject, html_content, text_content)
+# send_invitation_email est importée depuis mail_service
 
 @app.route("/admin/invitations", methods=["POST"])
 @role_required('admin')
@@ -3333,7 +3298,7 @@ def internal_error(error):
 
 if __name__ == "__main__":
   init_db()
-  logger.info("Démarrage de l'application en mode production")
+  logger.info("Démarrage de l'application")
   app.run(
     debug=False,
     host='0.0.0.0',
