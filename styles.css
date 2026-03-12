@@ -2075,9 +2075,42 @@ textarea {
 }
 
 .appel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  margin-bottom: 16px;
   background: #f8fafc;
   border-radius: var(--radius-sm);
 }
+.appel-tri-actions { display: flex; gap: 8px; }
+
+/* Layout dashboard étroit */
+.dashboard-layout--narrow { max-width: 900px; }
+.dashboard-layout--extensive { max-width: 1200px; display: grid; grid-template-columns: 900px 1fr !important; }
+.dashboard-layout--narrow > div { width: 100%; }
+
+/* Wrapper sélecteur groupe échanges */
+.groupe-ic-wrap { min-width: 180px; max-width: 300px; }
+.select-groupe-echanges { max-width: 280px; }
+
+/* Pastilles wrapper (cards prof) */
+.pastille-wrap { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+
+/* Badge compteur groupe prof */
+.nb-badge { font-size: 12px; font-weight: 600; margin-left: 6px; }
+
+/* detail-row variantes */
+.detail-row--top { align-items: flex-start; }
+.detail-value--accent { color: var(--accent); font-weight: 600; }
+
+/* Utilitaires manquants */
+.gap-5  { gap: 5px; }
+.w-14   { width: 14px; }
+.h-14   { height: 14px; }
+.py-40  { padding-top: 40px; padding-bottom: 40px; }
+.ml-auto { margin-left: auto; }
+.mr-4   { margin-right: 4px; }
 
 /* Group items */
 .groupe-item {
@@ -2470,6 +2503,7 @@ textarea {
     white-space: nowrap;
     transition: opacity 0.6s ease, transform 0.6s ease;
   }
+
 
   .short-title {
     opacity: 1;
@@ -3209,4 +3243,96 @@ textarea {
 .echange-pending-actions {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding-top: 12px; border-top: 1px solid var(--border);
+}
+
+/* ── Vue admin échanges ── */
+.admin-echanges-wrap { display: flex; flex-direction: column; gap: 0; }
+
+/* Liste des vœux : grille responsive */
+.admin-voeux-liste {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 8px;
+  padding: 12px 0;
+}
+@media (max-width: 600px) {
+  .admin-voeux-liste { grid-template-columns: 1fr; }
+}
+
+.admin-voeu-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0; /* évite le débordement flex */
+}
+.admin-voeu-meta {
+  display: flex;
+  flex-direction: column;
+  width: 150px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.admin-voeu-groupe {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-voeu-eleve {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-voeu-trajet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+}
+.admin-voeu-trajet .voeu-from,
+.admin-voeu-trajet .voeu-to {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.admin-voeu-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Card pending admin (plus grande, plus visible) */
+.echange-pending-card--admin {
+  border-width: 2px;
+  padding: 20px;
+}
+.echange-pending-card--admin .echange-pending-body {
+  font-size: 14px;
+}
+.echange-pending-card--admin .echange-pending-side {
+  font-size: 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.echange-pending-card--admin .echange-pending-swap {
+  font-size: 28px;
+}
+.echange-pending-card--admin .btn {
+  padding: 10px 20px;
+  font-size: 14px;
 }

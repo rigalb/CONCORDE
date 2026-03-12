@@ -10,6 +10,7 @@ import threading
 from collections import defaultdict
 from typing import Dict, Set
 import sqlite3
+import hashlib
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 import secrets
@@ -39,7 +40,7 @@ from validators import (
 )
 
 from password_reset import PasswordResetManager
-from mail_service import send_email, send_invitation_email
+from mail_service import send_email, send_invitation_email, BASE_URL
 
 
 
@@ -56,7 +57,7 @@ class SSEManager:
   def add_listener(self, client_id: str) -> queue.Queue:
     """Ajoute un nouveau listener SSE"""
     with self.lock:
-      q = queue.Queue(maxsize=10)
+      q = queue.Queue(maxsize=50)
       self.listeners[client_id] = q
       logger.info(f"SSE listener ajouté: {client_id} (total: {len(self.listeners)})")
       return q
@@ -89,10 +90,105 @@ class SSEManager:
       for client_id in dead_listeners:
         del self.listeners[client_id]
 
-      logger.info(f"Broadcast {event_type} vers {len(self.listeners)} client(s)")
-
 # Instance globale
 sse_manager = SSEManager()
+
+# ========================
+# CACHE MÉMOIRE LÉGER
+# ========================
+class SimpleCache:
+  """Cache TTL thread-safe pour données quasi-statiques (classes, groupes…)."""
+  def __init__(self):
+    self._store: Dict[str, tuple] = {}  # key -> (value, expires_at)
+    self._lock = threading.Lock()
+
+  def get(self, key: str):
+    with self._lock:
+      entry = self._store.get(key)
+      if entry and time.time() < entry[1]:
+        return entry[0]
+      return None
+
+  def set(self, key: str, value, ttl: int = 30):
+    with self._lock:
+      self._store[key] = (value, time.time() + ttl)
+
+  def invalidate(self, *keys):
+    with self._lock:
+      for k in keys:
+        self._store.pop(k, None)
+
+  def invalidate_prefix(self, prefix: str):
+    with self._lock:
+      to_del = [k for k in self._store if k.startswith(prefix)]
+      for k in to_del:
+        del self._store[k]
+
+_cache = SimpleCache()
+
+# ========================
+# CONNEXION DB THREAD-LOCAL
+# ========================
+_db_local = threading.local()
+
+def get_db_connection_tl():
+  """Connexion SQLite thread-local réutilisable (lectures)."""
+  conn = getattr(_db_local, 'conn', None)
+  if conn is None:
+    conn = _make_db_conn()
+    _db_local.conn = conn
+  else:
+    try:
+      conn.execute("SELECT 1")
+    except Exception:
+      try: _release_db(conn)
+      except: pass
+      conn = _make_db_conn()
+      _db_local.conn = conn
+  return conn
+
+def _make_db_conn():
+  conn = sqlite3.connect(DB, timeout=20, check_same_thread=False)
+  conn.row_factory = sqlite3.Row
+  conn.execute("PRAGMA journal_mode=WAL")
+  conn.execute("PRAGMA synchronous=NORMAL")
+  conn.execute("PRAGMA cache_size=-32000")
+  conn.execute("PRAGMA temp_store=MEMORY")
+  conn.execute("PRAGMA busy_timeout=15000")
+  conn.execute("PRAGMA mmap_size=268435456")
+  conn.execute("PRAGMA foreign_keys=ON")
+  return conn
+
+# ========================
+# POOL D'ÉCRITURE (5 connexions max)
+# ========================
+class WritePool:
+  """Mini-pool de connexions d'écriture pour SQLite WAL."""
+  def __init__(self, size=5):
+    self._pool = queue.Queue(maxsize=size)
+    for _ in range(size):
+      self._pool.put(_make_db_conn())
+
+  def acquire(self):
+    try:
+      return self._pool.get(timeout=10)
+    except queue.Empty:
+      return _make_db_conn()
+
+  def release(self, conn):
+    try:
+      conn.execute("SELECT 1")
+      self._pool.put_nowait(conn)
+    except Exception:
+      try: _release_db(conn)
+      except: pass
+
+_write_pool: 'WritePool | None' = None
+
+def _ensure_pool():
+  global _write_pool
+  if _write_pool is None:
+    _write_pool = WritePool(size=5)
 
 
 init()
@@ -189,13 +285,13 @@ def init_db():
       except Exception: pass
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
   except Exception:
     pass  # logger pas encore initialisé à ce stade
 
 # Configuration logging sécurisé
 logging.basicConfig(
-  level=logging.DEBUG,
+  level=logging.INFO,
   format='{asctime} - {levelname:<8} - {message}',
   handlers=[
     logging.FileHandler('security.log'),
@@ -252,15 +348,19 @@ def role_required(*allowed_roles):
 # UTILITAIRES DE SÉCURITÉ - VERSION SÉCURISÉE
 # ========================
 def get_db_connection():
-  conn = sqlite3.connect(DB, timeout=15)  # timeout=15s pour éviter le blocage en cas de contention
-  conn.row_factory = sqlite3.Row
-  # PRAGMAs de performance appliqués sur chaque connexion
-  conn.execute("PRAGMA journal_mode=WAL")
-  conn.execute("PRAGMA synchronous=NORMAL")
-  conn.execute("PRAGMA cache_size=-16000")  # 16 MB cache par connexion
-  conn.execute("PRAGMA temp_store=MEMORY")
-  conn.execute("PRAGMA busy_timeout=10000")  # 10s d'attente si DB verrouillée
-  return conn
+  """Connexion depuis le pool d'écriture.
+  TOUJOURS appeler _release_db(conn) en fin de fonction, même en cas d'erreur."""
+  _ensure_pool()
+  return _write_pool.acquire()
+
+def _release_db(conn):
+  """Restitue la connexion au pool (à appeler à la place de _release_db(conn))."""
+  _write_pool.release(conn)
+
+def get_db_read():
+  """Connexion thread-local réutilisable — uniquement pour SELECT.
+  Ne jamais appeler _release_db(conn) dessus."""
+  return get_db_connection_tl()
 
 def validate_basic(data, required_fields):
   """InputValidator Validation sécurisée des données avec protection XSS/SQL (new version)"""
@@ -425,10 +525,9 @@ def login():
     if len(password) < 1:
       return jsonify({"error": "Mot de passe requis"}), 400
 
-    conn = get_db_connection()
-    # Utilisation de paramètres préparés (protection SQL injection native)
+    conn = get_db_read()
     user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    conn.close()
+    # connexion read thread-local — pas de release
 
     if user and check_password_hash(user["password_hash"], password):
       """
@@ -451,6 +550,8 @@ def login():
       session["user_id"] = user["id"]
       session["role"] = user["role"]
       session["classe_id"] = user["classe_id"]
+      session["prenom"] = user["prenom"]
+      session["nom"] = user["nom"]
       session['last_activity'] = datetime.now().timestamp()
 
       logger.info(f"Connexion réussie: {username} (ID: {user['id']}) depuis {request.remote_addr}")
@@ -486,16 +587,15 @@ def logout():
 @app.route("/me")
 @login_required
 def me():
+  # Données déjà en session — pas de hit DB
   try:
-    conn = get_db_connection()
-    user = conn.execute("SELECT id, prenom, nom, role, classe_id FROM users WHERE id=?",
-                        (session["user_id"],)).fetchone()
-    conn.close()
-
-    if not user:
-      return jsonify({"error": "Utilisateur introuvable"}), 404
-
-    return jsonify(dict(user))
+    return jsonify({
+      "id":       session["user_id"],
+      "role":     session["role"],
+      "classe_id":session.get("classe_id"),
+      "prenom":   session.get("prenom", ""),
+      "nom":      session.get("nom", ""),
+    })
   except Exception as e:
     logger.error(f"Erreur /me: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -567,10 +667,14 @@ def sse():
 @login_required
 def get_classes():
   try:
-    conn = get_db_connection()
+    cached = _cache.get("classes")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("SELECT * FROM classes ORDER BY nom").fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("classes", result, ttl=120)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /classes: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -579,10 +683,14 @@ def get_classes():
 @role_required('prof', 'admin')
 def get_users():
   try:
-    conn = get_db_connection()
+    cached = _cache.get("users")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("SELECT id, prenom, nom, role, classe_id, email FROM users ORDER BY role, nom").fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("users", result, ttl=60)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /users: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -598,11 +706,10 @@ def get_activites():
     user_id = session["user_id"]
     classe_id = session.get("classe_id")
 
-    conn = get_db_connection()
+    conn = get_db_read()
 
     if role == "eleve":
       if not classe_id:
-        conn.close()
         return jsonify({"error": "Classe non définie"}), 400
 
       rows = conn.execute("""
@@ -632,15 +739,15 @@ def get_activites():
         ORDER BY a.titre
       """).fetchall()
 
-    # Pour les élèves, récupérer la liste des activités auxquelles ils sont inscrits
+    # Pour les élèves, récupérer inscriptions + dernières séances en 1 seule requête
     inscriptions_eleve = set()
+    derniere_seance_par_activite = {}
     if role == "eleve":
       inscriptions = conn.execute("""
         SELECT activite_id FROM inscriptions WHERE eleve_id = ?
       """, (user_id,)).fetchall()
       inscriptions_eleve = {ins["activite_id"] for ins in inscriptions}
-    
-      # Date de la dernière séance par activité (pour le filtre de masquage)
+
       seances_rows = conn.execute("""
         SELECT s.activite_id, MAX(s.date_heure) as derniere_seance
         FROM seances s
@@ -652,8 +759,7 @@ def get_activites():
         r["activite_id"]: datetime.fromisoformat(r["derniere_seance"])
         for r in seances_rows if r["derniere_seance"]
       }
-
-    conn.close()
+    # conn read thread-local — pas de release
 
     result = []
     now = now_local()
@@ -763,7 +869,7 @@ def create_activite():
     animateur_exists = cur.execute("SELECT 1 FROM users WHERE id=?", (animateur_id,)).fetchone()
     if not animateur_exists:
       conn.rollback()
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": f"Animateur invalide: {animateur_id}"}), 400
 
     groupe_id = data.get("groupe_id", None)
@@ -774,7 +880,7 @@ def create_activite():
       groupe_exists = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
       if not groupe_exists:
         conn.rollback()
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Groupe invalide: {groupe_id}"}), 400
 
     # Insertion avec requêtes préparées (protection SQL injection)
@@ -793,7 +899,7 @@ def create_activite():
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
         conn.rollback()
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Classe invalide: {cid}"}), 400
 
       cur.execute("INSERT INTO activite_classes (activite_id, classe_id) VALUES (?, ?)",
@@ -807,7 +913,7 @@ def create_activite():
                     (act_id, s["date_heure"], duree))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Activité créée: {titre} par user {session['user_id']}")
     sse_manager.broadcast('activite_created', {'id': act_id, 'titre': titre})
@@ -831,12 +937,12 @@ def supprimer_activite(activite_id):
     activite = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
 
     if not activite:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité introuvable"}), 404
 
     # Les admins peuvent tout supprimer, les profs seulement leurs créations
     if session["role"] != "admin" and activite["prof_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur de cette activité"}), 403
 
     # Supprimer en cascade
@@ -859,7 +965,7 @@ def supprimer_activite(activite_id):
     cur.execute("DELETE FROM activites WHERE id=?", (activite_id,))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Activité {activite_id} supprimée par user {session['user_id']}")
     sse_manager.broadcast('activite_deleted', {'id': activite_id})
@@ -882,18 +988,18 @@ def modifier_activite(activite_id):
     activite = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
 
     if not activite:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité introuvable"}), 404
 
     # Les admins peuvent tout modifier, les profs seulement leurs créations
     if session["role"] != "admin" and activite["prof_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé : vous n'êtes pas le créateur"}), 403
 
     # Validation basique
     valid, error = validate_basic(data, ['titre', 'salle', 'effectif_max'])
     if not valid:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": error}), 400
 
     titre = safe_string(data.get("titre"), max_length=100)
@@ -909,7 +1015,7 @@ def modifier_activite(activite_id):
       field_name="classe_ids"
     )
     if classes_error:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": classes_error}), 400
 
     for cid in classe_ids:
@@ -921,26 +1027,26 @@ def modifier_activite(activite_id):
 
     ouverture_valid, ouverture_error = InputValidator.validate_datetime(ouverture, "date d'ouverture")
     if not ouverture_valid:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": ouverture_error}), 400
 
     fermeture_valid, fermeture_error = InputValidator.validate_datetime(fermeture, "date de fermeture")
     if not fermeture_valid:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": fermeture_error}), 400
 
     date_ouverture = datetime.fromisoformat(ouverture)
     date_fermeture = datetime.fromisoformat(fermeture)
 
     if date_fermeture <= date_ouverture:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "La date de fermeture doit être après la date d'ouverture"}), 400
 
     animateur_id = safe_int(data.get("animateur_id", session["user_id"]), min_val=1)
 
     animateur_exists = cur.execute("SELECT 1 FROM users WHERE id=?", (animateur_id,)).fetchone()
     if not animateur_exists:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": f"Animateur invalide: {animateur_id}"}), 400
 
     groupe_id = data.get("groupe_id", None)
@@ -948,7 +1054,7 @@ def modifier_activite(activite_id):
       groupe_id = safe_int(groupe_id, min_val=1)
       groupe_exists = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
       if not groupe_exists:
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Groupe invalide: {groupe_id}"}), 400
     else:
       groupe_id = None
@@ -969,7 +1075,7 @@ def modifier_activite(activite_id):
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
         conn.rollback()
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Classe invalide: {cid}"}), 400
       cur.execute("INSERT INTO activite_classes (activite_id, classe_id) VALUES (?, ?)",
                   (activite_id, cid))
@@ -978,7 +1084,7 @@ def modifier_activite(activite_id):
     seances_data = data.get("seances", [])
     if not isinstance(seances_data, list) or len(seances_data) == 0:
       conn.rollback()
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séances requises"}), 400
 
     # Récupérer les IDs des séances existantes
@@ -996,7 +1102,7 @@ def modifier_activite(activite_id):
           date_valid, date_error = InputValidator.validate_datetime(s['date_heure'], "date de séance")
           if not date_valid:
             conn.rollback()
-            conn.close()
+            _release_db(conn)
             return jsonify({"error": date_error}), 400
 
           duree = safe_int(s.get('duree', 60), min_val=1, max_val=300)
@@ -1008,7 +1114,7 @@ def modifier_activite(activite_id):
         date_valid, date_error = InputValidator.validate_datetime(s['date_heure'], "date de séance")
         if not date_valid:
           conn.rollback()
-          conn.close()
+          _release_db(conn)
           return jsonify({"error": date_error}), 400
 
         duree = safe_int(s.get('duree', 60), min_val=1, max_val=300)
@@ -1023,7 +1129,7 @@ def modifier_activite(activite_id):
       cur.execute("DELETE FROM seances WHERE id=?", (sid,))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Activité {activite_id} modifiée par user {session['user_id']}")
     sse_manager.broadcast('activite_updated', {'id': activite_id})
@@ -1062,11 +1168,11 @@ def generer_pdf_seance(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance_data:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     if session["role"] != "admin" and seance_data["prof_id"] != session["user_id"] and seance_data["animateur_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     presences = cur.execute("""
@@ -1081,7 +1187,7 @@ def generer_pdf_seance(seance_id):
     animateur_id = seance_data["animateur_id"] or seance_data["prof_id"]
     animateur = cur.execute("SELECT prenom, nom FROM users WHERE id=?", (animateur_id,)).fetchone()
 
-    conn.close()
+    _release_db(conn)
 
     # PDF ULTRA COMPACT
     buffer = BytesIO()
@@ -1280,11 +1386,11 @@ def inscrire():
     """, (activite_id, classe_id)).fetchone()
 
     if not act:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité non accessible à votre classe"}), 403
 
     if act["separable"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Cette activité est sécable, inscrivez-vous séance par séance"}), 400
 
     now = now_local()
@@ -1292,7 +1398,7 @@ def inscrire():
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
     if now < ouverture or now > fermeture:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Période d'inscription fermée"}), 400
 
     if act["groupe_id"]:
@@ -1307,7 +1413,7 @@ def inscrire():
       """, (act["groupe_id"], user_id, activite_id)).fetchall()
 
       if conflits:
-        conn.close()
+        _release_db(conn)
         activite_conflit = conflits[0]["titre"]
         return jsonify({
           "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
@@ -1316,7 +1422,7 @@ def inscrire():
     seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
 
     if not seances:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Aucune séance pour cette activité"}), 400
 
     existing = cur.execute("""
@@ -1325,7 +1431,7 @@ def inscrire():
     """, (user_id, activite_id)).fetchone()
 
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Déjà inscrit"}), 400
 
     for seance in seances:
@@ -1334,7 +1440,7 @@ def inscrire():
       """, (seance["id"],)).fetchone()[0]
 
       if count >= act["effectif_max"]:
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Effectif complet pour au moins une séance"}), 400
 
     for seance in seances:
@@ -1349,12 +1455,17 @@ def inscrire():
     """, (user_id, activite_id, now_local_str()))
 
     conn.commit()
-    conn.close()
+
+    # Compter les inscrits actuels pour mise à jour UI sans refetch
+    nb_inscrits = get_db_read().execute(
+      "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
+    ).fetchone()[0]
 
     # Broadcast SSE
     sse_manager.broadcast('inscription_created', {
       'eleve_id': user_id,
-      'activite_id': activite_id
+      'activite_id': activite_id,
+      'nb_inscrits': nb_inscrits
     })
     logger.info(f"Inscription (NON sécable): user {user_id} -> activité {activite_id} (toutes séances)")
     return jsonify({"success": True})
@@ -1403,12 +1514,16 @@ def desinscrire():
 
     affected = result.rowcount
     conn.commit()
-    conn.close()
+
+    nb_inscrits = get_db_read().execute(
+      "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
+    ).fetchone()[0]
 
     # Broadcast SSE
     sse_manager.broadcast('inscription_deleted', {
       'eleve_id': eleve_id,
-      'activite_id': activite_id
+      'activite_id': activite_id,
+      'nb_inscrits': nb_inscrits
     })
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
@@ -1442,7 +1557,7 @@ def inscrire_seance():
 
     seance = cur.execute("SELECT * FROM seances WHERE id=?", (seance_id,)).fetchone()
     if not seance:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     activite_id = seance["activite_id"]
@@ -1454,11 +1569,11 @@ def inscrire_seance():
     """, (activite_id, classe_id)).fetchone()
 
     if not act:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité non accessible"}), 403
 
     if not act["separable"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Cette activité n'est pas sécable"}), 400
 
     now = now_local()
@@ -1466,7 +1581,7 @@ def inscrire_seance():
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
     if now < ouverture or now > fermeture:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Période d'inscription fermée"}), 400
 
     if act["groupe_id"]:
@@ -1481,7 +1596,7 @@ def inscrire_seance():
       """, (act["groupe_id"], user_id, activite_id)).fetchall()
 
       if conflits:
-        conn.close()
+        _release_db(conn)
         activite_conflit = conflits[0]["titre"]
         return jsonify({
           "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
@@ -1490,13 +1605,13 @@ def inscrire_seance():
     count = cur.execute("SELECT COUNT(*) FROM presences WHERE seance_id=?",
                         (seance_id,)).fetchone()[0]
     if count >= act["effectif_max"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance complète"}), 400
 
     existing = cur.execute("SELECT 1 FROM presences WHERE eleve_id=? AND seance_id=?",
                           (user_id, seance_id)).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Déjà inscrit à cette séance"}), 400
 
     cur.execute("""
@@ -1505,13 +1620,17 @@ def inscrire_seance():
     """, (seance_id, user_id))
 
     conn.commit()
-    conn.close()
+
+    nb_inscrits_seance = get_db_read().execute(
+      "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance_id,)
+    ).fetchone()[0]
 
     # Broadcast SSE
     sse_manager.broadcast('inscription_seance_created', {
       'eleve_id': user_id,
       'seance_id': seance_id,
-      'activite_id': activite_id
+      'activite_id': activite_id,
+      'nb_inscrits_seance': nb_inscrits_seance
     })
     logger.info(f"Inscription séance: user {user_id} -> séance {seance_id}")
     return jsonify({"success": True})
@@ -1568,12 +1687,21 @@ def desinscrire_seance():
     """, (eleve_id, seance_id, eleve_id, seance_id))
 
     conn.commit()
-    conn.close()
+
+    nb_inscrits_seance = get_db_read().execute(
+      "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance_id,)
+    ).fetchone()[0]
+    activite_id_row = get_db_read().execute(
+      "SELECT activite_id FROM seances WHERE id=?", (seance_id,)
+    ).fetchone()
+    activite_id_val = activite_id_row["activite_id"] if activite_id_row else None
 
     # Broadcast SSE
     sse_manager.broadcast('inscription_seance_deleted', {
       'eleve_id': eleve_id,
-      'seance_id': seance_id
+      'seance_id': seance_id,
+      'activite_id': activite_id_val,
+      'nb_inscrits_seance': nb_inscrits_seance
     })
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
@@ -1610,7 +1738,7 @@ def get_seances():
     else:
       rows = conn.execute("SELECT * FROM seances ORDER BY date_heure").fetchall()
 
-    conn.close()
+    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /seances: {str(e)}")
@@ -1622,7 +1750,7 @@ def get_inscriptions():
   try:
     conn = get_db_connection()
     rows = conn.execute("SELECT * FROM inscriptions ORDER BY date_inscription").fetchall()
-    conn.close()
+    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /inscriptions: {str(e)}")
@@ -1637,10 +1765,43 @@ def get_inscriptions_seances():
       SELECT seance_id, eleve_id
       FROM presences
     """).fetchall()
-    conn.close()
+    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /inscriptions/seances: {str(e)}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route("/inscriptions/delta")
+@login_required
+def get_inscriptions_delta():
+  """Retourne uniquement les données de comptage d'une activité spécifique.
+  Utilisé par le SSE pour éviter de tout recharger.
+  ?activite_id=X  → compte inscrits + séances avec comptes."""
+  try:
+    activite_id = request.args.get("activite_id", type=int)
+    if not activite_id:
+      return jsonify({"error": "activite_id requis"}), 400
+
+    conn = get_db_read()
+    nb_inscrits = conn.execute(
+      "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
+    ).fetchone()[0]
+
+    seances_counts = conn.execute("""
+      SELECT s.id AS seance_id, COUNT(p.eleve_id) AS nb_inscrits
+      FROM seances s
+      LEFT JOIN presences p ON p.seance_id = s.id
+      WHERE s.activite_id = ?
+      GROUP BY s.id
+    """, (activite_id,)).fetchall()
+
+    return jsonify({
+      "activite_id": activite_id,
+      "nb_inscrits": nb_inscrits,
+      "seances": [dict(r) for r in seances_counts]
+    })
+  except Exception as e:
+    logger.error(f"Erreur /inscriptions/delta: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route("/activite_classes")
@@ -1650,7 +1811,7 @@ def get_activite_classes():
     role = session["role"]
     classe_id = session.get("classe_id")
 
-    conn = get_db_connection()
+    conn = get_db_read()
 
     if role == "eleve" and classe_id:
       rows = conn.execute("SELECT * FROM activite_classes WHERE classe_id = ?",
@@ -1658,7 +1819,6 @@ def get_activite_classes():
     else:
       rows = conn.execute("SELECT * FROM activite_classes").fetchall()
 
-    conn.close()
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /activite_classes: {str(e)}")
@@ -1678,7 +1838,7 @@ def get_eleves_non_inscrits(groupe_id):
     # Vérifier que le groupe existe
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Groupe introuvable"}), 404
 
     # Récupérer toutes les activités du groupe
@@ -1687,7 +1847,7 @@ def get_eleves_non_inscrits(groupe_id):
     """, (groupe_id,)).fetchall()
 
     if not activites:
-      conn.close()
+      _release_db(conn)
       return jsonify({"eleves": []})
 
     activite_ids = [a["id"] for a in activites]
@@ -1700,7 +1860,7 @@ def get_eleves_non_inscrits(groupe_id):
     """.format(','.join('?' * len(activite_ids))), activite_ids).fetchall()
 
     if not classes_ids:
-      conn.close()
+      _release_db(conn)
       return jsonify({"eleves": []})
 
     classe_ids_list = [c["classe_id"] for c in classes_ids]
@@ -1745,7 +1905,7 @@ def get_eleves_non_inscrits(groupe_id):
         eleve_dict["dernier_mail"] = mail_recent["date_envoi"] if mail_recent else None
         eleves_non_inscrits.append(eleve_dict)
 
-    conn.close()
+    _release_db(conn)
 
     return jsonify({
       "groupe": dict(groupe),
@@ -1767,33 +1927,29 @@ def envoyer_rappel_inscription(groupe_id):
 
     eleve_id = validate_integer(data.get("eleve_id"), min_val=1)
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    # Toutes les lectures sur la connexion thread-local (pas de pool write gaspillé)
+    rconn = get_db_read()
 
-    # Récupérer le groupe
-    groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
+    groupe = rconn.execute(
+      "SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)
+    ).fetchone()
     if not groupe:
-      conn.close()
       return jsonify({"error": "Groupe introuvable"}), 404
 
-    # Récupérer l'élève
-    eleve = cur.execute("""
+    eleve = rconn.execute("""
       SELECT u.*, c.nom as classe_nom
       FROM users u
       LEFT JOIN classes c ON u.classe_id = c.id
       WHERE u.id = ? AND u.role = 'eleve'
     """, (eleve_id,)).fetchone()
-
     if not eleve:
-      conn.close()
       return jsonify({"error": "Élève introuvable"}), 404
-
     if not eleve["email"]:
-      conn.close()
       return jsonify({"error": "Cet élève n'a pas d'adresse email"}), 400
 
-    # Récupérer le prof qui envoie
-    prof = cur.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
+    prof = rconn.execute(
+      "SELECT prenom, nom FROM users WHERE id=?", (session["user_id"],)
+    ).fetchone()
 
     # Préparer l'email
     subject = f"Rappel d'inscription - Groupe {groupe['nom']}"
@@ -1815,20 +1971,14 @@ body{{font-family: 'Arial', sans-serif;line-height: 1.6;color: #222;background: 
 a {{color: inherit;}}
 </style></head><body>
 <div class="container">
-<div class="header">
-<h1>Rappel D'inscription</h1>
-</div>
+<div class="header"><h1>Rappel D'inscription</h1></div>
 <div class="content">
 <p>Bonjour <strong>{eleve['prenom']} {eleve['nom']}</strong>,</p>
-<p>Vous recevez ce message car vous ne vous êtes pas encore inscrit(e) à une activité du groupe d'activités <strong>"{groupe['nom']}"</strong>.</p>
-<div class="warning">
-⚠️ Action requise : Ce groupe d'activités est <strong>obligatoire</strong>. Veuillez vous inscrire dans la limite des places disponibles
-</div>
+<p>Vous recevez ce message car vous ne vous êtes pas encore inscrit(e) à une activité du groupe d'activités <strong>«&nbsp;{groupe['nom']}&nbsp;»</strong>.</p>
+<div class="warning">⚠️ Action requise : Ce groupe d'activités est <strong>obligatoire</strong>. Veuillez vous inscrire dans la limite des places disponibles.</div>
 <p>Pour vous inscrire, cliquez sur le bouton ci-dessous pour accéder à la plateforme <span class="highlight">CONCORDE</span> :</p>
-<p style="text-align:center;margin:35px 0">
-<a href="{BASE_URL}" class="btn">Accéder à CONCORDE</a>
-</p>
-<p><strong>Si vous pensez qu'il s'agit d'une erreur</strong>, veuillez contacter :</p>
+<p style="text-align:center;margin:35px 0"><a href="{BASE_URL}" class="btn">Accéder à CONCORDE</a></p>
+<p><strong>Si vous pensez qu'il s'agit d'une erreur</strong>, veuillez contacter&nbsp;:</p>
 <p style="margin-left:20px">{prof['prenom']} {prof['nom']}</p>
 </div>
 <div class="footer">
@@ -1840,32 +1990,31 @@ a {{color: inherit;}}
 
     text_content = f"""Bonjour {eleve['prenom']} {eleve['nom']},
 
-Vous recevez ce message car vous ne vous êtes pas encore inscrit(e) à une activité du groupe d'activités "{groupe['nom']}".
+Vous ne vous êtes pas encore inscrit(e) à une activité du groupe "{groupe['nom']}".
 
-⚠️ Ce groupe d'activités est OBLIGATOIRE. Vous devez vous inscrire à une activité dans la limite des places disponibles.
+⚠️ Ce groupe est OBLIGATOIRE. Inscrivez-vous à une activité dans la limite des places disponibles.
 
-Pour vous inscrire, connectez-vous à : {BASE_URL}
+Pour vous inscrire, connectez-vous sur : {BASE_URL}
 
 Si vous pensez que c'est une erreur, contactez : {prof['prenom']} {prof['nom']}
 
-Cet email a été envoyé automatiquement - NE PAS RÉPONDRE
+Email automatique — NE PAS RÉPONDRE
 CONCORDE © 2025"""
 
-    # Envoyer l'email
     success, message = send_email(eleve["email"], subject, html_content, text_content)
-
     if not success:
-      conn.close()
       return jsonify({"error": message}), 500
 
-    # Enregistrer l'envoi
-    cur.execute("""
-      INSERT INTO rappels_inscription (eleve_id, groupe_id, date_envoi, envoye_par)
-      VALUES (?, ?, ?, ?)
-    """, (eleve_id, groupe_id, now_local_str(),session["user_id"]))
-
-    conn.commit()
-    conn.close()
+    # Écriture uniquement ici — connexion write pool
+    conn = get_db_connection()
+    try:
+      conn.execute("""
+        INSERT INTO rappels_inscription (eleve_id, groupe_id, date_envoi, envoye_par)
+        VALUES (?, ?, ?, ?)
+      """, (eleve_id, groupe_id, now_local_str(), session["user_id"]))
+      conn.commit()
+    finally:
+      _release_db(conn)
 
     logger.info(f"Rappel inscription envoyé: groupe {groupe_id} -> élève {eleve_id}")
     return jsonify({"success": True, "message": "Email envoyé avec succès"})
@@ -1894,18 +2043,18 @@ def inscription_manuelle():
     # Vérifier que l'élève existe
     eleve = cur.execute("SELECT * FROM users WHERE id=? AND role='eleve'", (eleve_id,)).fetchone()
     if not eleve:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Élève introuvable"}), 404
 
     # Vérifier que l'activité existe
     act = cur.execute("SELECT * FROM activites WHERE id=?", (activite_id,)).fetchone()
     if not act:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité introuvable"}), 404
 
     # Vérifier que l'utilisateur est autorisé (admin ou créateur)
     if session.get("role") != 'admin' and act["prof_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     # Vérifier que l'élève peut accéder à cette activité (classe)
@@ -1915,7 +2064,7 @@ def inscription_manuelle():
     """, (activite_id, eleve["classe_id"])).fetchone()
 
     if not classe_valide:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "L'élève n'a pas accès à cette activité (classe différente)"}), 400
 
     # Vérifier le groupe d'exclusivité
@@ -1931,7 +2080,7 @@ def inscription_manuelle():
       """, (act["groupe_id"], eleve_id, activite_id)).fetchall()
 
       if conflits:
-        conn.close()
+        _release_db(conn)
         activite_conflit = conflits[0]["titre"]
         return jsonify({
           "error": f"L'élève est déjà inscrit à '{activite_conflit}' du même groupe exclusif"
@@ -1941,7 +2090,7 @@ def inscription_manuelle():
     seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
 
     if not seances:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Aucune séance pour cette activité"}), 400
 
     # Vérifier si déjà inscrit
@@ -1951,7 +2100,7 @@ def inscription_manuelle():
     """, (eleve_id, activite_id)).fetchone()
 
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Élève déjà inscrit"}), 400
 
     # IMPORTANT : Inscription manuelle bypasse l'effectif max
@@ -1971,13 +2120,17 @@ def inscription_manuelle():
     """, (eleve_id, activite_id, now_local_str()))
 
     conn.commit()
-    conn.close()
+
+    nb_inscrits = get_db_read().execute(
+      "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
+    ).fetchone()[0]
 
     # Broadcast SSE
     sse_manager.broadcast('inscription_manuelle_created', {
       'eleve_id': eleve_id,
       'activite_id': activite_id,
-      'by_user_id': session['user_id']
+      'by_user_id': session['user_id'],
+      'nb_inscrits': nb_inscrits
     })
     logger.info(f"Inscription manuelle: élève {eleve_id} -> activité {activite_id} par {session['user_id']}")
     return jsonify({"success": True})
@@ -1997,10 +2150,14 @@ def inscription_manuelle():
 def get_groupes():
   """Récupérer tous les groupes d'exclusivité"""
   try:
-    conn = get_db_connection()
+    cached = _cache.get("groupes")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("SELECT * FROM groupes_exclusivite ORDER BY nom").fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("groupes", result, ttl=60)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /groupes: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -2031,7 +2188,7 @@ def create_groupe():
 
     existing = cur.execute("SELECT 1 FROM groupes_exclusivite WHERE nom=?", (nom,)).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
 
     # Créer le groupe
@@ -2045,16 +2202,17 @@ def create_groupe():
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
         conn.rollback()
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Classe invalide: {cid}"}), 400
 
       cur.execute("INSERT INTO groupe_classes (groupe_id, classe_id) VALUES (?, ?)",
                   (groupe_id, cid))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Groupe créé: {nom} (ID: {groupe_id}) avec {len(classe_ids)} classe(s)")
+    _cache.invalidate("groupes", "groupe_classes")
     sse_manager.broadcast('groupe_created', {'id': groupe_id, 'nom': nom})
     return jsonify({"success": True, "id": groupe_id})
 
@@ -2078,7 +2236,7 @@ def delete_groupe(groupe_id):
     ).fetchone()[0]
 
     if activites_count > 0:
-      conn.close()
+      _release_db(conn)
       return jsonify({
         "error": f"Impossible de supprimer : {activites_count} activité(s) utilisent ce groupe"
       }), 400
@@ -2089,13 +2247,14 @@ def delete_groupe(groupe_id):
     result = cur.execute("DELETE FROM groupes_exclusivite WHERE id=?", (groupe_id,))
 
     if result.rowcount == 0:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Groupe introuvable"}), 404
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Groupe supprimé: ID {groupe_id}")
+    _cache.invalidate("groupes", "groupe_classes")
     sse_manager.broadcast('groupe_deleted', {'id': groupe_id})
     return jsonify({"success": True})
 
@@ -2131,7 +2290,7 @@ def update_groupe(groupe_id):
     # Vérifier que le groupe existe
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Groupe introuvable"}), 404
 
     # Vérifier unicité du nom (sauf pour le groupe actuel)
@@ -2140,7 +2299,7 @@ def update_groupe(groupe_id):
       (nom, groupe_id)
     ).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Un groupe avec ce nom existe déjà"}), 400
 
     echanges_actifs = 1 if data.get("echanges_actifs") else 0
@@ -2158,16 +2317,17 @@ def update_groupe(groupe_id):
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (cid,)).fetchone()
       if not classe_exists:
         conn.rollback()
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": f"Classe invalide: {cid}"}), 400
 
       cur.execute("INSERT INTO groupe_classes (groupe_id, classe_id) VALUES (?, ?)",
                   (groupe_id, cid))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Groupe modifié: {nom} (ID: {groupe_id})")
+    _cache.invalidate("groupes", "groupe_classes")
     sse_manager.broadcast('groupe_updated', {'id': groupe_id, 'nom': nom})
     return jsonify({"success": True})
 
@@ -2183,10 +2343,14 @@ def update_groupe(groupe_id):
 def get_groupe_classes():
   """Récupérer toutes les associations groupe-classe"""
   try:
-    conn = get_db_connection()
+    cached = _cache.get("groupe_classes")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("SELECT * FROM groupe_classes ORDER BY groupe_id").fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("groupe_classes", result, ttl=60)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /groupe_classes: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -2210,11 +2374,11 @@ def get_appel_info(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     presences = conn.execute("""
@@ -2226,7 +2390,7 @@ def get_appel_info(seance_id):
       ORDER BY u.nom, u.prenom
     """, (seance_id,)).fetchall()
 
-    conn.close()
+    _release_db(conn)
 
     return jsonify({
       "seance": dict(seance),
@@ -2261,11 +2425,11 @@ def save_appel(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     for presence in presences_data:
@@ -2280,7 +2444,7 @@ def save_appel(seance_id):
       """, (present, commentaire, seance_id, eleve_id))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Appel enregistré pour séance {seance_id} par user {session['user_id']}")
     sse_manager.broadcast('appel_updated', {'seance_id': seance_id})
@@ -2307,13 +2471,13 @@ def get_appel_status(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     animateur_id = seance["animateur_id"] if seance["animateur_id"] else seance["prof_id"]
 
     if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and animateur_id != session["user_id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     result = conn.execute("""
@@ -2323,7 +2487,7 @@ def get_appel_status(seance_id):
       WHERE seance_id = ?
     """, (seance_id,)).fetchone()
 
-    conn.close()
+    _release_db(conn)
 
     presents = result["presents"] if result and result["presents"] else 0
     appel_fait = presents > 0
@@ -2362,7 +2526,7 @@ def create_invitation():
 
     existing = conn.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Un compte existe déjà avec cet email"}), 400
 
     existing_token = conn.execute("""
@@ -2371,7 +2535,7 @@ def create_invitation():
     """, (email, now_local_str())).fetchone()
 
     if existing_token:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Une invitation est déjà en attente pour cet email"}), 400
 
     token = secrets.token_urlsafe(32)
@@ -2384,7 +2548,7 @@ def create_invitation():
     """, (token, email, expires_at, session["user_id"]))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     success, message = send_invitation_email(email, token)
 
@@ -2414,7 +2578,7 @@ def list_invitations():
       LEFT JOIN users uu ON it.used_by_user_id = uu.id
       ORDER BY it.created_at DESC
     """).fetchall()
-    conn.close()
+    _release_db(conn)
 
     return jsonify([dict(inv) for inv in invitations])
   except Exception as e:
@@ -2435,12 +2599,12 @@ def delete_invitation(invitation_id):
     ).fetchone()
 
     if not invitation:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Invitation introuvable ou déjà utilisée"}), 404
 
     cur.execute("DELETE FROM invitation_tokens WHERE id=?", (invitation_id,))
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Invitation {invitation_id} supprimée")
     return jsonify({"success": True})
@@ -2463,7 +2627,7 @@ def get_invitation_info():
       FROM invitation_tokens
       WHERE token=? AND used=0 AND datetime(expires_at) > ?
     """, (token, now_local_str())).fetchone()
-    conn.close()
+    _release_db(conn)
 
     if not invitation:
       return jsonify({"error": "Token invalide ou expiré"}), 404
@@ -2487,7 +2651,7 @@ def signup_form():
     SELECT * FROM invitation_tokens
     WHERE token=? AND used=0 AND datetime(expires_at) > ?
   """, (token, now_local_str())).fetchone()
-  conn.close()
+  _release_db(conn)
 
   if not invitation:
     return """<!DOCTYPE html>
@@ -2542,19 +2706,19 @@ def process_signup():
     """, (token, now_local_str())).fetchone()
 
     if not invitation:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Token invalide ou expiré"}), 400
 
     # Vérification username unique
     existing = cur.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Ce nom d'utilisateur existe déjà"}), 400
 
     # Vérification email unique
     existing_email = cur.execute("SELECT 1 FROM users WHERE email=?", (invitation["email"],)).fetchone()
     if existing_email:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Un compte existe déjà avec cet email"}), 400
 
     # Validation classe_id si fournie
@@ -2562,7 +2726,7 @@ def process_signup():
       classe_id = safe_int(classe_id, min_val=1)
       classe_exists = cur.execute("SELECT 1 FROM classes WHERE id=?", (classe_id,)).fetchone()
       if not classe_exists:
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": "Classe invalide"}), 400
     else:
       classe_id = None
@@ -2590,7 +2754,7 @@ def process_signup():
     """, (now_local_str(), user_id, prenom, nom, token))
 
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     logger.info(f"Nouveau professeur inscrit : {username} ({prenom} {nom}) - Matière: {matiere}")
     return jsonify({"success": True, "message": "Compte créé avec succès"})
@@ -2636,7 +2800,7 @@ def first_login_send_code():
     user = conn.execute(
       "SELECT id, email, prenom, role FROM users WHERE id=?", (user_id,)
     ).fetchone()
-    conn.close()
+    _release_db(conn)
 
     if not user or user["role"] != "eleve":
       return jsonify({"error": "Utilisateur invalide"}), 400
@@ -2703,7 +2867,7 @@ def first_login_verify():
     user = conn.execute(
       "SELECT id, role, prenom, nom, classe_id FROM users WHERE id=?", (user_id,)
     ).fetchone()
-    conn.close()
+    _release_db(conn)
 
     # Invalider le code
     PasswordResetManager.mark_code_used(user_id, "first_login", ip_address=request.remote_addr)
@@ -2816,7 +2980,7 @@ def forgot_password_verify():
     conn = get_db_connection()
     conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
     conn.commit()
-    conn.close()
+    _release_db(conn)
 
     PasswordResetManager.mark_code_used(user_id, "password_reset", ip_address=request.remote_addr)
     session.pop("pending_reset_user_id", None)
@@ -2878,7 +3042,7 @@ def get_voeux(groupe_id):
 
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe or not groupe["echanges_actifs"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Groupe introuvable ou échanges désactivés"}), 404
 
     rows = cur.execute("""
@@ -2897,7 +3061,7 @@ def get_voeux(groupe_id):
       ORDER BY v.created_at DESC
     """, (groupe_id,)).fetchall()
 
-    conn.close()
+    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur get_voeux: {e}")
@@ -2919,7 +3083,7 @@ def create_voeu():
 
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe or not groupe["echanges_actifs"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Échanges non autorisés pour ce groupe"}), 400
 
     # Trouver l'activité actuelle de l'élève dans ce groupe (via presences, source de vérité)
@@ -2932,7 +3096,7 @@ def create_voeu():
     """, (eleve_id, groupe_id)).fetchone()
 
     if not actuelle:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Vous n'êtes pas inscrit dans ce groupe"}), 400
 
     actuelle_id = actuelle["id"]
@@ -2943,7 +3107,7 @@ def create_voeu():
       (cible_id, groupe_id, actuelle_id)
     ).fetchone()
     if not cible:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Activité cible invalide ou identique à votre activité actuelle"}), 400
 
     # L'élève n'est pas déjà inscrit à la cible
@@ -2954,7 +3118,7 @@ def create_voeu():
       LIMIT 1
     """, (eleve_id, cible_id)).fetchone()
     if deja:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Vous êtes déjà inscrit à cette activité"}), 400
 
     try:
@@ -2965,11 +3129,11 @@ def create_voeu():
       """, (eleve_id, groupe_id, actuelle_id, cible_id))
       conn.commit()
     except sqlite3.IntegrityError:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Vous avez déjà un vœu actif dans ce groupe. Retirez-le d'abord."}), 400
 
     voeu_id = cur.lastrowid
-    conn.close()
+    _release_db(conn)
     sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
     return jsonify({"success": True, "id": voeu_id})
   except Exception as e:
@@ -2988,10 +3152,10 @@ def delete_voeu(voeu_id):
 
     voeu = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (voeu_id,)).fetchone()
     if not voeu:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Vœu introuvable"}), 404
     if voeu["eleve_id"] != eleve_id and session.get("role") not in ("prof","admin"):
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     groupe_id = voeu["groupe_id"]
@@ -3002,7 +3166,7 @@ def delete_voeu(voeu_id):
     """, (voeu_id, voeu_id))
     cur.execute("DELETE FROM voeux_echange WHERE id=?", (voeu_id,))
     conn.commit()
-    conn.close()
+    _release_db(conn)
     sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
     return jsonify({"success": True})
   except Exception as e:
@@ -3026,7 +3190,7 @@ def create_procedure():
     va = cur.execute("SELECT * FROM voeux_echange WHERE id=? AND statut='actif'", (voeu_a_id,)).fetchone()
     vb = cur.execute("SELECT * FROM voeux_echange WHERE id=? AND statut='actif'", (voeu_b_id,)).fetchone()
     if not va or not vb:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Vœu(x) introuvable(s) ou inactif(s)"}), 400
 
     # Vérifier compatibilité : A veut aller là où B est, B veut aller là où A est
@@ -3040,10 +3204,10 @@ def create_procedure():
     """, (vb["eleve_id"], vb["groupe_id"])).fetchone()
 
     if not act_a or not act_b:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Inscriptions introuvables"}), 400
     if va["activite_cible_id"] != act_b["id"] or vb["activite_cible_id"] != act_a["id"]:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Les vœux ne sont pas compatibles"}), 400
 
     # Pas déjà une procédure active entre ces deux vœux
@@ -3053,7 +3217,7 @@ def create_procedure():
       AND statut NOT IN ('annule')
     """, (voeu_a_id, voeu_b_id, voeu_a_id, voeu_b_id)).fetchone()
     if existing:
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Une procédure est déjà en cours"}), 400
 
     cur.execute("""
@@ -3064,7 +3228,7 @@ def create_procedure():
     # Marquer les vœux en_procedure
     cur.execute("UPDATE voeux_echange SET statut='en_procedure' WHERE id IN (?,?)", (voeu_a_id, voeu_b_id))
     conn.commit()
-    conn.close()
+    _release_db(conn)
     sse_manager.broadcast("echanges_update", {"groupe_id": va["groupe_id"]})
     return jsonify({"success": True, "id": proc_id})
   except Exception as e:
@@ -3086,7 +3250,7 @@ def repondre_procedure(proc_id):
 
     proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
     if not proc or proc["statut"] != "en_attente":
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Procédure introuvable ou déjà traitée"}), 404
 
     va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
@@ -3095,7 +3259,7 @@ def repondre_procedure(proc_id):
     # Vérifier que c'est bien l'un des deux élèves qui répond
     if user_id not in (va["eleve_id"], vb["eleve_id"]):
       if session.get("role") not in ("prof","admin"):
-        conn.close()
+        _release_db(conn)
         return jsonify({"error": "Non autorisé"}), 403
 
     groupe_id = va["groupe_id"]
@@ -3104,7 +3268,7 @@ def repondre_procedure(proc_id):
       cur.execute("UPDATE procedures_echange SET statut='annule' WHERE id=?", (proc_id,))
       cur.execute("UPDATE voeux_echange SET statut='actif' WHERE id IN (?,?)", (va["id"], vb["id"]))
       conn.commit()
-      conn.close()
+      _release_db(conn)
       sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
       return jsonify({"success": True, "statut": "annule"})
 
@@ -3117,18 +3281,18 @@ def repondre_procedure(proc_id):
         cur.execute("UPDATE procedures_echange SET statut='valide', date_validation=? WHERE id=?",
                     (now_local_str(), proc_id))
         conn.commit()
-        conn.close()
+        _release_db(conn)
         sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
         return jsonify({"success": True, "statut": "valide"})
       else:
         cur.execute("UPDATE procedures_echange SET statut='accord_b', date_accord_b=? WHERE id=?",
                     (now_local_str(), proc_id))
         conn.commit()
-        conn.close()
+        _release_db(conn)
         sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
         return jsonify({"success": True, "statut": "accord_b"})
 
-    conn.close()
+    _release_db(conn)
     return jsonify({"error": "Action invalide"}), 400
   except Exception as e:
     logger.error(f"Erreur repondre_procedure: {e}")
@@ -3144,9 +3308,9 @@ def valider_procedure(proc_id):
     cur  = conn.cursor()
 
     proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
-    if not proc or proc["statut"] != "accord_b":
-      conn.close()
-      return jsonify({"error": "Procédure introuvable ou non en attente"}), 404
+    if not proc or proc["statut"] not in ("accord_b", "en_attente"):
+      _release_db(conn)
+      return jsonify({"error": "Procédure introuvable ou déjà traitée"}), 404
 
     va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
     vb = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_b_id"],)).fetchone()
@@ -3156,7 +3320,7 @@ def valider_procedure(proc_id):
                 (now_local_str(), proc_id))
     conn.commit()
     groupe_id = va["groupe_id"]
-    conn.close()
+    _release_db(conn)
     sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
     sse_manager.broadcast("data_update", {})
     return jsonify({"success": True})
@@ -3176,14 +3340,14 @@ def annuler_procedure(proc_id):
 
     proc = cur.execute("SELECT * FROM procedures_echange WHERE id=?", (proc_id,)).fetchone()
     if not proc or proc["statut"] in ("valide","annule"):
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Procédure introuvable ou déjà terminée"}), 404
 
     va = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_a_id"],)).fetchone()
     vb = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (proc["voeu_b_id"],)).fetchone()
 
     if user_id not in (va["eleve_id"], vb["eleve_id"]) and session.get("role") not in ("prof","admin"):
-      conn.close()
+      _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     cur.execute("UPDATE procedures_echange SET statut='annule' WHERE id=?", (proc_id,))
@@ -3191,7 +3355,7 @@ def annuler_procedure(proc_id):
     cur.execute("UPDATE voeux_echange SET statut='actif' WHERE id IN (?,?)", (va["id"], vb["id"]))
     conn.commit()
     groupe_id = va["groupe_id"]
-    conn.close()
+    _release_db(conn)
     sse_manager.broadcast("echanges_update", {"groupe_id": groupe_id})
     return jsonify({"success": True})
   except Exception as e:
@@ -3202,10 +3366,16 @@ def annuler_procedure(proc_id):
 @app.route("/echanges/procedures/pending", methods=["GET"])
 @role_required("prof", "admin")
 def get_pending_procedures():
-  """Liste des procédures en attente de validation prof."""
+  """Liste des procédures en attente de validation prof.
+  - Admin : voit TOUTES les procédures actives (en_attente + accord_b)
+  - Prof  : voit seulement les accord_b (prêtes à valider)
+  """
   try:
-    conn = get_db_connection()
-    rows = conn.execute("""
+    is_admin = session.get("role") == "admin"
+    statut_filter = "p.statut IN ('en_attente','accord_b')" if is_admin else "p.statut = 'accord_b'"
+
+    conn = get_db_read()
+    rows = conn.execute(f"""
       SELECT
         p.id, p.statut, p.created_at AS date_init, p.date_accord_b,
         va.eleve_id AS eleve_a_id, vb.eleve_id AS eleve_b_id,
@@ -3224,10 +3394,9 @@ def get_pending_procedures():
       JOIN activites act_ac   ON act_ac.id = va.activite_cible_id
       JOIN activites act_bc   ON act_bc.id = vb.activite_cible_id
       JOIN groupes_exclusivite ge ON ge.id = va.groupe_id
-      WHERE p.statut = 'accord_b'
+      WHERE {statut_filter}
       ORDER BY p.created_at ASC
     """).fetchall()
-    conn.close()
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur get_pending_procedures: {e}")
@@ -3298,6 +3467,7 @@ def internal_error(error):
 
 if __name__ == "__main__":
   init_db()
+  _write_pool = WritePool(size=5)
   logger.info("Démarrage de l'application")
   app.run(
     debug=False,

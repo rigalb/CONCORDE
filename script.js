@@ -101,6 +101,13 @@ function setupEventDelegation() {
             return;
         }
 
+        // === BOUTON RAFRAÎCHIR ÉCHANGES PROF ===
+        if (btn && btn.id === 'btn-rafraichir-echanges-prof') {
+            e.stopPropagation();
+            chargerPendingProcedures();
+            return;
+        }
+
         // === BOUTONS D'ACTION DANS LES CARDS ===
         if (btn && btn.classList.contains('btn-action')) {
             e.stopPropagation();
@@ -622,7 +629,8 @@ function onAuthChange(){
         $('#user-badge').style.display='inline-flex';
         $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
         $('#logout-btn').classList.remove('hidden');
-        $('#login-card').classList.add('hidden');
+        const lc = $('#login-card');
+        if (lc) { lc.classList.add('hidden'); lc.style.visibility = ''; }
         afficherPageRole(currentUser.role);
 
         initSSE();
@@ -630,7 +638,8 @@ function onAuthChange(){
     } else {
         $('#user-badge').style.display='none';
         $('#logout-btn').classList.add('hidden');
-        $('#login-card').classList.remove('hidden');
+        const lc = $('#login-card');
+        if (lc) { lc.classList.remove('hidden'); lc.style.visibility = ''; }
         cacherToutesPages();
 
         closeSSE();
@@ -962,12 +971,12 @@ async function chargerElevesNonInscrits(groupeId) {
         const data = await apiGet(`/groupes/${groupeId}/eleves-non-inscrits`);
 
         if (!data.eleves || data.eleves.length === 0) {
-            container.innerHTML = '<p class="muted small text-center" style="padding: 12px;">✓ Tous les élèves sont inscrits !</p>';
+            container.innerHTML = '<p class="muted small text-center p-12">✓ Tous les élèves sont inscrits !</p>';
             return;
         }
 
         container.innerHTML = `
-            <div style="background: #fef3c7; padding: 10px; border-radius: 6px; margin-bottom: 12px; font-size: 12px; color: #92400e;">
+            <div class="warning-banner">
                 <strong>⚠️ ${data.eleves.length} élève(s) non inscrit(s)</strong>
             </div>
         `;
@@ -1010,7 +1019,7 @@ async function chargerElevesNonInscrits(groupeId) {
         console.error('Erreur chargement élèves non inscrits:', e);
         const container = $('#liste-eleves-non-inscrits');
         if (container) {
-            container.innerHTML = '<p class="muted small" style="color: #dd1738; padding: 12px;">Erreur lors du chargement</p>';
+            container.innerHTML = '<p class="muted small text-error p-12">Erreur lors du chargement</p>';
         }
     }
 }
@@ -1246,7 +1255,7 @@ function majListeActivitesEleve() {
 
     const classeId = Number(currentUser.classe_id);
     if(!classeId || isNaN(classeId)) {
-        container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Classe non définie</p>';
+        container.innerHTML = '<p class="muted text-center p-20">Classe non définie</p>';
         return;
     }
 
@@ -1272,7 +1281,7 @@ function majListeActivitesEleve() {
     });
 
     if (activitesEleve.length === 0) {
-        container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucune activité disponible</p>';
+        container.innerHTML = '<p class="muted text-center p-20">Aucune activité disponible</p>';
         $('#stat-act-eleve').textContent = '0';
         $('#stat-insc-eleve').textContent = '0';
         return;
@@ -1320,7 +1329,7 @@ function majListeActivitesEleve() {
 
         // Créer le conteneur details
         const detailsEl = document.createElement('details');
-        detailsEl.className = 'panel-collapsible';
+        detailsEl.className = 'panel-collapsible mt-16';
         detailsEl.dataset.groupeNom = groupeNom;
         // Restaurer l'état si connu, sinon replié par défaut
         detailsEl.open = groupeNom in etatGroupes ? etatGroupes[groupeNom] : false;
@@ -1758,14 +1767,14 @@ function showActivityDetailsEleve(activite) {
             <span class="detail-label">Fermeture:</span>
             <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
         </div>
-        <div class="detail-row" style="align-items: flex-start;">
+        <div class="detail-row detail-row--top">
             <span class="detail-label">Séances:</span>
             ${seancesHtml}
         </div>
         ${activite.groupe_id ? `
         <div class="detail-row">
             <span class="detail-label">Groupe exclusif:</span>
-            <span class="detail-value" style="color: var(--accent); font-weight: 600;">
+            <span class="detail-value detail-value--accent">
                 ${groupes.find(g => g.id === activite.groupe_id)?.nom || `Groupe #${activite.groupe_id}`}
             </span>
         </div>
@@ -1917,7 +1926,7 @@ function majListeActivitesProf() {
         : activites.filter(a => a.prof_id === userId || a.animateur_id === userId);
 
     if (mesActivites.length === 0) {
-        container.innerHTML = '<p class="muted small text-center" style="padding:20px">Aucune activité</p>';
+        container.innerHTML = '<p class="muted small text-center p-20">Aucune activité</p>';
         return;
     }
 
@@ -1942,12 +1951,12 @@ function majListeActivitesProf() {
         details.className = 'panel-collapsible mt-16';
         // Fermé par défaut
 
-        const nbBadge = `<span style="font-size:12px;font-weight:600;color:var(--text-muted);margin-left:6px">(${actes.length})</span>`;
+        const nbBadge = `<span class="nb-badge">(${actes.length})</span>`;
 
         const summary = document.createElement('summary');
         summary.className = 'panel-header';
-        summary.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm0 18a8 8 0 110-16 8 8 0 010 16zm-1-5h2v2h-2zm0-8h2v6h-2z"/></svg>
+        summary.innerHTML = `<h4 class="flex items-center gap-8 flex-wrap">
+            <svg viewBox="0 0 24 24" class="w-18 h-18 svg-fill-current"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm0 18a8 8 0 110-16 8 8 0 010 16zm-1-5h2v2h-2zm0-8h2v6h-2z"/></svg>
             ${groupe.nom}${nbBadge}
         </h4>`;
         details.appendChild(summary);
@@ -1988,17 +1997,17 @@ function majListeActivitesProf() {
                     <h5 class="activity-title">${act.titre}</h5>
                     <span class="activity-room">${act.salle || ''}</span>
                 </div>
-                ${pastilles ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">${pastilles}</div>` : ''}
+                ${pastilles ? `<div class="pastille-wrap">${pastilles}</div>` : ''}
                 <div class="activity-details">Classes : ${classesText || '—'}</div>
                 <div class="activity-details">Inscrits : ${inscritsCount}/${act.effectif_max || '?'}</div>
                 <div class="activity-meta">${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}</div>
                 ${isCreator ? `
-                <div class="activity-actions" style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb">
+                <div class="activity-actions">
                     <button class="btn-action edit" title="Modifier">
-                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                        <svg viewBox="0 0 24 24" class="w-14 h-14 svg-fill-current"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
                     </button>
                     <button class="btn-action delete" title="Supprimer">
-                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                        <svg viewBox="0 0 24 24" class="w-14 h-14 svg-fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
                 </div>` : ''}
             `;
@@ -2178,14 +2187,14 @@ function showActivityDetails(activite) {
             <span class="detail-label">Fermeture:</span>
             <span class="detail-value">${formatDateLocal(activite.date_fermeture_inscriptions)}</span>
         </div>
-        <div class="detail-row" style="align-items: flex-start;">
+        <div class="detail-row detail-row--top">
             <span class="detail-label">Séances & Appel:</span>
             ${inscriptionsHtml}
         </div>
         ${activite.groupe_id ? `
         <div class="detail-row">
             <span class="detail-label">Groupe exclusif:</span>
-            <span class="detail-value" style="color: var(--accent); font-weight: 600;">
+            <span class="detail-value detail-value--accent">
                 ${groupes.find(g => g.id === activite.groupe_id)?.nom || `Groupe #${activite.groupe_id}`}
             </span>
         </div>
@@ -2254,7 +2263,7 @@ async function ouvrirModalAppel(seanceId, consultation) {
         title.textContent = `Appel - ${data.seance.titre} (${formatDateLocal(data.seance.date_heure)})`;
 
         if (data.presences.length === 0) {
-            body.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucun élève inscrit</p>';
+            body.innerHTML = '<p class="muted text-center p-20">Aucun élève inscrit</p>';
             modal.classList.add('visible');
             return;
         }
@@ -2271,11 +2280,11 @@ async function ouvrirModalAppel(seanceId, consultation) {
         const renderAppel = () => {
             const { triActuel } = window.currentAppelData;
             body.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                <div class="appel-header">
                     <div>
                         <strong>${data.presences.length}</strong> élève(s) inscrit(s)
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="appel-tri-actions">
                         <button class="btn-tri ${triActuel === 'nom' ? 'active' : ''}" data-tri="nom">
                             Trier par nom
                         </button>
@@ -2977,7 +2986,7 @@ function ouvrirModalPDF(seanceId) {
     modal.id = 'pdf-options-modal';
 
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3>Options d'impression</h3>
                 <button class="modal-close">&times;</button>
@@ -3901,7 +3910,7 @@ function majListeGroupes() {
     container.innerHTML = '';
 
     if (groupes.length === 0) {
-        container.innerHTML = '<p class="muted text-center" style="padding: 20px;">Aucun groupe créé</p>';
+        container.innerHTML = '<p class="muted text-center p-20">Aucun groupe créé</p>';
         return;
     }
 
@@ -4025,7 +4034,7 @@ async function editerGroupe(groupeId) {
         const formModeIndicator = document.getElementById('form-mode-indicator');
         if (formModeIndicator) {
             formModeIndicator.innerHTML = `
-                <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:4px;fill:currentColor">
+                <svg viewBox="0 0 24 24" class="w-16 h-16 svg-fill-current mr-4">
                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 000-1.41l-2.34-2.34a.996.996 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                 </svg>
                 Modifier le groupe
@@ -4436,50 +4445,128 @@ function initSSE() {
 
     // Mises à jour des échanges
     sseConnection.addEventListener('echanges_update', handleEchangesSSE);
+
+    // Appel mis à jour (présences) — rafraîchir uniquement le modal appel si ouvert
+    sseConnection.addEventListener('appel_updated', handleAppelSSE);
+
+    // Groupes créés/modifiés/supprimés — rechargement groupes + UI liste
+    sseConnection.addEventListener('groupe_created', handleGroupeSSE);
+    sseConnection.addEventListener('groupe_updated', handleGroupeSSE);
+    sseConnection.addEventListener('groupe_deleted', handleGroupeSSE);
 }
 
 /**
- * Gère les événements d'inscription reçus via SSE
+ * Gère les événements d'inscription reçus via SSE.
+ * Mise à jour chirurgicale : met à jour uniquement les compteurs en mémoire
+ * et les éléments DOM concernés, sans fetchAllData().
  */
 async function handleInscriptionEvent(event) {
     try {
         const data = JSON.parse(event.data);
         console.log('[SSE] [INFO] Événement reçu:', event.type, data);
 
-        // Recharger les données
-        await fetchAllData();
+        const activiteId = data.activite_id;
+        const eleveId    = data.eleve_id;
+        const seanceId   = data.seance_id;
 
-        // Rafraîchir l'interface selon le rôle
+        // --- Mise à jour du modèle en mémoire ---
+        if (activiteId) {
+            const act = activites.find(a => a.id === activiteId);
+            if (act) {
+                if (event.type === 'inscription_created' || event.type === 'inscription_manuelle_created') {
+                    if (!act.separable && eleveId && !act.inscriptions.includes(eleveId)) {
+                        act.inscriptions.push(eleveId);
+                    }
+                    if (data.nb_inscrits !== undefined) {
+                        act._nb_inscrits = data.nb_inscrits;
+                    }
+                } else if (event.type === 'inscription_deleted') {
+                    if (!act.separable) {
+                        act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
+                    }
+                    if (data.nb_inscrits !== undefined) {
+                        act._nb_inscrits = data.nb_inscrits;
+                    }
+                } else if (event.type === 'inscription_seance_created' && seanceId) {
+                    const seance = act.seances?.find(s => s.id === seanceId);
+                    if (seance && eleveId && !seance.inscriptions.includes(eleveId)) {
+                        seance.inscriptions.push(eleveId);
+                        if (act.separable && !act.inscriptions.includes(eleveId)) {
+                            act.inscriptions.push(eleveId);
+                        }
+                    }
+                    if (data.nb_inscrits_seance !== undefined && seance) {
+                        seance._nb_inscrits = data.nb_inscrits_seance;
+                    }
+                } else if (event.type === 'inscription_seance_deleted' && seanceId) {
+                    const seance = act.seances?.find(s => s.id === seanceId);
+                    if (seance && eleveId) {
+                        seance.inscriptions = seance.inscriptions.filter(id => id !== eleveId);
+                        // Si l'élève n'a plus aucune séance, retirer de act.inscriptions
+                        if (act.separable) {
+                            const encoreInscrit = act.seances.some(s => s.inscriptions.includes(eleveId));
+                            if (!encoreInscrit) act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
+                        }
+                    }
+                    if (data.nb_inscrits_seance !== undefined && seance) {
+                        seance._nb_inscrits = data.nb_inscrits_seance;
+                    }
+                }
+            }
+        }
+
+        // --- Mise à jour DOM ciblée ---
         if (currentUser.role === 'eleve') {
             majComptesActivitesEleve();
-            updateEmploiDuTempsEleve();
-            console.log('[SSE] [OK] Interface élève mise à jour');
+            // Rafraîchir le modal si l'activité concernée est ouverte
+            if (activiteId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible')) {
+                    const act = activites.find(a => a.id === activiteId);
+                    if (act) showActivityDetailsEleve(act);
+                }
+            }
         } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {
-            majListeActivitesProf();
-            updateScheduleViewProf();
+            // Mise à jour uniquement de la card concernée
+            if (activiteId) _updateActiviteCardProf(activiteId);
 
             // Rafraîchir le panneau "élèves non inscrits" si ouvert
             { const gfv = icGet('groupe-filter-select'); if (gfv) await chargerElevesNonInscrits(gfv); }
 
-            // Si le modal des détails est ouvert, le rafraîchir
+            // Rafraîchir le modal si l'activité concernée est ouverte
             const modal = document.getElementById('activity-modal');
-            if (modal && modal.classList.contains('visible')) {
-                const modalTitle = document.getElementById('modal-title');
-                const activiteTitre = modalTitle?.textContent;
-
-                if (activiteTitre) {
-                    const activite = activites.find(a => a.titre === activiteTitre);
-                    if (activite) {
-                        showActivityDetails(activite);
-                    }
-                }
+            if (modal?.classList.contains('visible') && activiteId) {
+                const act = activites.find(a => a.id === activiteId);
+                if (act) showActivityDetails(act);
             }
-
             console.log('[SSE] [OK] Interface prof mise à jour');
         }
 
     } catch (e) {
         console.error('[SSE] [KO] Erreur traitement événement:', e);
+        // Fallback : rechargement complet si mise à jour chirurgicale échoue
+        await fetchAllData();
+        if (currentUser.role === 'eleve') { majComptesActivitesEleve(); updateEmploiDuTempsEleve(); }
+        else { majListeActivitesProf(); updateScheduleViewProf(); }
+    }
+}
+
+/**
+ * Met à jour uniquement la card d'une activité dans la liste prof,
+ * sans re-rendre toute la liste.
+ */
+function _updateActiviteCardProf(activiteId) {
+    const act = activites.find(a => a.id === activiteId);
+    if (!act) return;
+    // Trouver la card dans le DOM
+    const card = document.querySelector(`.activity-card[data-activity-id="${activiteId}"]`);
+    if (!card) { majListeActivitesProf(); return; }  // fallback si introuvable
+
+    const inscritsCount = act.inscriptions?.length || 0;
+    // Mettre à jour le badge inscrits
+    const badge = card.querySelector('.inscrits-badge, .activity-details');
+    if (badge) {
+        badge.innerHTML = `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount !== 1 ? 's' : ''}`;
     }
 }
 
@@ -4501,14 +4588,16 @@ function closeSSE() {
 }
 
 /**
- * Gère les événements de modification d'activités (créée, modifiée, supprimée)
- * Recharge uniquement les données sans recharger toute la page.
+ * Gère les événements de modification d'activités (créée, modifiée, supprimée).
+ * Pour les suppressions et créations, fetchAllData est nécessaire.
+ * Pour les updates, on recharge uniquement l'activité concernée si possible.
  */
 async function handleActiviteEvent(event) {
     try {
         const data = JSON.parse(event.data);
         console.log('[SSE] Activité modifiée:', event.type, data);
 
+        // data_update ou deletion/création = on doit tout recharger (structure changée)
         await fetchAllData();
 
         if (currentUser.role === 'eleve') {
@@ -4558,11 +4647,69 @@ async function handleEchangesSSE(event) {
     }
 }
 
+/**
+ * Gère l'événement appel_updated.
+ * Rafraîchit uniquement le modal d'appel s'il est ouvert pour la séance concernée.
+ */
+function handleAppelSSE(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Appel mis à jour:', data);
+        // Si le modal appel est ouvert et concerne cette séance, le rafraîchir
+        const appelModal = document.getElementById('appel-modal');
+        if (appelModal?.classList.contains('visible') && data.seance_id) {
+            const currentSeanceId = parseInt(appelModal.dataset.seanceId);
+            if (currentSeanceId === data.seance_id) {
+                // Recharger uniquement le contenu du modal appel
+                if (typeof ouvrirModalAppel === 'function') {
+                    ouvrirModalAppel(data.seance_id, true);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[SSE] Erreur handleAppelSSE:', e);
+    }
+}
+
+/**
+ * Gère les événements groupe_created / groupe_updated / groupe_deleted.
+ * Recharge uniquement les groupes depuis le serveur et met à jour l'UI.
+ */
+async function handleGroupeSSE(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Groupe modifié:', event.type, data);
+
+        // Recharger les groupes et associations (légère requête, cachée côté serveur)
+        try {
+            groupes = await apiGet('/groupes');
+            groupeClasses = await apiGet('/groupe_classes');
+        } catch(e) {
+            console.error('[SSE] Erreur rechargement groupes:', e);
+        }
+
+        // Mettre à jour uniquement la liste des groupes dans l'UI
+        if (currentUser.role === 'prof' || currentUser.role === 'admin') {
+            majListeActivitesProf();
+            // Rafraîchir les selects groupes dans les formulaires
+            if (typeof populateGroupeSelect === 'function') populateGroupeSelect();
+        }
+        majVisibiliteTabEchanges();
+    } catch (e) {
+        console.error('[SSE] Erreur handleGroupeSSE:', e);
+    }
+}
+
 /* ===========================
    Event Listeners DOM
    =========================== */
 document.addEventListener('DOMContentLoaded', function() {
     console.log('- DOM chargé, initialisation...');
+
+    // Masquer immédiatement le login-card pour éviter le flash
+    // (sera ré-affiché par onAuthChange() si pas de session valide)
+    const loginCard = document.getElementById('login-card');
+    if (loginCard) loginCard.style.visibility = 'hidden';
 
     // Initialiser les listeners statiques
     initStaticEventListeners();
@@ -4754,6 +4901,134 @@ function majVisibiliteTabEchanges() {
     tab.style.display = concerned ? '' : 'none';
 }
 
+
+// ── Vue admin : vœux formulés + demandes d'échange ───────────
+async function chargerEchangesAdmin(panel) {
+    const groupesActifs = groupes.filter(g => g.echanges_actifs);
+
+    // Récupérer tous les vœux de tous les groupes actifs en parallèle
+    let tousVoeux = [];
+    try {
+        const resultats = await Promise.all(
+            groupesActifs.map(g => apiGet(`/echanges/voeux/${g.id}`).then(v => v.map(voeu => ({ ...voeu, groupe_nom: g.nom, groupe_id: g.id }))))
+        );
+        tousVoeux = resultats.flat();
+    } catch(e) {
+        panel.innerHTML = `<p class="text-error text-center">${e.message}</p>`;
+        return;
+    }
+
+    // Récupérer les procédures pending
+    let procs = [];
+    try {
+        procs = await apiGet('/echanges/procedures/pending');
+    } catch(e) { /* non bloquant */ }
+
+    panel.innerHTML = `
+        <div class="admin-echanges-wrap">
+
+            <!-- PANNEAU 1 : Vœux formulés -->
+            <details class="panel-collapsible mt-16" open>
+                <summary class="panel-header">
+                    <h4 class="flex items-center gap-8">
+                        <svg viewBox="0 0 24 24" class="w-18 h-18 svg-fill-current"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
+                        Vœux formulés
+                        <span class="nb-badge">(${tousVoeux.length})</span>
+                    </h4>
+                </summary>
+                <div class="admin-voeux-liste">
+                    ${tousVoeux.length === 0
+                        ? '<p class="muted text-center p-20">Aucun vœu actif.</p>'
+                        : tousVoeux.map(v => renderCarteVoeuAdmin(v)).join('')
+                    }
+                </div>
+            </details>
+
+            <!-- PANNEAU 2 : Demandes d'échange -->
+            <details class="panel-collapsible mt-16" open>
+                <summary class="panel-header">
+                    <h4 class="flex items-center gap-8">
+                        <svg viewBox="0 0 24 24" class="w-18 h-18" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        Demandes d'échange en attente
+                        <span class="nb-badge">(${procs.length})</span>
+                    </h4>
+                </summary>
+                <div id="admin-pending-liste">
+                    ${procs.length === 0
+                        ? '<p class="muted text-center p-20">Aucune demande en attente.</p>'
+                        : procs.map(p => renderCartePendingAdmin(p)).join('')
+                    }
+                </div>
+            </details>
+
+        </div>`;
+}
+
+function renderCarteVoeuAdmin(v) {
+    const statut = v.statut === 'en_procedure' ? '<span class="voeu-statut statut-en_procedure">En cours</span>' : '<span class="voeu-statut statut-actif">Actif</span>';
+    return `
+    <div class="admin-voeu-card" data-voeu-id="${v.id}">
+        <div class="admin-voeu-meta">
+            <span class="admin-voeu-groupe">${v.groupe_nom}</span>
+            <span class="admin-voeu-eleve">${v.prenom} ${v.nom} <span class="muted small">(${v.classe_nom || '—'})</span></span>
+        </div>
+        <div class="admin-voeu-trajet">
+            <span class="voeu-from">${v.activite_actuelle_titre || '?'}</span>
+            <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
+            ${statut}
+        </div>
+        <div class="admin-voeu-actions">
+            <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce vœu">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                Supprimer
+            </button>
+        </div>
+    </div>`;
+}
+
+function renderCartePendingAdmin(p) {
+    const isAccordB = p.statut === 'accord_b';
+    const statutLabel = {
+        'en_attente': '<span class="voeu-statut statut-en_procedure">En attente de l\'élève B</span>',
+        'accord_b':   '<span class="voeu-statut statut-actif">Accord des deux élèves ✓</span>',
+    }[p.statut] || '';
+
+    return `
+    <div class="echange-pending-card echange-pending-card--admin" data-proc-id="${p.id}">
+        <div class="echange-pending-groupe">${p.groupe_nom} ${statutLabel}</div>
+        <div class="echange-pending-body">
+            <div class="echange-pending-side">
+                <strong>${p.prenom_a} ${p.nom_a}</strong>
+                <span class="voeu-from">${p.titre_a}</span>
+                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <span class="voeu-to">${p.titre_cible_a}</span>
+            </div>
+            <div class="echange-pending-swap">⇄</div>
+            <div class="echange-pending-side">
+                <strong>${p.prenom_b} ${p.nom_b}</strong>
+                <span class="voeu-from">${p.titre_b}</span>
+                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <span class="voeu-to">${p.titre_cible_b}</span>
+            </div>
+        </div>
+        <div class="echange-pending-actions">
+            ${isAccordB
+                ? `<span class="muted small">Accordé le ${p.date_accord_b ? new Date(p.date_accord_b).toLocaleDateString('fr-FR') : '—'}</span>`
+                : `<span class="muted small">Initié le ${p.date_init ? new Date(p.date_init).toLocaleDateString('fr-FR') : '—'}</span>`
+            }
+            <button class="btn${isAccordB ? '' : ' secondary'}" data-action="valider-echange" data-proc-id="${p.id}"
+                title="${isAccordB ? '' : 'Forcer la validation (l\'élève B n\'a pas encore accepté)'}">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>
+                ${isAccordB ? 'Valider l\'échange' : 'Forcer la validation'}
+            </button>
+            <button class="btn ghost btn-sm" data-action="annuler-echange" data-proc-id="${p.id}">
+                Refuser
+            </button>
+        </div>
+    </div>`;
+}
+
 // -- Chargement des échanges ----------------------------------
 let echangesData = { voeux: [], groupeId: null };
 let filtreEchanges = 'tous'; // 'tous' | 'compatibles'
@@ -4761,7 +5036,14 @@ let filtreEchanges = 'tous'; // 'tous' | 'compatibles'
 async function chargerEchangesEleve() {
     const panel = document.getElementById('echanges-panel');
     if (!panel) return;
-    panel.innerHTML = '<p class="muted text-center" style="padding:40px 0">Chargement…</p>';
+    panel.innerHTML = '<p class="muted text-center py-40">Chargement…</p>';
+
+    // Admin : vue omnisciente dédiée
+    if (currentUser?.role === 'admin') {
+        await chargerEchangesAdmin(panel);
+        return;
+    }
+
 
     // Trouver les groupes avec échanges actifs où l'élève est inscrit
     const groupesConcernes = groupes.filter(g =>
@@ -4770,7 +5052,7 @@ async function chargerEchangesEleve() {
     );
 
     if (groupesConcernes.length === 0) {
-        panel.innerHTML = '<p class="muted text-center" style="padding:40px 0">Aucun groupe avec échanges actifs pour votre classe.</p>';
+        panel.innerHTML = '<p class="muted text-center py-40">Aucun groupe avec échanges actifs pour votre classe.</p>';
         return;
     }
 
@@ -4783,7 +5065,7 @@ async function chargerEchangesEleve() {
         panel.innerHTML = `
             <div class="mb-16 flex items-center gap-12">
                 <span class="font-semibold small">Groupe&nbsp;:</span>
-                <div id="echanges-groupe-ic-wrap" style="min-width:180px;max-width:300px"></div>
+                <div id="echanges-groupe-ic-wrap" class="groupe-ic-wrap"></div>
             </div>
             <div id="echanges-content"></div>`;
 
@@ -4808,7 +5090,7 @@ async function chargerEchangesEleve() {
             });
         } else {
             // Fallback select standard si InputComp non disponible
-            wrap.innerHTML = `<select id="echanges-groupe-select" class="input-sm" style="max-width:280px">
+            wrap.innerHTML = `<select id="echanges-groupe-select" class="input-sm select-groupe-echanges">
                 ${options.map(o => `<option value="${o.value}"${o.value === String(groupeActif.id) ? ' selected' : ''}>${o.label}</option>`).join('')}
             </select>`;
             document.getElementById('echanges-groupe-select').addEventListener('change', async (e) => {
@@ -5051,7 +5333,11 @@ async function retirerVoeu(voeuId) {
         await fetch(`/echanges/voeux/${voeuId}`, { method: 'DELETE', credentials: 'same-origin' });
         showToast('Vœu retiré.');
         await fetchAllData();
-        chargerEchangesEleve();
+        if (currentUser?.role === 'admin') {
+            chargerPendingProcedures();
+        } else {
+            chargerEchangesEleve();
+        }
     } catch(e) {
         showToast('Erreur : ' + e.message, 4000);
     }
@@ -5083,51 +5369,95 @@ async function repondreEchange(procId, action) {
 async function chargerPendingProcedures() {
     const container = document.getElementById('liste-pending-echanges');
     if (!container) return;
-    container.innerHTML = '<p class="muted text-center" style="padding:20px 0">Chargement…</p>';
+    container.innerHTML = '<p class="muted text-center py-40">Chargement…</p>';
+
+    const isAdmin = currentUser?.role === 'admin';
+
     try {
+        // Procédures pending (tout le monde)
         const procs = await apiGet('/echanges/procedures/pending');
-        if (procs.length === 0) {
-            container.innerHTML = '<p class="muted text-center" style="padding:40px 0">Aucun échange en attente de validation.</p>';
-            return;
-        }
+
         // Badge
         const badge = document.getElementById('badge-pending');
         if (badge) { badge.textContent = procs.length; badge.classList.toggle('hidden', procs.length === 0); }
 
-        container.innerHTML = procs.map(p => `
-          <div class="echange-pending-card">
-            <div class="echange-pending-groupe">${p.groupe_nom}</div>
-            <div class="echange-pending-body">
-              <div class="echange-pending-side">
-                <strong>${p.prenom_a} ${p.nom_a}</strong>
-                <span class="voeu-from">${p.titre_a}</span>
-                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-                <span class="voeu-to">${p.titre_cible_a}</span>
-              </div>
-              <div class="echange-pending-swap">⇄</div>
-              <div class="echange-pending-side">
-                <strong>${p.prenom_b} ${p.nom_b}</strong>
-                <span class="voeu-from">${p.titre_b}</span>
-                <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
-                <span class="voeu-to">${p.titre_cible_b}</span>
-              </div>
-            </div>
-            <div class="echange-pending-actions">
-              <span class="muted small">Accord des deux élèves : ${p.date_accord_b ? new Date(p.date_accord_b).toLocaleDateString('fr-FR') : '—'}</span>
-              <button class="btn" data-action="valider-echange" data-proc-id="${p.id}">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>
-                Valider l'échange
-              </button>
-              <button class="btn secondary" data-action="annuler-echange" data-proc-id="${p.id}">
-                Refuser
-              </button>
-            </div>
-          </div>
-        `).join('');
+        // Vœux actifs (admin seulement)
+        let tousVoeux = [];
+        if (isAdmin) {
+            const groupesActifs = groupes.filter(g => g.echanges_actifs);
+            const resultats = await Promise.all(
+                groupesActifs.map(g => apiGet(`/echanges/voeux/${g.id}`)
+                    .then(v => v.map(voeu => ({ ...voeu, groupe_nom: g.nom, groupe_id: g.id })))
+                    .catch(() => []))
+            );
+            tousVoeux = resultats.flat();
+        }
+
+        let html = '';
+
+        // ── Panneau vœux (admin uniquement) ──────────────────────
+        if (isAdmin) {
+            html += `
+            <details class="panel-collapsible mt-16" open>
+                <summary class="panel-header">
+                    <h4 class="flex items-center gap-8">
+                        <svg viewBox="0 0 24 24" class="w-18 h-18 svg-fill-current"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
+                        Vœux formulés
+                        <span class="nb-badge">(${tousVoeux.length})</span>
+                    </h4>
+                </summary>
+                <div class="admin-voeux-liste">
+                    ${tousVoeux.length === 0
+                        ? '<p class="muted text-center p-20">Aucun vœu actif.</p>'
+                        : tousVoeux.map(v => {
+                            const statut = v.statut === 'en_procedure'
+                                ? '<span class="voeu-statut statut-en_procedure">En cours</span>'
+                                : '<span class="voeu-statut statut-actif">Actif</span>';
+                            return `
+                            <div class="admin-voeu-card" data-voeu-id="${v.id}">
+                                <div class="admin-voeu-meta">
+                                    <span class="admin-voeu-groupe">${v.groupe_nom}</span>
+                                    <span class="admin-voeu-eleve">${v.prenom} ${v.nom} <span class="muted small">(${v.classe_nom || '—'})</span></span>
+                                </div>
+                                <div class="admin-voeu-trajet">
+                                    <span class="voeu-from">${v.activite_actuelle_titre || '?'}</span>
+                                    <svg class="voeu-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                                    <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
+                                    ${statut}
+                                </div>
+                                <div class="admin-voeu-actions">
+                                    <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce vœu">
+                                        <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                                        Supprimer
+                                    </button>
+                                </div>
+                            </div>`;
+                        }).join('')
+                    }
+                </div>
+            </details>`;
+        }
+
+        // ── Panneau procédures pending ────────────────────────────
+        html += `
+            <details class="panel-collapsible mt-16" open>
+                <summary class="panel-header">
+                    <h4 class="flex items-center gap-8">
+                        <svg viewBox="0 0 24 24" class="w-18 h-18" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        Demandes d'échange en attente
+                        <span class="nb-badge">(${procs.length})</span>
+                    </h4>
+                </summary>
+                <div>
+                    ${procs.length === 0
+                        ? '<p class="muted text-center p-20">Aucune demande en attente.</p>'
+                        : procs.map(p => renderCartePendingAdmin(p)).join('')
+                    }
+                </div>
+            </details>`;
+
+        container.innerHTML = html;
+
     } catch(e) {
         container.innerHTML = `<p class="text-error text-center">${e.message}</p>`;
     }
