@@ -1037,8 +1037,18 @@ header {
   z-index: 20;
 }
 
+/* ── Synchronisation coin supérieur-gauche ↔ en-têtes de jours ──────────────
+   --schedule-header-height est le SEUL endroit à modifier pour changer
+   la hauteur de la rangée d'en-têtes. Elle est redéfinie dans chaque
+   @media pour suivre les breakpoints. Ne jamais mettre de height fixe
+   sur .day-header-spacer ou .schedule-header-cell directement.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --schedule-header-height: 32px;
+}
+
 .day-header-spacer {
-  height: 32px;
+  height: var(--schedule-header-height);
   background: var(--card);
   border-bottom: 1px solid var(--border-light);
 }
@@ -1076,7 +1086,7 @@ header {
 }
 
 .schedule-header-cell {
-  height: 32px;
+  height: var(--schedule-header-height);
   background: var(--surface);
   border-bottom: 2px solid var(--border-light);
   display: flex;
@@ -2348,7 +2358,7 @@ textarea {
   SMALL DEVICES (480px+)
 ---------------------------------------- */
 @media (min-width: 480px) {
-  :root { --hour-height: 40px; }
+  :root { --hour-height: 40px; --schedule-header-height: 34px; }
   body {
     padding: 12px;
   }
@@ -2488,6 +2498,7 @@ textarea {
   :root {
     --gap: 18px;
     --hour-height: 50px;
+    --schedule-header-height: 38px;
   }
 
   .wrap {
@@ -2614,7 +2625,7 @@ textarea {
   }
 
   .schedule-header-cell {
-    height: 38px;
+    height: var(--schedule-header-height);
   }
 
   .schedule-header-cell .day-name {
@@ -2744,6 +2755,7 @@ textarea {
   :root {
     --gap: 20px;
     --hour-height: 55px;
+    --schedule-header-height: 40px;
   }
 
   .wrap {
@@ -2840,7 +2852,7 @@ textarea {
   }
 
   .schedule-header-cell {
-    height: 40px;
+    height: var(--schedule-header-height);
   }
 
   .schedule-header-cell .day-name {
@@ -2946,7 +2958,7 @@ textarea {
   DESKTOPS (1280px+)
 ---------------------------------------- */
 @media (min-width: 1280px) {
-  :root { --hour-height: 60px; }
+  :root { --hour-height: 60px; --schedule-header-height: 42px; }
   .wrap {
     max-width: 95%;
   }
@@ -2969,7 +2981,7 @@ textarea {
   }
 
   .schedule-header-cell {
-    height: 42px;
+    height: var(--schedule-header-height);
   }
 
   .schedule-header-cell .day-name {

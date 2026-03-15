@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
+# -- Stdlib ---------------------------------------------------------------
 from flask import Flask, request, session, jsonify, send_from_directory, send_file, Response
 import queue
 import json
@@ -13,35 +14,72 @@ import sqlite3
 import hashlib
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
-import secrets
 import functools
 import os
 import logging
-import pytz
-
-from colorama import init
-from dotenv import load_dotenv
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
 
-from validators import (
-  InputValidator,
-  ValidationError,
-  ValidatorConfig,
-  safe_string,
-  safe_int,
-  safe_email,
-  safe_string_optional
-)
+# -- Third-party : obligatoires -------------------------------------------
+try:
+  import pytz
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] pytz manquant : pip install pytz ({e})")
 
-from password_reset import PasswordResetManager
-from mail_service import send_email, send_invitation_email, BASE_URL
+try:
+  from colorama import init
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] colorama manquant : pip install colorama ({e})")
+
+try:
+  from dotenv import load_dotenv
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] python-dotenv manquant : pip install python-dotenv ({e})")
+
+try:
+  from reportlab.lib import colors
+  from reportlab.lib.pagesizes import A4
+  from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+  from reportlab.lib.units import cm
+  from reportlab.lib.enums import TA_CENTER, TA_LEFT
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] reportlab manquant : pip install reportlab ({e})")
+
+# -- Flask extensions -----------------------------------------------------
+try:
+  from flask_limiter import Limiter
+  from flask_limiter.util import get_remote_address
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] flask-limiter manquant : pip install flask-limiter ({e})")
+
+try:
+  from flask_talisman import Talisman
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] flask-talisman manquant : pip install flask-talisman ({e})")
+
+# -- Modules locaux -------------------------------------------------------
+try:
+  from validators import (
+    InputValidator,
+    ValidationError,
+    ValidatorConfig,
+    safe_string,
+    safe_int,
+    safe_email,
+    safe_string_optional
+  )
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] validators.py introuvable : {e}")
+
+try:
+  from password_reset import PasswordResetManager
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] password_reset.py introuvable : {e}")
+
+try:
+  from mail_service import send_email, send_invitation_email, BASE_URL
+except ImportError as e:
+  raise ImportError(f"[CONCORDE] mail_service.py introuvable : {e}")
 
 
 
@@ -281,14 +319,57 @@ def now_local_str():
   """Retourne l'heure actuelle en heure locale au format ISO"""
   return datetime.now(TIMEZONE).replace(tzinfo=None).isoformat()
 
+_SECRET_KEY = os.environ.get('SECRET_KEY') or 'CONCORDE_FALLBACK_KEY_CHANGE_IN_PROD'
+
 app.config.update(
-  SECRET_KEY=os.environ.get('SECRET_KEY') or 'CONCORDE_FALLBACK_KEY_CHANGE_IN_PROD',
+  SECRET_KEY=_SECRET_KEY,
   SESSION_COOKIE_HTTPONLY=True,
   SESSION_COOKIE_SAMESITE='Lax',
-  PERMANENT_SESSION_LIFETIME=timedelta(hours=8)
+  # SESSION_COOKIE_SECURE=True doit être activé en prod (HTTPS uniquement).
+  # Laissé à False ici pour le développement local (HTTP).
+  SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true',
+  PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
 
-DB = "essaie.db"
+# ========================
+# RATE LIMITING (Flask-Limiter)
+# ========================
+limiter = Limiter(
+  get_remote_address,
+  app=app,
+  default_limits=[],           # Pas de limite globale - seulement sur les routes sensibles
+  storage_uri="memory://",     # En mémoire (suffisant pour usage single-process)
+  strategy="fixed-window",
+)
+
+# ========================
+# EN-TÊTES DE SÉCURITÉ (Flask-Talisman)
+# ========================
+# force_https=False en dev - passer à True en prod (ou via variable d'env)
+_FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'false').lower() == 'true'
+
+Talisman(
+  app,
+  force_https=_FORCE_HTTPS,
+  strict_transport_security=_FORCE_HTTPS,
+  # Sans cette ligne, Talisman force SESSION_COOKIE_SECURE=True même en HTTP,
+  # ce qui empêche le navigateur d'envoyer le cookie session sur HTTP (dev).
+  session_cookie_secure=_FORCE_HTTPS,
+  content_security_policy={
+    'default-src': ["'self'"],
+    'script-src':  ["'self'", "'unsafe-inline'"],
+    'style-src':   ["'self'", "'unsafe-inline'"],
+    'img-src':     ["'self'", "data:"],
+    'font-src':    ["'self'", "data:"],
+    'connect-src': ["'self'"],
+    'frame-ancestors': ["'none'"],
+  },
+  x_content_type_options=True,
+  x_xss_protection=True,
+  referrer_policy='strict-origin-when-cross-origin',
+)
+
+DB = os.environ.get('DB_PATH', 'essaie.db')
 VALIDATION_PROF_ECHANGES = True
 
 def init_db():
@@ -306,7 +387,7 @@ def init_db():
     except Exception:
       pass
 
-    # -- Table vœux --
+    # -- Table voeux --
     conn.execute("""
       CREATE TABLE IF NOT EXISTS voeux_echange (
         id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -572,6 +653,7 @@ def _send_reset_code_email(to_email: str, prenom: str, code: str):
 # AUTHENTIFICATION
 # ========================
 @app.route("/login", methods=["POST"])
+@limiter.limit("10 per minute; 30 per hour", error_message="trop_de_tentatives")
 def login():
   try:
     data = request.json
@@ -620,12 +702,25 @@ def login():
 
       # --- Connexion normale ---
       # BUG FIX : kick immédiat de l'ancienne session SSE au moment du login.
-      # Sans ça, le kick se fait seulement au prochain /sse, créant une fenêtre
-      # où les deux connexions coexistent et le "mauvais" client peut être kické.
       sse_manager.kick_user(user["id"])
 
+      # Nettoyage des tokens expirés/utilisés (invitation + reset) - opportuniste au login
+      try:
+        wconn = get_db_connection()
+        wconn.execute("""
+          DELETE FROM invitation_tokens
+          WHERE used=1 OR datetime(expires_at) < datetime('now')
+        """)
+        wconn.execute("""
+          DELETE FROM password_reset_tokens
+          WHERE used=1 OR datetime(expires_at) < datetime('now')
+        """)
+        wconn.commit()
+        _release_db(wconn)
+      except Exception as _ce:
+        logger.warning(f"Nettoyage tokens échoué (non bloquant): {_ce}")
+
       # Régénération de la session Flask pour prévenir la fixation de session.
-      # session.clear() invalide le cookie précédent côté serveur.
       session.clear()
       session["user_id"]       = user["id"]
       session["role"]          = user["role"]
@@ -633,7 +728,7 @@ def login():
       session["prenom"]        = user["prenom"]
       session["nom"]           = user["nom"]
       session['last_activity'] = datetime.now().timestamp()
-      session.permanent        = True  # durée de vie = PERMANENT_SESSION_LIFETIME (8h)
+      session.permanent        = True
 
       logger.info(f"Connexion: {username} (ID: {user['id']}) depuis {request.remote_addr}")
 
@@ -811,6 +906,12 @@ def get_activites():
         ORDER BY a.titre
       """, (classe_id,)).fetchall()
     else:
+      # Cache pour prof/admin : TTL court (15s) pour rester frais après modifications
+      cache_key = "activites_all"
+      cached = _cache.get(cache_key)
+      if cached is not None:
+        return jsonify(cached)
+
       rows = conn.execute("""
         SELECT
               a.id, a.titre, a.description, a.prof_id, a.salle, a.separable,
@@ -823,6 +924,9 @@ def get_activites():
         LEFT JOIN users u ON u.id = COALESCE(a.animateur_id, a.prof_id)
         ORDER BY a.titre
       """).fetchall()
+      result_prof = [dict(r) for r in rows]
+      _cache.set(cache_key, result_prof, ttl=15)
+      return jsonify(result_prof)
 
     # Pour les élèves, récupérer inscriptions + dernières séances en 1 seule requête
     inscriptions_eleve = set()
@@ -1001,6 +1105,7 @@ def create_activite():
     _release_db(conn)
 
     logger.info(f"Activité créée: {titre} par user {session['user_id']}")
+    _cache.invalidate('activites_all')
     sse_manager.broadcast('activite_created', {'id': act_id, 'titre': titre})
     return jsonify({"success": True, "id": act_id})
 
@@ -1053,6 +1158,7 @@ def supprimer_activite(activite_id):
     _release_db(conn)
 
     logger.info(f"Activité {activite_id} supprimée par user {session['user_id']}")
+    _cache.invalidate('activites_all')
     sse_manager.broadcast('activite_deleted', {'id': activite_id})
     return jsonify({"success": True})
 
@@ -1217,6 +1323,7 @@ def modifier_activite(activite_id):
     _release_db(conn)
 
     logger.info(f"Activité {activite_id} modifiée par user {session['user_id']}")
+    _cache.invalidate('activites_all')
     sse_manager.broadcast('activite_updated', {'id': activite_id})
     return jsonify({"success": True})
 
@@ -1555,7 +1662,7 @@ def inscrire():
     ).fetchone()[0]
     _release_db(conn)
 
-    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    _cache.invalidate_prefix('inscriptions')
     sse_manager.broadcast('inscription_created', {
       'eleve_id': user_id, 'activite_id': activite_id, 'nb_inscrits': nb_inscrits
     })
@@ -1613,7 +1720,7 @@ def desinscrire():
     ).fetchone()[0]
     _release_db(conn)
 
-    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    _cache.invalidate_prefix('inscriptions')
     sse_manager.broadcast('inscription_deleted', {
       'eleve_id': eleve_id,
       'activite_id': activite_id,
@@ -1671,6 +1778,14 @@ def inscrire_seance():
       return jsonify({"error": "Cette activité n'est pas sécable"}), 400
 
     now = now_local()
+
+    # Vérifier que la séance n'est pas déjà passée
+    seance_dt = datetime.fromisoformat(seance["date_heure"].replace(' ', 'T'))
+    seance_fin = seance_dt + timedelta(minutes=int(seance["duree"] or 60))
+    if now > seance_fin:
+      _release_db(conn)
+      return jsonify({"error": "Cette séance est déjà terminée"}), 400
+
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
 
@@ -1734,7 +1849,7 @@ def inscrire_seance():
     ).fetchone()[0]
     _release_db(conn)
 
-    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    _cache.invalidate_prefix('inscriptions')
     sse_manager.broadcast('inscription_seance_created', {
       'eleve_id': user_id, 'seance_id': seance_id,
       'activite_id': activite_id, 'nb_inscrits_seance': nb_inscrits_seance
@@ -1795,16 +1910,19 @@ def desinscrire_seance():
 
     conn.commit()
 
-    nb_inscrits_seance = get_db_read().execute(
+    # Lire depuis cur (même connexion, juste après commit) - évite get_db_read() qui
+    # peut renvoyer des données légèrement périmées si le thread-local n'est pas à jour.
+    nb_inscrits_seance = cur.execute(
       "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance_id,)
     ).fetchone()[0]
-    activite_id_row = get_db_read().execute(
+    activite_id_row = cur.execute(
       "SELECT activite_id FROM seances WHERE id=?", (seance_id,)
     ).fetchone()
     activite_id_val = activite_id_row["activite_id"] if activite_id_row else None
+    _release_db(conn)
 
     # Broadcast SSE
-    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    _cache.invalidate_prefix('inscriptions')
     sse_manager.broadcast('inscription_seance_deleted', {
       'eleve_id': eleve_id,
       'seance_id': seance_id,
@@ -1854,14 +1972,32 @@ def get_seances():
 @app.route("/inscriptions")
 @login_required
 def get_inscriptions():
+  """Liste paginée des inscriptions.
+  Paramètres optionnels : ?page=1&limit=500 (défaut : page=1, limit=500)
+  Retourne aussi total et has_more pour que le JS sache s'il y a plus de pages."""
   try:
-    cached = _cache.get("inscriptions_all")
+    page = max(1, request.args.get("page",  1, type=int))
+    limit = min(1000, max(1, request.args.get("limit", 500, type=int)))
+    offset = (page - 1) * limit
+
+    # Clé de cache incluant la page pour ne pas mélanger les pages
+    cache_key = f"inscriptions_p{page}_l{limit}"
+    cached = _cache.get(cache_key)
     if cached is not None:
       return jsonify(cached)
+
     conn = get_db_read()
-    rows = conn.execute("SELECT * FROM inscriptions ORDER BY date_inscription").fetchall()
-    result = [dict(r) for r in rows]
-    _cache.set("inscriptions_all", result, ttl=5)
+    total = conn.execute("SELECT COUNT(*) FROM inscriptions").fetchone()[0]
+    rows = conn.execute(
+      "SELECT * FROM inscriptions ORDER BY date_inscription LIMIT ? OFFSET ?",
+      (limit, offset)
+    ).fetchall()
+    result = {
+      "data": [dict(r) for r in rows],
+      "page": page, "limit": limit,
+      "total": total, "has_more": offset + limit < total
+    }
+    _cache.set(cache_key, result, ttl=5)
     return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /inscriptions: {str(e)}")
@@ -1870,17 +2006,30 @@ def get_inscriptions():
 @app.route("/inscriptions/seances")
 @login_required
 def get_inscriptions_seances():
+  """Liste paginée des présences (inscriptions séance par séance).
+  Paramètres optionnels : ?page=1&limit=1000"""
   try:
-    cached = _cache.get("inscriptions_seances_all")
+    page  = max(1, request.args.get("page",  1, type=int))
+    limit = min(2000, max(1, request.args.get("limit", 1000, type=int)))
+    offset = (page - 1) * limit
+
+    cache_key = f"inscriptions_seances_p{page}_l{limit}"
+    cached = _cache.get(cache_key)
     if cached is not None:
       return jsonify(cached)
+
     conn = get_db_read()
-    rows = conn.execute("""
-      SELECT seance_id, eleve_id
-      FROM presences
-    """).fetchall()
-    result = [dict(r) for r in rows]
-    _cache.set("inscriptions_seances_all", result, ttl=5)
+    total = conn.execute("SELECT COUNT(*) FROM presences").fetchone()[0]
+    rows  = conn.execute(
+      "SELECT seance_id, eleve_id FROM presences LIMIT ? OFFSET ?",
+      (limit, offset)
+    ).fetchall()
+    result = {
+      "data": [dict(r) for r in rows],
+      "page": page, "limit": limit,
+      "total": total, "has_more": offset + limit < total
+    }
+    _cache.set(cache_key, result, ttl=5)
     return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /inscriptions/seances: {str(e)}")
@@ -1987,34 +2136,38 @@ def get_eleves_non_inscrits(groupe_id):
       ORDER BY u.nom, u.prenom
     """.format(','.join('?' * len(classe_ids_list))), classe_ids_list).fetchall()
 
-    # Pour chaque élève, vérifier s'il est inscrit à au moins une activité du groupe
+    if not eleves_concernes:
+      return jsonify({"groupe": dict(groupe), "eleves": []})
+
+    eleve_ids = [e["id"] for e in eleves_concernes]
+    ph = ','.join('?' * len(eleve_ids))
+
+    # Requête groupée 1 : élèves DÉJÀ inscrits dans ce groupe
+    inscrits_rows = cur.execute(f"""
+      SELECT DISTINCT p.eleve_id
+      FROM presences p
+      JOIN seances s ON p.seance_id = s.id
+      JOIN activites a ON s.activite_id = a.id
+      WHERE a.groupe_id = ? AND p.eleve_id IN ({ph})
+    """, [groupe_id] + eleve_ids).fetchall()
+    inscrits_ids = {r["eleve_id"] for r in inscrits_rows}
+
+    # Requête groupée 2 : dernier mail de rappel pour chaque élève non inscrit
+    mails_rows = cur.execute(f"""
+      SELECT eleve_id, MAX(date_envoi) as dernier_mail
+      FROM rappels_inscription
+      WHERE groupe_id = ?
+        AND eleve_id IN ({ph})
+        AND datetime(date_envoi) > datetime('now', '-7 days')
+      GROUP BY eleve_id
+    """, [groupe_id] + eleve_ids).fetchall()
+    mails_map = {r["eleve_id"]: r["dernier_mail"] for r in mails_rows}
+
     eleves_non_inscrits = []
-
     for eleve in eleves_concernes:
-      # Vérifier s'il existe une inscription
-      inscription = cur.execute("""
-        SELECT 1
-        FROM presences p
-        JOIN seances s ON p.seance_id = s.id
-        JOIN activites a ON s.activite_id = a.id
-        WHERE p.eleve_id = ?
-        AND a.groupe_id = ?
-        LIMIT 1
-      """, (eleve["id"], groupe_id)).fetchone()
-
-      if not inscription:
+      if eleve["id"] not in inscrits_ids:
         eleve_dict = dict(eleve)
-        # Vérifier si un mail a déjà été envoyé récemment (dans les 7 derniers jours)
-        mail_recent = cur.execute("""
-          SELECT date_envoi
-          FROM rappels_inscription
-          WHERE eleve_id = ? AND groupe_id = ?
-          AND datetime(date_envoi) > datetime('now', '-7 days')
-          ORDER BY date_envoi DESC
-          LIMIT 1
-        """, (eleve["id"], groupe_id)).fetchone()
-
-        eleve_dict["dernier_mail"] = mail_recent["date_envoi"] if mail_recent else None
+        eleve_dict["dernier_mail"] = mails_map.get(eleve["id"])
         eleves_non_inscrits.append(eleve_dict)
 
 
@@ -2241,7 +2394,7 @@ def inscription_manuelle():
 
     # Invalider le cache avant le broadcast SSE pour que les prochains GET
     # renvoient des données à jour (pas les anciennes valeurs cachées).
-    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    _cache.invalidate_prefix('inscriptions')
 
     # Broadcast : 'inscription_created' (et non 'inscription_manuelle_created') pour que
     # le handler JS générique handleInscriptionEvent mette à jour le compteur admin/prof.
@@ -3029,6 +3182,7 @@ def forgot_password_page():
   return send_from_directory("static/auth", "forgot_password.html")
 
 @app.route("/api/forgot-password/request", methods=["POST"])
+@limiter.limit("5 per minute; 15 per hour", error_message="trop_de_tentatives")
 def forgot_password_request():
   """
   Etape 1 : username OU email acceptes.
@@ -3126,7 +3280,7 @@ def forgot_password_verify():
 @app.route("/echanges/voeux/<int:groupe_id>", methods=["GET"])
 @login_required
 def get_voeux(groupe_id):
-  """Tous les vœux actifs d'un groupe (vue élève)."""
+  """Tous les voeux actifs d'un groupe (vue élève)."""
   try:
     conn = get_db_read()
     cur  = conn.cursor()
@@ -3160,7 +3314,7 @@ def get_voeux(groupe_id):
 @app.route("/echanges/voeux", methods=["POST"])
 @login_required
 def create_voeu():
-  """Formuler un vœu d'échange."""
+  """Formuler un voeu d'échange."""
   try:
     data = request.json
     eleve_id   = session["user_id"]
@@ -3219,7 +3373,7 @@ def create_voeu():
       conn.commit()
     except sqlite3.IntegrityError:
       _release_db(conn)
-      return jsonify({"error": "Vous avez déjà un vœu actif dans ce groupe. Retirez-le d'abord."}), 400
+      return jsonify({"error": "Vous avez déjà un voeu actif dans ce groupe. Retirez-le d'abord."}), 400
 
     voeu_id = cur.lastrowid
     _release_db(conn)
@@ -3233,7 +3387,7 @@ def create_voeu():
 @app.route("/echanges/voeux/<int:voeu_id>", methods=["DELETE"])
 @login_required
 def delete_voeu(voeu_id):
-  """Retirer un vœu."""
+  """Retirer un voeu."""
   try:
     eleve_id = session["user_id"]
     conn = get_db_connection()
@@ -3242,13 +3396,13 @@ def delete_voeu(voeu_id):
     voeu = cur.execute("SELECT * FROM voeux_echange WHERE id=?", (voeu_id,)).fetchone()
     if not voeu:
       _release_db(conn)
-      return jsonify({"error": "Vœu introuvable"}), 404
+      return jsonify({"error": "Voeu introuvable"}), 404
     if voeu["eleve_id"] != eleve_id and session.get("role") not in ("prof","admin"):
       _release_db(conn)
       return jsonify({"error": "Non autorisé"}), 403
 
     groupe_id = voeu["groupe_id"]
-    # Annuler les procédures en cours liées à ce vœu
+    # Annuler les procédures en cours liées à ce voeu
     cur.execute("""
       UPDATE procedures_echange SET statut='annule'
       WHERE (voeu_a_id=? OR voeu_b_id=?) AND statut NOT IN ('valide','annule')
@@ -3280,7 +3434,7 @@ def create_procedure():
     vb = cur.execute("SELECT * FROM voeux_echange WHERE id=? AND statut='actif'", (voeu_b_id,)).fetchone()
     if not va or not vb:
       _release_db(conn)
-      return jsonify({"error": "Vœu(x) introuvable(s) ou inactif(s)"}), 400
+      return jsonify({"error": "Voeu(x) introuvable(s) ou inactif(s)"}), 400
 
     # Vérifier compatibilité : A veut aller là où B est, B veut aller là où A est
     act_a = cur.execute("""
@@ -3297,9 +3451,9 @@ def create_procedure():
       return jsonify({"error": "Inscriptions introuvables"}), 400
     if va["activite_cible_id"] != act_b["id"] or vb["activite_cible_id"] != act_a["id"]:
       _release_db(conn)
-      return jsonify({"error": "Les vœux ne sont pas compatibles"}), 400
+      return jsonify({"error": "Les voeux ne sont pas compatibles"}), 400
 
-    # Pas déjà une procédure active entre ces deux vœux
+    # Pas déjà une procédure active entre ces deux voeux
     existing = cur.execute("""
       SELECT 1 FROM procedures_echange
       WHERE voeu_a_id IN (?,?) AND voeu_b_id IN (?,?)
@@ -3314,7 +3468,7 @@ def create_procedure():
       VALUES (?, ?, 'en_attente', datetime('now'))
     """, (voeu_a_id, voeu_b_id))
     proc_id = cur.lastrowid
-    # Marquer les vœux en_procedure
+    # Marquer les voeux en_procedure
     cur.execute("UPDATE voeux_echange SET statut='en_procedure' WHERE id IN (?,?)", (voeu_a_id, voeu_b_id))
     conn.commit()
     _release_db(conn)
@@ -3440,7 +3594,7 @@ def annuler_procedure(proc_id):
       return jsonify({"error": "Non autorisé"}), 403
 
     cur.execute("UPDATE procedures_echange SET statut='annule' WHERE id=?", (proc_id,))
-    # Le vœu de l'autre reste actif (spec)
+    # Le voeu de l'autre reste actif (spec)
     cur.execute("UPDATE voeux_echange SET statut='actif' WHERE id IN (?,?)", (va["id"], vb["id"]))
     conn.commit()
     groupe_id = va["groupe_id"]
@@ -3496,7 +3650,7 @@ def _executer_echange(cur, proc, va, vb):
   """Permute les inscriptions et présences entre les deux élèves."""
   eleve_a   = va["eleve_id"]
   eleve_b   = vb["eleve_id"]
-  act_a     = va["activite_actuelle_id"]   # activité actuelle de A (stockée dans le vœu)
+  act_a     = va["activite_actuelle_id"]   # activité actuelle de A (stockée dans le voeu)
   act_b     = vb["activite_actuelle_id"]   # activité actuelle de B
 
   # Supprimer anciennes inscriptions
@@ -3532,7 +3686,7 @@ def _executer_echange(cur, proc, va, vb):
     cur.execute("INSERT OR IGNORE INTO presences (seance_id, eleve_id, present, commentaire) VALUES (?,?,0,'')",
                 (s["id"], eleve_b))
 
-  # Marquer les vœux comme réalisés + annuler les autres vœux liés
+  # Marquer les voeux comme réalisés + annuler les autres voeux liés
   cur.execute("UPDATE voeux_echange SET statut='realise' WHERE id IN (?,?)", (va["id"], vb["id"]))
   cur.execute("""
     UPDATE voeux_echange SET statut='annule'
@@ -3632,47 +3786,20 @@ def serve_static(filename):
 
 
 
-"""
-@app.route("/")
-def index():
-  return send_from_directory(".", "Concorde.html")
 
-# ========================
-# SERVIR LE FRONT
-# ========================
-@app.route("/<path:filename>")
-def serve_static(filename):
-  # Liste blanche des fichiers autorisés pour la sécurité
-  # Fichiers servis depuis la racine
-  root_files = {
-    "styles.css", "script.js",
-    "Input_Comp.css", "Input_Comp.js",
-  }
-  # Fichiers servis depuis leur sous-dossier
-  subdir_files = {
-    "forgot_password/forgot_password.css":  ("forgot_password", "forgot_password.css"),
-    "forgot_password/forgot_password.js":   ("forgot_password", "forgot_password.js"),
-    "first_login/first_login.css":          ("first_login",     "first_login.css"),
-    "first_login/first_login.js":           ("first_login",     "first_login.js"),
-    "reset_password/reset_password.css":    ("reset_password",  "reset_password.css"),
-    "reset_password/reset_password.js":     ("reset_password",  "reset_password.js"),
-    "prof_signup/prof_signup.css":          ("prof_signup",     "prof_signup.css"),
-    "prof_signup/prof_signup.js":           ("prof_signup",     "prof_signup.js"),
-  }
-
-  if filename in root_files:
-    return send_from_directory(".", filename)
-  if filename in subdir_files:
-    folder, fname = subdir_files[filename]
-    return send_from_directory(folder, fname)
-  else:
-    return "File not found", 404
-
-"""
 
 # ========================
 # GESTION ERREURS
 # ========================
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+  """Retourné par Flask-Limiter quand la limite est atteinte."""
+  logger.warning(f"Rate limit atteint depuis {request.remote_addr} sur {request.path}")
+  return jsonify({
+    "error": "Trop de tentatives. Veuillez réessayer dans quelques minutes.",
+    "rate_limited": True
+  }), 429
+
 @app.errorhandler(404)
 def not_found(error):
   logger.warning(f"404 - {request.url} depuis {request.remote_addr}")

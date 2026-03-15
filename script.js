@@ -512,7 +512,7 @@ function getHourHeight() {
 }
 
 const SCHEDULE_START_HOUR = 7;
-const SCHEDULE_END_HOUR   = 20; // inclus (affichage jusqu'à 20h)
+const SCHEDULE_END_HOUR   = 20; // inclus — label de fin
 const SCHEDULE_HOURS      = SCHEDULE_END_HOUR - SCHEDULE_START_HOUR; // 13 tranches
 
 function timeToMinutes(dateTime) {
@@ -526,24 +526,29 @@ function timeToMinutes(dateTime) {
 /* ===========================
     API helpers
     =========================== */
+
+/** Gère les réponses d'erreur communes (401, 429, autres). */
+async function _handleApiError(res) {
+    if (res.status === 401) {
+        currentUser = null;
+        onAuthChange();
+        throw new Error('Session expirée');
+    }
+    if (res.status === 429) {
+        await showAlert('Trop de tentatives infructueuses. Veuillez réessayer dans quelques minutes.', 'Limite atteinte');
+        throw new Error('Trop de tentatives');
+    }
+    const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
+    throw new Error(errorData.error || `HTTP ${res.status}`);
+}
+
 async function apiGet(url) {
     try {
         const res = await fetch(url, {
-            credentials:'same-origin',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
         });
-        if(!res.ok) {
-            if(res.status === 401) {
-                currentUser = null;
-                onAuthChange();
-                throw new Error('Session expirée');
-            }
-            const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-            throw new Error(errorData.error || `HTTP ${res.status}`);
-        }
+        if (!res.ok) await _handleApiError(res);
         return res.json();
     } catch(e) {
         console.error('API GET Error:', e);
@@ -554,20 +559,12 @@ async function apiGet(url) {
 async function apiPost(url, data) {
     try {
         const res = await fetch(url, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            credentials:'same-origin',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
-        if(!res.ok) {
-            if(res.status === 401) {
-                currentUser = null;
-                onAuthChange();
-                throw new Error('Non autorisé');
-            }
-            const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-            throw new Error(errorData.error || `HTTP ${res.status}`);
-        }
+        if (!res.ok) await _handleApiError(res);
         return res.json();
     } catch(e) {
         console.error('API POST Error:', e);
@@ -578,20 +575,12 @@ async function apiPost(url, data) {
 async function apiPut(url, data) {
     try {
         const res = await fetch(url, {
-            method:'PUT',
-            headers:{'Content-Type':'application/json'},
-            credentials:'same-origin',
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
-        if(!res.ok) {
-            if(res.status === 401) {
-                currentUser = null;
-                onAuthChange();
-                throw new Error('Non autorisé');
-            }
-            const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-            throw new Error(errorData.error || `HTTP ${res.status}`);
-        }
+        if (!res.ok) await _handleApiError(res);
         return res.json();
     } catch(e) {
         console.error('API PUT Error:', e);
@@ -599,23 +588,15 @@ async function apiPut(url, data) {
     }
 }
 
-async function apiDelete(url, data){
+async function apiDelete(url, data) {
     try {
         const res = await fetch(url, {
-            method:'DELETE',
-            headers:{'Content-Type':'application/json'},
-            credentials:'same-origin',
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
-        if(!res.ok) {
-            if(res.status === 401) {
-                currentUser = null;
-                onAuthChange();
-                throw new Error('Non autorisé');
-            }
-            const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-            throw new Error(errorData.error || `HTTP ${res.status}`);
-        }
+        if (!res.ok) await _handleApiError(res);
         return res.json();
     } catch(e) {
         console.error('API DELETE Error:', e);
@@ -657,7 +638,10 @@ async function login(){
         await fetchAllData();
         onAuthChange();
     } catch(e){
-        $('#login-msg').textContent = 'Erreur de connexion: ' + e.message;
+        // Le 429 affiche déjà un showAlert via _handleApiError — pas de doublon dans #login-msg
+        if (!e.message.includes('Trop de tentatives')) {
+            $('#login-msg').textContent = 'Erreur de connexion : ' + e.message;
+        }
     }
 }
 
@@ -721,14 +705,20 @@ async function fetchAllData() {
             apiGet('/activites'),
             apiGet('/activite_classes'),
             apiGet('/seances'),
-            apiGet('/inscriptions').catch(() => []),
-            apiGet('/inscriptions/seances').catch(() => [])
+        apiGet('/inscriptions').catch(() => ({ data: [] })),
+        apiGet('/inscriptions/seances').catch(() => ({ data: [] }))
         ]);
 
         classes       = rawClasses;
         users         = rawUsers;
         groupes       = rawGroupes;
         groupeClasses = rawGroupeClasses;
+
+        // Les endpoints /inscriptions et /inscriptions/seances sont paginés :
+        // la réponse est { data: [...], page, total, has_more }
+        // On extrait .data (ou on accepte un tableau brut pour rétrocompat)
+        const inscriptionsData      = Array.isArray(rawInscriptions)      ? rawInscriptions      : (rawInscriptions?.data      ?? []);
+        const inscriptionsSeancesData = Array.isArray(rawInscriptionsSeances) ? rawInscriptionsSeances : (rawInscriptionsSeances?.data ?? []);
 
         // Enrichir chaque activité
         activites = rawActivites.map(act => {
@@ -739,7 +729,7 @@ async function fetchAllData() {
             act.seances = rawSeances
                 .filter(s => s.activite_id === act.id)
                 .map(s => {
-                    const seanceInscriptions = rawInscriptionsSeances
+                    const seanceInscriptions = inscriptionsSeancesData
                         .filter(ins => ins.seance_id === s.id)
                         .map(ins => ins.eleve_id);
 
@@ -752,7 +742,7 @@ async function fetchAllData() {
                 });
 
             if (!act.separable) {
-                act.inscriptions = rawInscriptions
+                act.inscriptions = inscriptionsData
                     .filter(i => i.activite_id === act.id)
                     .map(i => i.eleve_id);
             } else {
