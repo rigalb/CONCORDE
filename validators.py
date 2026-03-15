@@ -449,6 +449,16 @@ def safe_string(value: Any, max_length: int = 255) -> str:
         raise ValidationError(error)
     return clean
 
+def safe_string_optional(value: Any, max_length: int = 255) -> str:
+    """Comme safe_string mais accepte les chaînes vides."""
+    clean, error = InputValidator.validate_string(
+        str(value) if value is not None else "",
+        max_length=max_length,
+        allow_empty=True
+    )
+    if error:
+        raise ValidationError(error)
+    return clean
 
 def safe_int(value: Any, min_val: int = None, max_val: int = None) -> int:
     """Valide un entier avec bornes. Lève ValidationError si invalide."""

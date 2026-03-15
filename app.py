@@ -36,7 +36,8 @@ from validators import (
   ValidatorConfig,
   safe_string,
   safe_int,
-  safe_email
+  safe_email,
+  safe_string_optional
 )
 
 from password_reset import PasswordResetManager
@@ -885,7 +886,7 @@ def create_activite():
 
     # Utilisation des helpers sécurisés
     titre = safe_string(data.get("titre"), max_length=100)
-    description = safe_string(data.get("description", ""), max_length=500)
+    description = safe_string_optional(data.get("description", ""), max_length=500)
     salle = safe_string(data.get("salle"), max_length=50)
 
     effectif = safe_int(data.get("effectif_max"), min_val=1, max_val=100)
@@ -1087,7 +1088,7 @@ def modifier_activite(activite_id):
       return jsonify({"error": error}), 400
 
     titre = safe_string(data.get("titre"), max_length=100)
-    description = safe_string(data.get("description", ""), max_length=500)
+    description = safe_string_optional(data.get("description", ""), max_length=500)
     salle = safe_string(data.get("salle"), max_length=50)
     effectif = safe_int(data.get("effectif_max"), min_val=1, max_val=100)
     visible_avant = InputValidator.validate_boolean(data.get("visible_avant", False))

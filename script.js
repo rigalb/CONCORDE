@@ -3459,10 +3459,10 @@ async function creerActivite(){
         return;
     }
 
-    const titre = titreEl.value.trim();
+    const titre = (icGet('titre') || titreEl.value || '').trim();
     const description = icGet('description') || '';
-    const salle = salleEl.value.trim();
-    const effectif = parseInt(effectifEl.value);
+    const salle = (icGet('salle') || salleEl.value || '').trim();
+    const effectif = parseInt(icGet('effectif') || effectifEl.value);
     const separable = separableEl ? separableEl.checked : true;
     const selectedClasses = classeMultiSelect ? classeMultiSelect.selectedItems.map(item => parseInt(item.value)) : [];
 
@@ -3767,10 +3767,10 @@ async function modifierActivite() {
         return;
     }
 
-    const titre = titreEl.value.trim();
+    const titre = (icGet('titre') || titreEl.value || '').trim();
     const description = icGet('description') || '';
-    const salle = salleEl.value.trim();
-    const effectif = parseInt(effectifEl.value);
+    const salle = (icGet('salle') || salleEl.value || '').trim();
+    const effectif = parseInt(icGet('effectif') || effectifEl.value);
     const selectedClasses = classeMultiSelect ? classeMultiSelect.selectedItems.map(item => parseInt(item.value)) : [];
 
     // Récupérer les séances avec leurs IDs (support InputComp datetime)
