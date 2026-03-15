@@ -3,7 +3,7 @@
    CSP-strict | Dropdowns en portal (jamais clippés)
    ============================================================ */
 
-/* ── Variables ─────────────────────────────────────────────── */
+/* -- Variables ----------------------------------------------- */
 :root {
   --ic-primary:        #0b5ccc;
   --ic-primary-light:  rgba(11,92,204,0.10);
@@ -33,14 +33,14 @@
 
 .ic-wrapper *, .ic-wrapper *::before, .ic-wrapper *::after { box-sizing: border-box; }
 
-/* ── Tailles ────────────────────────────────────────────────── */
+/* -- Tailles -------------------------------------------------- */
 .ic-wrapper.ic-sm { --ic-h:36px; --ic-fs:13px; --ic-lh:18px; --ic-px:12px; --ic-lbl-fs:11px; }
 .ic-wrapper.ic-md { --ic-h:44px; --ic-fs:14px; --ic-lh:20px; --ic-px:14px; --ic-lbl-fs:12px; }
 .ic-wrapper.ic-lg { --ic-h:52px; --ic-fs:16px; --ic-lh:22px; --ic-px:16px; --ic-lbl-fs:13px; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    WRAPPER
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-wrapper {
   position: relative;
   width: 100%;
@@ -48,9 +48,9 @@
   font-family: var(--ic-font);
 }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    FIELD (le cadre visible)
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-field {
   position: relative;
   display: flex;
@@ -74,9 +74,9 @@
 .ic-wrapper.ic-disabled       .ic-field { background: var(--ic-bg-disabled); cursor: not-allowed; }
 .ic-wrapper.ic-readonly       .ic-field { background: var(--ic-surface); }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    LABEL FLOTTANT
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-label {
   position: absolute;
   left: calc(var(--ic-px) - 2px);
@@ -135,9 +135,9 @@
 .ic-wrapper.ic-textarea-wrap.ic-focused   .ic-label,
 .ic-wrapper.ic-textarea-wrap.ic-has-value .ic-label { top: 0; transform: translateY(-50%); }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    INPUT / TEXTAREA
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-input {
   flex: 1; min-width: 0;
   height: var(--ic-h);
@@ -170,9 +170,9 @@
 .ic-wrapper.ic-has-prefix .ic-input { padding-left: 0; }
 .ic-wrapper.ic-has-suffix .ic-input { padding-right: 0; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    ICÔNES GAUCHE / DROITE
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-icon-left, .ic-icon-right {
   position: absolute;
   top: 50%; transform: translateY(-50%);
@@ -186,9 +186,9 @@
 .ic-wrapper.ic-focused .ic-icon-left { color: var(--ic-primary); }
 .ic-wrapper.ic-has-error .ic-icon-left { color: var(--ic-error); }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    ACTIONS (droite)
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-actions {
   position: absolute;
   right: var(--ic-px); top: 50%; transform: translateY(-50%);
@@ -222,9 +222,9 @@
 .ic-wrapper.ic-has-success .ic-success-icon { display:flex; }
 .ic-wrapper.ic-has-error   .ic-error-icon   { display:flex; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    PREFIX / SUFFIX
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-prefix, .ic-suffix {
   display:flex; align-items:center; height:100%;
   padding: 0 10px; font-size: var(--ic-fs);
@@ -239,9 +239,9 @@
   padding-left: calc(var(--ic-px) + 24px);
 }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    SELECT — affichage dans le field
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-select-anchor { cursor: pointer; }
 .ic-select-display, .ic-picker-display {
   flex: 1; min-height: var(--ic-h);
@@ -261,7 +261,7 @@
 .ic-select-chevron svg, .ic-picker-cal-icon svg { width:16px; height:16px; display:block; }
 .ic-wrapper.ic-select-open .ic-select-chevron { transform: translateY(-50%) rotate(180deg); }
 
-/* ── MultiSelect field ─────────────────────────────────────── */
+/* -- MultiSelect field --------------------------------------- */
 .ic-multiselect-field { flex-wrap: wrap; min-height: var(--ic-h); }
 .ic-multi-display {
   flex: 1; display: flex; flex-wrap: wrap;
@@ -298,11 +298,11 @@
 .ic-tag-remove:hover { background: rgba(11,92,204,0.2); }
 .ic-tag-remove svg { width:10px; height:10px; display:block; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    PORTAL DROPDOWNS
    Positionnés par JS via CSS custom properties sur l'élément.
    Attachés sur document.body → jamais clippés.
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-portal-drop {
   position: absolute;
   top: var(--ic-drop-top,  0px);
@@ -331,7 +331,7 @@
   to   { opacity:1; transform: none; }
 }
 
-/* ── Recherche dans dropdown ─────────────────────────────── */
+/* -- Recherche dans dropdown ------------------------------- */
 .ic-drop-search-wrap {
   padding: 8px; border-bottom: 1px solid var(--ic-border);
 }
@@ -344,7 +344,7 @@
 }
 .ic-drop-search:focus { border-color: var(--ic-primary); }
 
-/* ── Options ─────────────────────────────────────────────── */
+/* -- Options ----------------------------------------------- */
 .ic-select-options {
   max-height: 240px; overflow-y: auto; padding: 4px;
 }
@@ -375,10 +375,10 @@
   background: var(--ic-dot-color, var(--ic-border));
 }
 
-/* ── Drop divider ────────────────────────────────────────── */
+/* -- Drop divider ------------------------------------------ */
 .ic-drop-divider { height:1px; background: var(--ic-border); margin: 4px 8px; }
 
-/* ── MultiSelect footer ──────────────────────────────────── */
+/* -- MultiSelect footer ------------------------------------ */
 .ic-drop-footer {
   display:flex; align-items:center; justify-content:space-between;
   padding: 8px 12px; border-top: 1px solid var(--ic-border);
@@ -393,13 +393,13 @@
 }
 .ic-drop-btn-ok:hover { opacity:0.88; }
 
-/* ── Select-all option ───────────────────────────────────── */
+/* -- Select-all option ------------------------------------- */
 .ic-select-all-opt .ic-opt-label { font-style:italic; }
 .ic-text-muted { color: var(--ic-text-muted); }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    CALENDRIER (dans ic-portal-drop)
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-cal-header {
   display:flex; align-items:center; justify-content:space-between;
   padding: 10px 12px 8px; border-bottom: 1px solid var(--ic-border); gap:4px;
@@ -478,9 +478,9 @@
 /* Séparateur date/time dans datetime */
 .ic-datetime-sep { height:1px; background: var(--ic-border); margin: 4px 0; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    TIME PICKER — drum scroll style Google
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-time-container {
   padding: 8px 16px 4px;
   user-select: none;
@@ -566,15 +566,15 @@
 }
 .ic-drum-track.ic-drum-spin { animation: ic-drum-tick 140ms ease-out; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    PICKER ANCHOR — icône calendrier à droite
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-picker-anchor { cursor:pointer; }
 .ic-picker-display { padding-right: calc(var(--ic-px) + 24px); }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    FOOTER (hint, erreur, compteur)
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-footer {
   display:flex; justify-content:space-between; align-items:flex-start;
   gap:8px; margin-top:5px; min-height:16px;
@@ -587,14 +587,14 @@
 .ic-wrapper.ic-counter-near .ic-counter { color: var(--ic-warning); font-weight:600; }
 .ic-wrapper.ic-counter-over .ic-counter { color: var(--ic-error);   font-weight:700; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    REQUIRED STAR
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 .ic-required { color: var(--ic-error); margin-left:2px; }
 
-/* ══════════════════════════════════════════════════════════════
+/* ==============================================================
    SHAKE (erreur de validation)
-══════════════════════════════════════════════════════════════ */
+============================================================== */
 @keyframes ic-shake {
   0%,100% { transform:none; }
   20%     { transform:translateX(-4px); }

@@ -39,6 +39,160 @@ let editingActivityId = null;
 // SSE Connection
 let sseConnection = null;
 let sseReconnectTimeout = null;
+let sseReconnectDelay = 3000; // backoff exponentiel
+
+// Verrou pour éviter les actions simultanées (inscription/désinscription)
+const _pendingActions = new Set();
+// Timestamps par clé d'action pour filtrer les echos SSE de nos propres actions
+const _lastActionTsByKey = new Map();
+
+// Identifiant de l'activité actuellement affichée dans le modal de détail.
+// Indispensable pour que les handlers SSE rafraîchissent uniquement LE bon modal
+// et non le modal de la dernière activité modifiée/créée côté serveur.
+// Mis à jour par showActivityDetails / showActivityDetailsEleve.
+// Remis à null par closeActivityModal.
+let _currentModalActivityId = null;
+
+// Debounce boutons d'inscription : bloque les re-clics pendant 800ms
+// apres la FIN de chaque action (en plus du verrou _pendingActions pendant l'action).
+const _btnDebounce = new Map();
+const BTN_DEBOUNCE_MS = 800;
+
+function _debouncedAction(key, fn) {
+    const last = _btnDebounce.get(key) || 0;
+    if (Date.now() - last < BTN_DEBOUNCE_MS) return;
+    _btnDebounce.set(key, Date.now());
+    fn();
+}
+
+/**
+ * Retourne le nombre d'inscrits pour une activite.
+ * Prefer _serverNbInscrits (valeur authoritative du serveur, poussee par SSE)
+ * sur inscriptions.length (valeur locale, peut etre en avance sur le serveur).
+ * Pour les activites separables, inscriptions.length reste la reference
+ * car chaque seance a son propre compteur.
+ */
+function getInscritsCount(act) {
+    if (!act.separable && act._serverNbInscrits !== undefined) {
+        return act._serverNbInscrits;
+    }
+    return act.inscriptions?.length || 0;
+}
+
+function getSeanceInscritsCount(seance) {
+    if (seance._serverNbInscrits !== undefined) return seance._serverNbInscrits;
+    return seance.inscriptions?.length || 0;
+}
+
+
+
+// -- Heure serveur ------------------------------------------------
+// _serverTimeOffset = différence (ms) entre l'heure serveur et Date.now() local.
+// Calculé au démarrage et après chaque reconnexion SSE.
+// Utilisé par nowServer() partout où on compare avec date_ouverture/fermeture.
+let _serverTimeOffset = 0;
+
+async function syncServerTime() {
+    try {
+        const t0 = Date.now();
+        const res = await fetch('/api/server-time', { credentials: 'same-origin' });
+        const { now: serverNow } = await res.json();
+        const t1 = Date.now();
+        const rtt = t1 - t0;
+        // On estime que le message serveur a été émis à mi-parcours du RTT
+        const serverMs = new Date(serverNow).getTime() + rtt / 2;
+        _serverTimeOffset = serverMs - t1;
+    } catch(e) {
+        _serverTimeOffset = 0; // fallback silencieux : heure locale
+    }
+}
+
+/** Retourne un Date représentant l'heure serveur estimée. */
+function nowServer() {
+    return new Date(Date.now() + _serverTimeOffset);
+}
+
+/* ===========================
+    MODAL CUSTOM — remplace await showAlert() et await showConfirm()
+    =========================== */
+
+/**
+ * Remplace await showAlert() — retourne une Promise<void>
+ * Affiche un modal non-bloquant avec un bouton "OK".
+ */
+function showAlert(message, title = 'Information') {
+    return new Promise((resolve) => {
+        // Supprimer un éventuel modal en cours
+        document.getElementById('custom-modal-root')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'custom-modal-root';
+        overlay.className = 'modal-overlay visible custom-modal-overlay';
+
+        overlay.innerHTML = `
+            <div class="modal-content modal-sm custom-modal-content" role="alertdialog" aria-modal="true" aria-labelledby="cmodal-title" aria-describedby="cmodal-msg">
+                <div class="modal-header">
+                    <h3 id="cmodal-title">${title}</h3>
+                </div>
+                <div class="modal-body" id="cmodal-msg" style="white-space:pre-wrap;">${message}</div>
+                <div class="custom-modal-footer">
+                    <button id="cmodal-ok" class="btn" autofocus>OK</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        const close = () => { overlay.remove(); resolve(); };
+        overlay.querySelector('#cmodal-ok').addEventListener('click', close);
+        // Fermer avec Entrée ou Échap
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(); }
+        };
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('#cmodal-ok').focus();
+    });
+}
+
+/**
+ * Remplace await showConfirm() — retourne une Promise<boolean>
+ * Affiche un modal avec boutons "Confirmer" / "Annuler".
+ */
+function showConfirm(message, title = 'Confirmation', confirmLabel = 'Confirmer', cancelLabel = 'Annuler') {
+    return new Promise((resolve) => {
+        document.getElementById('custom-modal-root')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'custom-modal-root';
+        overlay.className = 'modal-overlay visible custom-modal-overlay';
+
+        overlay.innerHTML = `
+            <div class="modal-content modal-sm custom-modal-content" role="alertdialog" aria-modal="true" aria-labelledby="cmodal-title" aria-describedby="cmodal-msg">
+                <div class="modal-header">
+                    <h3 id="cmodal-title">${title}</h3>
+                </div>
+                <div class="modal-body" id="cmodal-msg" style="white-space:pre-wrap;">${message}</div>
+                <div class="custom-modal-footer">
+                    <button id="cmodal-cancel" class="btn secondary">${cancelLabel}</button>
+                    <button id="cmodal-confirm" class="btn" autofocus>${confirmLabel}</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        const close = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('#cmodal-confirm').addEventListener('click', () => close(true));
+        overlay.querySelector('#cmodal-cancel').addEventListener('click', () => close(false));
+        // Entrée = confirmer, Échap = annuler
+        const onKey = (e) => {
+            if (e.key === 'Enter')  { document.removeEventListener('keydown', onKey); close(true); }
+            if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(false); }
+        };
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('#cmodal-confirm').focus();
+    });
+}
 
 
 
@@ -525,9 +679,8 @@ async function checkAuthStatus() {
     =========================== */
 async function fetchAllData() {
     try {
-        classes = await apiGet('/classes');
-
         if (!currentUser) {
+            classes = await apiGet('/classes');
             users = [];
             activites = [];
             groupes = [];
@@ -535,44 +688,34 @@ async function fetchAllData() {
             return;
         }
 
-        if (currentUser.role === 'prof' || currentUser.role === 'admin') {
-            try {
-                users = await apiGet('/users');
-            } catch (e) {
-                users = [];
-            }
-        } else {
-            users = [currentUser];
-        }
-
-        // charger les groupes d'activité ET leurs classes
-        try {
-            groupes = await apiGet('/groupes');
-            groupeClasses = await apiGet('/groupe_classes');
-        } catch (e) {
-            console.error('Erreur chargement groupes:', e);
-            groupes = [];
-            groupeClasses = [];
-        }
-
-        const [rawActivites, rawActiviteClasses, rawSeances] = await Promise.all([
+        // Toutes les requêtes en parallèle — plus de cascade séquentielle
+        const isStaff = currentUser.role === 'prof' || currentUser.role === 'admin';
+        const [
+            rawClasses,
+            rawUsers,
+            rawGroupes,
+            rawGroupeClasses,
+            rawActivites,
+            rawActiviteClasses,
+            rawSeances,
+            rawInscriptions,
+            rawInscriptionsSeances
+        ] = await Promise.all([
+            apiGet('/classes'),
+            isStaff ? apiGet('/users').catch(() => []) : Promise.resolve([currentUser]),
+            apiGet('/groupes').catch(() => []),
+            apiGet('/groupe_classes').catch(() => []),
             apiGet('/activites'),
             apiGet('/activite_classes'),
-            apiGet('/seances')
+            apiGet('/seances'),
+            apiGet('/inscriptions').catch(() => []),
+            apiGet('/inscriptions/seances').catch(() => [])
         ]);
 
-        let rawInscriptions = [];
-        let rawInscriptionsSeances = [];
-        try {
-            rawInscriptions = await apiGet('/inscriptions');
-            try {
-                rawInscriptionsSeances = await apiGet('/inscriptions/seances');
-            } catch (e) {
-                rawInscriptionsSeances = [];
-            }
-        } catch (e) {
-            rawInscriptions = [];
-        }
+        classes       = rawClasses;
+        users         = rawUsers;
+        groupes       = rawGroupes;
+        groupeClasses = rawGroupeClasses;
 
         // Enrichir chaque activité
         activites = rawActivites.map(act => {
@@ -611,6 +754,9 @@ async function fetchAllData() {
 
             return act;
         });
+
+        // Autorise un recalcul des timers d'ouverture au prochain rendu
+        majListeActivitesEleve._timerScheduled = false;
 
     } catch(e) {
         console.error('Erreur lors du fetch des données:', e);
@@ -713,7 +859,7 @@ function populateSelects(){
     }
 }
 
-function verifierCoherenceGroupeClasses() {
+async function verifierCoherenceGroupeClasses() {
     const groupeComp3 = window._IC_instances?.['groupe-select'];
     if (!groupeComp3 || !groupeComp3.getValue()) return;
 
@@ -733,7 +879,7 @@ function verifierCoherenceGroupeClasses() {
             .map(cid => classes.find(c => c.id === cid)?.nom)
             .join(', ');
 
-        alert(`[WARN] Incohérence détectée !\n\nLes classes suivantes ne font pas partie du groupe "${nomGroupe}" :\n${nomsClassesInvalides}\n\nVeuillez ajuster votre sélection.`);
+        await showAlert(`[WARN] Incohérence détectée !\n\nLes classes suivantes ne font pas partie du groupe "${nomGroupe}" :\n${nomsClassesInvalides}\n\nVeuillez ajuster votre sélection.`);
 
         // Désélectionner les classes invalides
         classesInvalides.forEach(cid => {
@@ -1025,7 +1171,7 @@ async function chargerElevesNonInscrits(groupeId) {
 }
 
 async function envoyerRappelInscription(groupeId, eleveId, btn) {
-    if (!confirm('Envoyer un mail de rappel à cet élève ?')) return;
+    if (!await showConfirm('Envoyer un mail de rappel à cet élève ?')) return;
 
     const originalText = btn.textContent;
     btn.disabled = true;
@@ -1040,7 +1186,7 @@ async function envoyerRappelInscription(groupeId, eleveId, btn) {
             chargerElevesNonInscrits(groupeId);
         }, 2000);
     } catch(e) {
-        alert('Erreur: ' + e.message);
+        await showAlert('Erreur: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -1051,7 +1197,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
     try {
         const eleve = getUserById(eleveId);
         if (!eleve) {
-            alert('Élève introuvable');
+            await showAlert('Élève introuvable');
             return;
         }
 
@@ -1059,7 +1205,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
         const activitesGroupe = activites.filter(a => a.groupe_id === groupeId);
 
         if (activitesGroupe.length === 0) {
-            alert('Aucune activité dans ce groupe');
+            await showAlert('Aucune activité dans ce groupe');
             return;
         }
 
@@ -1070,7 +1216,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
         let activitesHtml = '';
 
         activitesGroupe.forEach(act => {
-            const inscritsCount = act.inscriptions?.length || 0;
+            const inscritsCount = getInscritsCount(act);
             const classesText = act.classe_ids
                 .map(id => classes.find(c => c.id === id)?.nom || '')
                 .join(', ');
@@ -1154,7 +1300,7 @@ async function ouvrirModalInscriptionManuelle(eleveId, groupeId) {
 
     } catch(e) {
         console.error('Erreur modal inscription manuelle:', e);
-        alert('Erreur lors de l\'ouverture du modal');
+        await showAlert('Erreur lors de l\'ouverture du modal');
     }
 }
 
@@ -1170,13 +1316,13 @@ async function inscrireManuel(eleveId, activiteId) {
     const activite = activites.find(a => a.id === activiteId);
 
     if (!eleve || !activite) {
-        alert('Données introuvables');
+        await showAlert('Données introuvables');
         return;
     }
 
     const message = `Confirmer l'inscription de ${eleve.prenom} ${eleve.nom} à "${activite.titre}" ?`;
 
-    if (!confirm(message)) return;
+    if (!await showConfirm(message)) return;
 
     try {
         await apiPost('/inscriptions/manuel', {
@@ -1199,7 +1345,7 @@ async function inscrireManuel(eleveId, activiteId) {
         showToast('Élève inscrit avec succès !');
 
     } catch(e) {
-        alert('Erreur lors de l\'inscription : ' + e.message);
+        await showAlert('Erreur lors de l\'inscription : ' + e.message);
     }
 }
 
@@ -1219,7 +1365,7 @@ function scheduleInscriptionOpenTimers() {
     clearInscriptionOpenTimers();
     if (!currentUser || currentUser.role !== 'eleve') return;
 
-    const now = new Date();
+    const now = nowServer();
     const classeId = Number(currentUser.classe_id);
 
     activites.forEach(act => {
@@ -1259,7 +1405,7 @@ function majListeActivitesEleve() {
         return;
     }
 
-    const now = new Date();
+    const now = nowServer();
     let totalAct = 0, totalIns = 0;
 
     // Filtrer activités pour cette classe
@@ -1358,7 +1504,7 @@ function majListeActivitesEleve() {
         activitesGroupe.forEach(act => {
             totalAct++;
 
-            const inscritsCount = act.inscriptions?.length || 0;
+            const inscritsCount = getInscritsCount(act);
 
             const classesText = act.classe_ids
                 .map(id => classes.find(c => c.id === id)?.nom || '')
@@ -1378,6 +1524,7 @@ function majListeActivitesEleve() {
 
             const actCard = document.createElement('div');
             actCard.className = 'activity-card' + (inscriptionsEleve ? ' selected' : '');
+            actCard.dataset.activityId = act.id;  // FIX doublons: id unique pour majComptesActivitesEleve
 
             const animateurNom = act.animateur_prenom && act.animateur_nom
                 ? `${act.animateur_prenom} ${act.animateur_nom}`
@@ -1393,7 +1540,7 @@ function majListeActivitesEleve() {
                     👤 ${animateurNom}
                 </div>
                 <div class="activity-details">Classes: ${classesText}</div>
-                <div class="activity-details">
+                <div class="activity-details" data-inscrits-counter>
                     ${act.separable
                         ? `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`
                         : `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`
@@ -1422,7 +1569,7 @@ function majListeActivitesEleve() {
                     dateSpan.className = 'seance-date';
                     dateSpan.textContent = formatDateLocal(seance.date_heure);
 
-                    const inscritsSeance = seance.inscriptions?.length || 0;
+                    const inscritsSeance = getInscritsCount(act);
                     const effectifInfo = document.createElement('span');
                     effectifInfo.className = 'seance-effectif';
                     effectifInfo.textContent = `${inscritsSeance}/${act.effectif_max}`;
@@ -1516,8 +1663,11 @@ function majListeActivitesEleve() {
 
     $('#stat-act-eleve').textContent = totalAct;
     $('#stat-insc-eleve').textContent = totalIns;
-    // Programmer des rafraîchissements automatiques quand les périodes d'inscription ouvrent
-    scheduleInscriptionOpenTimers();
+    // Ne replanifie les timers qu'une seule fois par fetchAllData, pas à chaque inscription/désinscription
+    if (!majListeActivitesEleve._timerScheduled) {
+        majListeActivitesEleve._timerScheduled = true;
+        scheduleInscriptionOpenTimers();
+    }
 }
 
 /**
@@ -1526,7 +1676,7 @@ function majListeActivitesEleve() {
  * Utilisée par le SSE pour éviter de réinitialiser les sliders.
  */
 function majComptesActivitesEleve() {
-    const now = new Date();
+    const now = nowServer();
     const classeId = Number(currentUser?.classe_id);
     if (!classeId || isNaN(classeId)) return;
 
@@ -1554,51 +1704,105 @@ function majComptesActivitesEleve() {
         const ouverture = new Date(act.date_ouverture_inscriptions);
         const fermeture = new Date(act.date_fermeture_inscriptions);
         const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
-        const inscritsCount = act.inscriptions?.length || 0;
+        const inscritsCount = getInscritsCount(act);
 
-        // Trouver la card par data-activity-id
+        // FIX doublons : chercher directement par data-activity-id (majListeActivitesEleve le définit maintenant)
         const card = document.querySelector(`#liste-activites-eleve .activity-card[data-activity-id="${act.id}"]`);
+        if (!card) return; // card absente = activité non visible
 
-        // Les cards n'ont pas de data-activity-id — on les trouve via le titre
-        // On cherche dans toutes les cards
-        const cards = document.querySelectorAll('#liste-activites-eleve .activity-card');
-        cards.forEach(c => {
-            const titre = c.querySelector('.activity-title')?.textContent;
-            if (titre === act.titre) {
-                // Mettre à jour le compteur inscrits
-                const details = c.querySelectorAll('.activity-details');
-                details.forEach(d => {
+        {
+                // Mettre à jour le compteur inscrits via data-inscrits-counter (évite les doublons)
+                const counter = card.querySelector('[data-inscrits-counter]');
+                if (counter) {
                     if (act.separable) {
-                        if (d.textContent.includes('Inscriptions :')) {
-                            d.innerHTML = `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`;
-                        }
+                        counter.innerHTML = `Inscriptions : ${inscritsCount} élève${inscritsCount > 1 ? 's' : ''} (effectif max par séance: ${act.effectif_max})`;
                     } else {
-                        if (d.innerHTML.includes('inscrit')) {
-                            d.innerHTML = `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`;
+                        counter.innerHTML = `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount > 1 ? 's' : ''}`;
+                    }
+                }
+
+                // Mettre à jour le badge "Inscrit(e)" dans le header de la card (non-séparable)
+                if (!act.separable) {
+                    const isInscrit = act.inscriptions?.includes(currentUser.id);
+                    card.classList.toggle('selected', isInscrit);
+                    const header = card.querySelector('.activity-card-header');
+                    if (header) {
+                        let badge = header.querySelector('.seance-status.inscrit');
+                        if (isInscrit && !badge) {
+                            badge = document.createElement('span');
+                            badge.className = 'seance-status inscrit';
+                            badge.textContent = '✓ Inscrit(e)';
+                            header.appendChild(badge);
+                        } else if (!isInscrit && badge) {
+                            badge.remove();
                         }
                     }
-                });
+                    // Mettre à jour le bouton d'inscription non-séparable
+                    const btn = card.querySelector('.btn:not(.ghost)');
+                    if (btn && inscriptionsOuvertes) {
+                        if (isInscrit) {
+                            btn.textContent = 'Se désinscrire (toutes séances)';
+                            btn.classList.remove('ghost');
+                            btn.classList.add('secondary');
+                            btn.disabled = false;
+                            btn.onclick = (e) => { e.stopPropagation(); desinscrireActivite(act.id); };
+                        } else if (inscritsCount >= act.effectif_max) {
+                            btn.textContent = 'Activité complète';
+                            btn.disabled = true;
+                            btn.classList.add('ghost');
+                        } else {
+                            btn.textContent = "S'inscrire (toutes séances)";
+                            btn.classList.remove('secondary', 'ghost');
+                            btn.disabled = false;
+                            btn.onclick = (e) => { e.stopPropagation(); inscrireActivite(act.id); };
+                        }
+                    }
+                }
 
-                // Mettre à jour les compteurs par séance (separable)
+                // Mettre à jour les compteurs et boutons par séance (separable)
                 if (act.separable) {
                     act.seances?.forEach(seance => {
-                        const inscritsSeance = seance.inscriptions?.length || 0;
-                        const items = c.querySelectorAll('.seance-item-eleve');
-                        // Match par date (le texte du span date)
+                        const inscritsSeance = getInscritsCount(act);
+                        const estInscritSeance = seance.inscriptions?.includes(currentUser.id) || false;
+                        const items = card.querySelectorAll('.seance-item-eleve');
+                        // Match par data-seance-id sur le bouton (plus fiable que le texte de date)
                         items.forEach(item => {
-                            const dateSpan = item.querySelector('.seance-date');
-                            if (dateSpan?.textContent === formatDateLocal(seance.date_heure)) {
+                            const btn = item.querySelector('.seance-btn[data-seance-id]');
+                            if (btn && parseInt(btn.dataset.seanceId) === seance.id) {
+                                // Mettre à jour le compteur effectif
                                 const effectifSpan = item.querySelector('.seance-effectif');
                                 if (effectifSpan) {
                                     effectifSpan.textContent = `${inscritsSeance}/${act.effectif_max}`;
                                     effectifSpan.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
+                                }
+                                // Mettre à jour l'état du bouton (si la séance n'est pas passée/fermée)
+                                if (!btn.disabled || btn.classList.contains('inscrit') || btn.classList.contains('libre')) {
+                                    const seanceDate = new Date(seance.date_heure);
+                                    const seancePassee = seanceDate < now;
+                                    if (!seancePassee && inscriptionsOuvertes) {
+                                        if (estInscritSeance) {
+                                            btn.textContent = 'Inscrit ✓';
+                                            btn.className = 'seance-btn inscrit';
+                                            btn.dataset.action = 'desinscrire';
+                                            btn.disabled = false;
+                                        } else if (inscritsSeance >= act.effectif_max) {
+                                            btn.textContent = 'Complète';
+                                            btn.className = 'seance-btn ferme';
+                                            btn.disabled = true;
+                                            delete btn.dataset.action;
+                                        } else {
+                                            btn.textContent = "S'inscrire";
+                                            btn.className = 'seance-btn libre';
+                                            btn.dataset.action = 'inscrire';
+                                            btn.disabled = false;
+                                        }
+                                    }
                                 }
                             }
                         });
                     });
                 }
             }
-        });
     });
 
     // Mettre à jour les stats globales
@@ -1657,6 +1861,10 @@ function showActivityDetailsEleve(activite) {
     const title = $('#modal-title');
     const body = $('#modal-body');
 
+    // Enregistrer quelle activité est ouverte pour que les handlers SSE
+    // rafraîchissent uniquement ce modal et non celui d'une autre activité.
+    _currentModalActivityId = activite.id;
+
     title.textContent = activite.titre;
 
     const classesText = activite.classe_ids
@@ -1667,7 +1875,7 @@ function showActivityDetailsEleve(activite) {
         ? `${activite.animateur_prenom} ${activite.animateur_nom}`
         : 'Animateur non défini';
 
-    const now = new Date();
+    const now = nowServer();
     const ouverture = new Date(activite.date_ouverture_inscriptions);
     const fermeture = new Date(activite.date_fermeture_inscriptions);
     const inscriptionsOuvertes = now >= ouverture && now <= fermeture;
@@ -1690,7 +1898,7 @@ function showActivityDetailsEleve(activite) {
             }
 
             // Compter les inscrits pour cette séance
-            const inscritsSeance = seance.inscriptions?.length || 0;
+            const inscritsSeance = getSeanceInscritsCount(seance);
             const seanceComplete = inscritsSeance >= activite.effectif_max;
 
             // Définir le statut et le style
@@ -1786,6 +1994,17 @@ function showActivityDetailsEleve(activite) {
 }
 
 async function inscrireActivite(activiteId) {
+    const lockKey = `inscr-act-${activiteId}`;
+    // Double protection : debounce 800ms + verrou pendant la requete
+    if (Date.now() - (_btnDebounce.get(lockKey) || 0) < BTN_DEBOUNCE_MS) return;
+    if (_pendingActions.has(lockKey)) return;
+    _pendingActions.add(lockKey);
+    _btnDebounce.set(lockKey, Date.now());
+
+    // Feedback immédiat : désactiver le bouton
+    const btn = document.querySelector(`#liste-activites-eleve .activity-card[data-activity-id="${activiteId}"] .btn:not(.ghost)`);
+    if (btn) { btn.disabled = true; btn.textContent = 'En cours…'; }
+
     try {
         // Vérification groupe d'exclusivité côté client (AMÉLIORÉE)
         const activite = activites.find(a => a.id === activiteId);
@@ -1809,33 +2028,86 @@ async function inscrireActivite(activiteId) {
             });
 
             if (conflit) {
-                alert(`Impossible : vous êtes déjà inscrit à "${conflit.titre}" du même groupe d'activité.`);
+                await showAlert(`Impossible : vous êtes déjà inscrit à "${conflit.titre}" du même groupe d'activité.`);
                 return;
             }
         }
 
+        // Mise à jour optimiste du modèle local (feedback instantané)
+        if (activite && !activite.separable) {
+            if (!activite.inscriptions.includes(currentUser.id)) {
+                activite.inscriptions.push(currentUser.id);
+                // Sync _serverNbInscrits avec l'etat optimiste
+                if (activite._serverNbInscrits !== undefined) activite._serverNbInscrits++;
+            }
+        }
+        majComptesActivitesEleve();
+        updateEmploiDuTempsEleve();
+
         await apiPost('/inscriptions', {activite_id: activiteId});
+        // La mise à jour optimiste est déjà en place.
+        // Le SSE confirmera le vrai nb_inscrits depuis le serveur via majComptesActivitesEleve().
+        // Pas de fetchAllData() ici pour ne pas bloquer les actions rapides enchaînées.
+    } catch(e) {
+        // Rollback si erreur : resynchronisation complète
         await fetchAllData();
         majListeActivitesEleve();
         updateEmploiDuTempsEleve();
-    } catch(e) {
-        alert('Erreur: ' + e.message);
+        await showAlert('Erreur: ' + e.message);
+    } finally {
+        _lastActionTsByKey.set(`inscr-act-${activiteId}`, Date.now());
+        _btnDebounce.set(lockKey, Date.now());
+        _pendingActions.delete(lockKey);
     }
 }
 
 async function desinscrireActivite(activiteId) {
-    if(!confirm('Veux-tu te désinscrire de cette activité ?')) return;
+    if(!await showConfirm('Veux-tu te désinscrire de cette activité ?')) return;
+
+    const lockKey = `desinscr-act-${activiteId}`;
+    if (Date.now() - (_btnDebounce.get(lockKey) || 0) < BTN_DEBOUNCE_MS) return;
+    if (_pendingActions.has(lockKey)) return;
+    _pendingActions.add(lockKey);
+    _btnDebounce.set(lockKey, Date.now());
+
     try {
+        // Mise à jour optimiste
+        const activite = activites.find(a => a.id === activiteId);
+        if (activite && !activite.separable) {
+            activite.inscriptions = activite.inscriptions.filter(id => id !== currentUser.id);
+            if (activite._serverNbInscrits !== undefined) activite._serverNbInscrits = Math.max(0, activite._serverNbInscrits - 1);
+        }
+        majComptesActivitesEleve();
+        updateEmploiDuTempsEleve();
+
         await apiDelete('/inscriptions', {activite_id: activiteId});
+        // Le SSE confirmera le vrai nb_inscrits. Pas de fetchAllData() ici.
+    } catch(e) {
+        // Rollback
         await fetchAllData();
         majListeActivitesEleve();
         updateEmploiDuTempsEleve();
-    } catch(e) {
-        alert('Erreur: ' + e.message);
+        await showAlert('Erreur: ' + e.message);
+    } finally {
+        _lastActionTsByKey.set(`desinscr-act-${activiteId}`, Date.now());
+        _btnDebounce.set(lockKey, Date.now());
+        _pendingActions.delete(lockKey);
     }
 }
 
 async function inscrireSeance(seanceId) {
+    const lockKey = `inscr-seance-${seanceId}`;
+    if (Date.now() - (_btnDebounce.get(lockKey) || 0) < BTN_DEBOUNCE_MS) return;
+    if (_pendingActions.has(lockKey)) return;
+    _pendingActions.add(lockKey);
+    _btnDebounce.set(lockKey, Date.now());
+
+    // Feedback immédiat : désactiver le bouton dans les listes
+    document.querySelectorAll(`.seance-btn[data-seance-id="${seanceId}"], .btn-mini[data-seance-id="${seanceId}"]`).forEach(b => {
+        b.disabled = true;
+        b.textContent = '…';
+    });
+
     try {
         // Trouver l'activité correspondante
         const seance = activites.flatMap(a =>
@@ -1843,7 +2115,7 @@ async function inscrireSeance(seanceId) {
         ).find(s => s.id === seanceId);
 
         if (!seance) {
-            alert('Séance introuvable');
+            await showAlert('Séance introuvable');
             return;
         }
 
@@ -1863,28 +2135,51 @@ async function inscrireSeance(seanceId) {
             });
 
             if (conflit) {
-                alert(`Impossible : vous êtes déjà inscrit à "${conflit.titre}" du même groupe exclusif.`);
+                await showAlert(`Impossible : vous êtes déjà inscrit à "${conflit.titre}" du même groupe exclusif.`);
                 return;
             }
         }
 
-        await apiPost('/inscriptions/seance', {seance_id: seanceId});
-        await fetchAllData();
-
-        // Trouver l'activité mise à jour et rafraîchir le modal
-        const activiteActualisee = activites.find(a => a.id === seance.activite_id);
-        if (activiteActualisee) {
-            showActivityDetailsEleve(activiteActualisee);
+        // Mise à jour optimiste du modèle local
+        const act = activites.find(a => a.id === seance.activite_id);
+        const seanceObj = act?.seances?.find(s => s.id === seanceId);
+        if (seanceObj && !seanceObj.inscriptions.includes(currentUser.id)) {
+            seanceObj.inscriptions.push(currentUser.id);
+            if (seanceObj._serverNbInscrits !== undefined) seanceObj._serverNbInscrits++;
+            if (act.separable && !act.inscriptions.includes(currentUser.id)) {
+                act.inscriptions.push(currentUser.id);
+            }
         }
+
+        majComptesActivitesEleve();
+        const actActualisee = activites.find(a => a.id === seance.activite_id);
+        if (actActualisee) showActivityDetailsEleve(actActualisee);
+        updateEmploiDuTempsEleve();
+
+        await apiPost('/inscriptions/seance', {seance_id: seanceId});
+        // L'update optimiste est déjà en place. Le SSE confirmera les vrais compteurs.
+        // On ne fait pas fetchAllData() ici pour éviter les race conditions en cas d'actions rapides.
+    } catch(e) {
+        // Rollback : resynchronisation complète
+        await fetchAllData();
         majListeActivitesEleve();
         updateEmploiDuTempsEleve();
-    } catch(e) {
-        alert('Erreur lors de l\'inscription : ' + e.message);
+        await showAlert('Erreur lors de l\'inscription : ' + e.message);
+    } finally {
+        _lastActionTsByKey.set(`inscr-seance-${seanceId}`, Date.now());
+        _btnDebounce.set(lockKey, Date.now());
+        _pendingActions.delete(lockKey);
     }
 }
 
 async function desinscrireSeance(seanceId) {
-    if (!confirm('Veux-tu te désinscrire de cette séance ?')) return;
+    if (!await showConfirm('Veux-tu te désinscrire de cette séance ?')) return;
+
+    const lockKey = `desinscr-seance-${seanceId}`;
+    if (Date.now() - (_btnDebounce.get(lockKey) || 0) < BTN_DEBOUNCE_MS) return;
+    if (_pendingActions.has(lockKey)) return;
+    _pendingActions.add(lockKey);
+    _btnDebounce.set(lockKey, Date.now());
 
     try {
         // Trouver l'activité avant désinscription
@@ -1892,21 +2187,41 @@ async function desinscrireSeance(seanceId) {
             a.seances.map(s => ({...s, activite_id: a.id}))
         ).find(s => s.id === seanceId);
 
-        await apiDelete('/inscriptions/seance', {seance_id: seanceId});
-        await fetchAllData();
-
-        // Trouver l'activité mise à jour et rafraîchir le modal
+        // Mise à jour optimiste
         if (seance) {
-            const activiteActualisee = activites.find(a => a.id === seance.activite_id);
-            if (activiteActualisee) {
-                showActivityDetailsEleve(activiteActualisee);
+            const act = activites.find(a => a.id === seance.activite_id);
+            const seanceObj = act?.seances?.find(s => s.id === seanceId);
+            if (seanceObj) {
+                seanceObj.inscriptions = seanceObj.inscriptions.filter(id => id !== currentUser.id);
+                if (seanceObj._serverNbInscrits !== undefined) seanceObj._serverNbInscrits = Math.max(0, seanceObj._serverNbInscrits - 1);
+                if (act.separable) {
+                    const encoreInscrit = act.seances.some(s => s.inscriptions.includes(currentUser.id));
+                    if (!encoreInscrit) act.inscriptions = act.inscriptions.filter(id => id !== currentUser.id);
+                }
             }
         }
 
+        // Rafraîchir immédiatement (update ciblé)
+        majComptesActivitesEleve();
+        if (seance) {
+            const actLocale = activites.find(a => a.id === seance.activite_id);
+            if (actLocale) showActivityDetailsEleve(actLocale);
+        }
+        updateEmploiDuTempsEleve();
+
+        await apiDelete('/inscriptions/seance', {seance_id: seanceId});
+        // L'update optimiste est déjà en place. Le SSE confirmera les vrais compteurs.
+        // On ne fait pas fetchAllData() ici pour éviter les race conditions en cas d'actions rapides.
+    } catch(e) {
+        // Rollback : resynchronisation complète
+        await fetchAllData();
         majListeActivitesEleve();
         updateEmploiDuTempsEleve();
-    } catch(e) {
-        alert('Erreur lors de la désinscription : ' + e.message);
+        await showAlert('Erreur lors de la désinscription : ' + e.message);
+    } finally {
+        _lastActionTsByKey.set(`desinscr-seance-${seanceId}`, Date.now());
+        _btnDebounce.set(lockKey, Date.now());
+        _pendingActions.delete(lockKey);
     }
 }
 
@@ -1964,7 +2279,7 @@ function majListeActivitesProf() {
         const listDiv = document.createElement('div');
 
         actes.forEach(act => {
-            const inscritsCount = act.inscriptions?.length || 0;
+            const inscritsCount = getInscritsCount(act);
             const classesText   = (act.classe_ids || [])
                 .map(id => classes.find(c => c.id === id)?.nom || '').join(', ');
 
@@ -1999,7 +2314,7 @@ function majListeActivitesProf() {
                 </div>
                 ${pastilles ? `<div class="pastille-wrap">${pastilles}</div>` : ''}
                 <div class="activity-details">Classes : ${classesText || '—'}</div>
-                <div class="activity-details">Inscrits : ${inscritsCount}/${act.effectif_max || '?'}</div>
+                <div class="activity-details" data-inscrits-counter>Inscrits : ${inscritsCount}/${act.effectif_max || '?'}</div>
                 <div class="activity-meta">${act.seances?.length || 0} séance(s) • ${act.separable ? 'Sécable' : 'Non sécable'}</div>
                 ${isCreator ? `
                 <div class="activity-actions">
@@ -2063,6 +2378,10 @@ function showActivityDetails(activite) {
     const title = $('#modal-title');
     const body = $('#modal-body');
 
+    // Enregistrer quelle activité est ouverte pour que les handlers SSE
+    // rafraîchissent uniquement ce modal et non celui d'une autre activité.
+    _currentModalActivityId = activite.id;
+
     title.textContent = activite.titre;
 
     const classesText = activite.classe_ids
@@ -2072,7 +2391,7 @@ function showActivityDetails(activite) {
     const animateur = getUserName(activite.animateur_id || activite.prof_id);
     const inscriptions = activite.inscriptions || [];
 
-    const now = new Date();
+    const now = nowServer();
 
     let inscriptionsHtml = '<div class="detail-value">';
 
@@ -2206,6 +2525,9 @@ function showActivityDetails(activite) {
 
 function closeActivityModal() {
     $('#activity-modal').classList.remove('visible');
+    // Remettre à null pour éviter des rafraîchissements parasites
+    // si un SSE arrive après la fermeture du modal.
+    _currentModalActivityId = null;
 }
 
 /* ===========================
@@ -2377,7 +2699,7 @@ async function ouvrirModalAppel(seanceId, consultation) {
         });
 
     } catch(e) {
-        alert('Erreur lors du chargement de l\'appel: ' + e.message);
+        await showAlert('Erreur lors du chargement de l\'appel: ' + e.message);
     }
 }
 
@@ -2427,7 +2749,7 @@ async function enregistrerAppel(seanceId) {
             presences: presencesData
         });
 
-        alert('Appel enregistré avec succès !');
+        await showAlert('Appel enregistré avec succès !');
         fermerModalAppel();
 
         // Rafraîchir l'affichage si le modal de détails est ouvert
@@ -2442,7 +2764,7 @@ async function enregistrerAppel(seanceId) {
         }
 
     } catch(e) {
-        alert('Erreur lors de l\'enregistrement: ' + e.message);
+        await showAlert('Erreur lors de l\'enregistrement: ' + e.message);
     }
 }
 
@@ -2624,7 +2946,7 @@ function updateScheduleViewProf() {
     monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
     monday.setHours(0, 0, 0, 0); // Normaliser à minuit
 
-    const now = new Date();
+    const now = nowServer();
 
     activites.forEach(act => {
         if (act.prof_id !== currentUser?.id && act.animateur_id !== currentUser?.id) return;
@@ -2867,7 +3189,7 @@ function updateEmploiDuTempsEleve() {
     monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
     monday.setHours(0, 0, 0, 0); // Normaliser à minuit
 
-    const now = new Date();
+    const now = nowServer();
 
     activites.forEach(act => {
         const colors = getActivityColors(act.id);
@@ -3100,7 +3422,7 @@ async function genererPDF(seanceId) {
         fermerModalPDF();
 
     } catch (e) {
-        alert('Erreur lors de la génération du PDF : ' + e.message);
+        await showAlert('Erreur lors de la génération du PDF : ' + e.message);
     }
 }
 
@@ -3133,7 +3455,7 @@ async function creerActivite(){
     const separableEl = $('#separable');
 
     if (!titreEl || !salleEl || !effectifEl || !seancesContainer) {
-        alert('Erreur : formulaire incomplet');
+        await showAlert('Erreur : formulaire incomplet');
         return;
     }
 
@@ -3215,7 +3537,7 @@ async function creerActivite(){
                 .map(cid => classes.find(c => c.id === cid)?.nom)
                 .join(', ');
 
-            alert(`⚠️ Incohérence détectée !\n\nVous avez sélectionné le groupe "${nomGroupe}" mais les classes suivantes n'en font pas partie :\n${nomsClassesInvalides}\n\nVeuillez soit :\n• Changer de groupe d'exclusivité\n• Modifier les classes sélectionnées`);
+            await showAlert(`⚠️ Incohérence détectée !\n\nVous avez sélectionné le groupe "${nomGroupe}" mais les classes suivantes n'en font pas partie :\n${nomsClassesInvalides}\n\nVeuillez soit :\n• Changer de groupe d'exclusivité\n• Modifier les classes sélectionnées`);
 
             if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
             hasError = true;
@@ -3225,24 +3547,24 @@ async function creerActivite(){
         const hasClasseFromGroupe = selectedClasses.some(cid => classesGroupe.includes(cid));
         if (!hasClasseFromGroupe) {
             const nomGroupe = groupes.find(g => g.id === groupeId)?.nom || 'ce groupe';
-            alert(`⚠️ Aucune classe du groupe "${nomGroupe}" n'est sélectionnée !\n\nVeuillez sélectionner au moins une classe faisant partie de ce groupe.`);
+            await showAlert(`⚠️ Aucune classe du groupe "${nomGroupe}" n'est sélectionnée !\n\nVeuillez sélectionner au moins une classe faisant partie de ce groupe.`);
             if(classeMultiSelect) classeMultiSelect.setError('Sélectionnez au moins une classe');
             hasError = true;
         }
     }
     // ===== FIN NOUVELLE VALIDATION =====
 
-    if (hasError) {alert('Veuillez remplir tous les champs obligatoires'); return;}
+    if (hasError) {await showAlert('Veuillez remplir tous les champs obligatoires'); return;}
 
     const dateOuverture = new Date(ouverture);
     const dateFermeture = new Date(fermeture);
 
     if (isNaN(dateOuverture.getTime()) || isNaN(dateFermeture.getTime())) {
-        alert('Dates invalides');
+        await showAlert('Dates invalides');
         return;
     }
     if (dateFermeture <= dateOuverture) {
-        alert('La date de fermeture doit être après la date d\'ouverture');
+        await showAlert('La date de fermeture doit être après la date d\'ouverture');
         return;
     }
 
@@ -3278,14 +3600,14 @@ async function creerActivite(){
         if(!preserveChamps) {
             resetForm();
         }
-        showToast('Activité créée avec succès !');
+        await showAlert('Activité créée avec succès !');
     } catch(e) {
-        alert('Erreur lors de la création : ' + e.message);
+        await showAlert('Erreur lors de la création : ' + e.message);
     }
 }
 
 async function supprimerActivite(activiteId, titre) {
-    if (!confirm(`⚠️ Confirmer la suppression ?\n\nActivité : "${titre}"\n\nToutes les séances, inscriptions et présences seront définitivement supprimées.`)) {
+    if (!await showConfirm(`⚠️ Confirmer la suppression ?\n\nActivité : "${titre}"\n\nToutes les séances, inscriptions et présences seront définitivement supprimées.`)) {
         return;
     }
 
@@ -3305,10 +3627,10 @@ async function supprimerActivite(activiteId, titre) {
         majListeActivitesProf();
         updateScheduleViewProf();
 
-        alert('[OK] Activité supprimée avec succès');
+        await showAlert('[OK] Activité supprimée avec succès');
 
     } catch (e) {
-        alert('[KO] Erreur : ' + e.message);
+        await showAlert('[KO] Erreur : ' + e.message);
     }
 }
 
@@ -3324,7 +3646,7 @@ async function ouvrirModalEdition(activiteId) {
         // Récupérer l'activité
         const activite = activites.find(a => a.id === activiteId);
         if (!activite) {
-            alert('Activité introuvable');
+            await showAlert('Activité introuvable');
             return;
         }
 
@@ -3403,7 +3725,7 @@ async function ouvrirModalEdition(activiteId) {
 
     } catch (e) {
         console.error('Erreur ouverture édition:', e);
-        alert('Erreur lors du chargement de l\'activité : ' + e.message);
+        await showAlert('Erreur lors du chargement de l\'activité : ' + e.message);
     }
 }
 
@@ -3424,7 +3746,7 @@ function annulerEdition() {
 
 async function modifierActivite() {
     if (!editingActivityId) {
-        alert('Erreur : aucune activité en cours d\'édition');
+        await showAlert('Erreur : aucune activité en cours d\'édition');
         return;
     }
 
@@ -3441,7 +3763,7 @@ async function modifierActivite() {
     const visibleAvantEl = $('#visible-avant');
 
     if (!titreEl || !salleEl || !effectifEl || !seancesContainer) {
-        alert('Erreur : formulaire incomplet');
+        await showAlert('Erreur : formulaire incomplet');
         return;
     }
 
@@ -3502,17 +3824,17 @@ async function modifierActivite() {
         hasError = true;
     }
 
-    if (hasError) { alert('Veuillez remplir tous les champs obligatoires'); return; }
+    if (hasError) { await showAlert('Veuillez remplir tous les champs obligatoires'); return; }
 
     const dateOuverture = new Date(ouverture);
     const dateFermeture = new Date(fermeture);
 
     if (isNaN(dateOuverture.getTime()) || isNaN(dateFermeture.getTime())) {
-        alert('Dates invalides');
+        await showAlert('Dates invalides');
         return;
     }
     if (dateFermeture <= dateOuverture) {
-        alert('La date de fermeture doit être après la date d\'ouverture');
+        await showAlert('La date de fermeture doit être après la date d\'ouverture');
         return;
     }
 
@@ -3545,7 +3867,7 @@ async function modifierActivite() {
         annulerEdition();
         showToast('[OK] Activité modifiée avec succès !');
     } catch (e) {
-        alert('[KO] Erreur lors de la modification : ' + e.message);
+        await showAlert('[KO] Erreur lors de la modification : ' + e.message);
     }
 }
 
@@ -3684,7 +4006,7 @@ function _propagatePivot(container) {
 }
 
 
-function ajouterSeanceHebdo(){
+async function ajouterSeanceHebdo(){
     const container = $('#seances-container');
 
     const start = new Date(icGet('first-hebdoseance'));
@@ -3696,7 +4018,7 @@ function ajouterSeanceHebdo(){
     );
 
     if (isNaN(start.getTime()) || !nb || nb < 1) {
-        alert('Choisissez une date et un nombre valide');
+        await showAlert('Choisissez une date et un nombre valide');
         return;
     }
 
@@ -3980,7 +4302,7 @@ async function editerGroupe(groupeId) {
 
         const groupe = groupes.find(g => g.id === groupeId);
         if (!groupe) {
-            alert('Groupe introuvable');
+            await showAlert('Groupe introuvable');
             return;
         }
 
@@ -4088,7 +4410,7 @@ async function editerGroupe(groupeId) {
 
     } catch(e) {
         console.error('[KO] Erreur édition groupe:', e);
-        alert('Erreur lors de l\'édition du groupe : ' + e.message);
+        await showAlert('Erreur lors de l\'édition du groupe : ' + e.message);
     }
 }
 
@@ -4097,14 +4419,14 @@ async function creerGroupe() {
 
     // Validation nom
     if (!nom) {
-        alert('[WARN] Veuillez saisir un nom de groupe');
+        await showAlert('[WARN] Veuillez saisir un nom de groupe');
         if (window._IC_instances?.['nouveau-groupe-nom']) window._IC_instances['nouveau-groupe-nom'].setError('Nom requis'); else $('#nouveau-groupe-nom').classList.add('error');
         return;
     }
 
     // Validation classes
     if (!groupeClasseMultiSelect || groupeClasseMultiSelect.selectedItems.length === 0) {
-        alert('⚠️ Vous devez sélectionner au moins une classe pour ce groupe');
+        await showAlert('⚠️ Vous devez sélectionner au moins une classe pour ce groupe');
         // multiSelectHeader remplacé par InputComp.setError()
         if(groupeClasseMultiSelect) groupeClasseMultiSelect.setError('Sélectionnez au moins une classe');
         return;
@@ -4122,7 +4444,7 @@ async function creerGroupe() {
                 classe_ids,
                 echanges_actifs: echangesActifs
             });
-            alert('✓ Groupe modifié avec succès !');
+            await showAlert('✓ Groupe modifié avec succès !');
         } else {
             // Mode création
             await apiPost('/groupes', {
@@ -4131,7 +4453,7 @@ async function creerGroupe() {
                 classe_ids,
                 echanges_actifs: echangesActifs
             });
-            alert('✓ Groupe créé avec succès !');
+            await showAlert('✓ Groupe créé avec succès !');
         }
 
         await fetchAllData();
@@ -4143,12 +4465,12 @@ async function creerGroupe() {
         annulerEditionGroupe();
 
     } catch(e) {
-        alert('[KO] Erreur: ' + e.message);
+        await showAlert('[KO] Erreur: ' + e.message);
     }
 }
 
 async function supprimerGroupe(groupeId, groupeNom) {
-    if (!confirm(`Supprimer le groupe "${groupeNom}" ?\n\nNote: Impossible si des activités l'utilisent.`)) {
+    if (!await showConfirm(`Supprimer le groupe "${groupeNom}" ?\n\nNote: Impossible si des activités l'utilisent.`)) {
         return;
     }
 
@@ -4168,9 +4490,9 @@ async function supprimerGroupe(groupeId, groupeNom) {
         populateSelects();
         majListeGroupes();
         initElevesNonInscrits();
-        alert('Groupe supprimé avec succès !');
+        await showAlert('Groupe supprimé avec succès !');
     } catch(e) {
-        alert('Erreur: ' + e.message);
+        await showAlert('Erreur: ' + e.message);
     }
 }
 
@@ -4318,7 +4640,7 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
     const eleve = getUserById(eleveId);
     const nomEleve = eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève #${eleveId}`;
 
-    if (!confirm(`Voulez-vous vraiment désinscrire ${nomEleve} ?`)) return;
+    if (!await showConfirm(`Voulez-vous vraiment désinscrire ${nomEleve} ?`)) return;
 
     try {
         if (isSeparable) {
@@ -4363,7 +4685,7 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
             // SSE va broadcaster aux autres sessions
 
     } catch(e) {
-        alert('Erreur lors de la désinscription : ' + e.message);
+        await showAlert('Erreur lors de la désinscription : ' + e.message);
     }
 }
 
@@ -4376,140 +4698,207 @@ async function desinscrireEleve(eleveId, seanceId, isSeparable) {
     Event Listeners & SSE
     =========================== */
 function initSSE() {
-    if (!currentUser) {
-        console.log('[SSE] Pas d\'utilisateur connecté, SSE non initialisé');
-        return;
-    }
+    if (!currentUser) return;
 
-    console.log('[SSE] Initialisation de la connexion...');
-
-    // Fermer l'ancienne connexion si elle existe
+    // Fermer proprement l'ancienne connexion (les listeners meurent avec l'objet)
     if (sseConnection) {
         sseConnection.close();
+        sseConnection = null;
     }
 
-    // Créer la nouvelle connexion
     sseConnection = new EventSource('/sse');
 
     sseConnection.onopen = () => {
         console.log('[SSE] [OK] Connexion établie');
-        // Annuler tout timeout de reconnexion
-        if (sseReconnectTimeout) {
-            clearTimeout(sseReconnectTimeout);
-            sseReconnectTimeout = null;
-        }
+        if (sseReconnectTimeout) { clearTimeout(sseReconnectTimeout); sseReconnectTimeout = null; }
+        sseReconnectDelay = 3000;
+        // Re-sync heure serveur a chaque reconnexion SSE
+        syncServerTime();
     };
 
-    sseConnection.onerror = (error) => {
-        console.error('[SSE] [KO] Erreur de connexion:', error);
-        sseConnection.close();
-
-        // Reconnexion automatique après 5 secondes
+    sseConnection.onerror = () => {
+        if (sseConnection && sseConnection.readyState === EventSource.CLOSED) {
+            sseConnection = null;
+        }
         if (!sseReconnectTimeout && currentUser) {
-            console.log('[SSE] Reconnexion dans 5 secondes...');
             sseReconnectTimeout = setTimeout(() => {
                 sseReconnectTimeout = null;
+                sseReconnectDelay = Math.min(sseReconnectDelay * 2, 30000);
                 initSSE();
-            }, 5000);
+            }, sseReconnectDelay);
         }
     };
 
-    // Écouter TOUS les événements
     sseConnection.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-
-            // Ignorer heartbeat et connected
-            if (data.type === 'heartbeat' || data.type === 'connected') {
-                return;
-            }
-
-            console.log('[SSE] Événement reçu:', data);
-        } catch(e) {
-            console.warn('[SSE] Message non-JSON reçu:', event.data);
-        }
+            if (data.type === 'heartbeat' || data.type === 'connected') return;
+        } catch(e) { /* non-JSON ignore */ }
     };
 
-    // Écouter les événements typés
-    sseConnection.addEventListener('inscription_created', handleInscriptionEvent);
-    sseConnection.addEventListener('inscription_deleted', handleInscriptionEvent);
+    // Event 'kicked' : une nouvelle session a pris la place de celle-ci
+    // (déclenchée par un login sur un autre appareil ou onglet).
+    sseConnection.addEventListener('kicked', async () => {
+        console.warn('[SSE] Session kickée — nouvelle connexion détectée sur un autre appareil');
+
+        // 1. Fermer la connexion SSE côté client immédiatement.
+        if (sseConnection) { sseConnection.close(); sseConnection = null; }
+
+        // 2. BUG FIX : appeler /logout pour invalider le cookie de session Flask.
+        //    Sans cet appel, le cookie reste valide côté serveur et un simple
+        //    reload de page reconnecterait l'utilisateur via GET /me.
+        try {
+            await fetch('/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch (e) {
+            // Erreur réseau : on continue quand même (l'UI sera en état déconnecté)
+            console.warn('[SSE] Erreur /logout après kick (non bloquant):', e);
+        }
+
+        // 3. Réinitialiser l'état applicatif côté client.
+        currentUser = null;
+        activites   = [];
+        users       = [];
+        classes     = [];
+        _currentModalActivityId = null;
+        onAuthChange();
+
+        // 4. Informer l'utilisateur APRÈS le nettoyage pour éviter toute interaction
+        //    avec une interface partiellement réinitialisée.
+        await showAlert('Votre session a été ouverte sur un autre appareil. Vous avez été déconnecté, Session terminée');
+    });
+
+    // Inscriptions élèves (self-service et manuelles via admin/prof).
+    // NOTE : 'inscription_manuelle_created' a été renommé 'inscription_created' côté serveur
+    // (avec data.manuel=true) pour que le même handler gère les deux cas sans duplication.
+    sseConnection.addEventListener('inscription_created',        handleInscriptionEvent);
+    sseConnection.addEventListener('inscription_deleted',        handleInscriptionEvent);
     sseConnection.addEventListener('inscription_seance_created', handleInscriptionEvent);
     sseConnection.addEventListener('inscription_seance_deleted', handleInscriptionEvent);
+    // Listener de compatibilité : au cas où un ancien serveur enverrait encore l'ancien nom.
     sseConnection.addEventListener('inscription_manuelle_created', handleInscriptionEvent);
-
-    // Changements d'activités/groupes → rechargement ciblé des données + UI
-    sseConnection.addEventListener('activite_created', handleActiviteEvent);
-    sseConnection.addEventListener('activite_updated', handleActiviteEvent);
-    sseConnection.addEventListener('activite_deleted', handleActiviteEvent);
-    sseConnection.addEventListener('data_update', handleActiviteEvent);
-
-    // Mises à jour des échanges
-    sseConnection.addEventListener('echanges_update', handleEchangesSSE);
-
-    // Appel mis à jour (présences) — rafraîchir uniquement le modal appel si ouvert
-    sseConnection.addEventListener('appel_updated', handleAppelSSE);
-
-    // Groupes créés/modifiés/supprimés — rechargement groupes + UI liste
-    sseConnection.addEventListener('groupe_created', handleGroupeSSE);
-    sseConnection.addEventListener('groupe_updated', handleGroupeSSE);
-    sseConnection.addEventListener('groupe_deleted', handleGroupeSSE);
+    sseConnection.addEventListener('activite_created',  handleActiviteEvent);
+    sseConnection.addEventListener('activite_updated',  handleActiviteEvent);
+    sseConnection.addEventListener('activite_deleted',  handleActiviteEvent);
+    sseConnection.addEventListener('data_update',       handleActiviteEvent);
+    sseConnection.addEventListener('echanges_update',   handleEchangesSSE);
+    sseConnection.addEventListener('appel_updated',     handleAppelSSE);
+    sseConnection.addEventListener('groupe_created',    handleGroupeSSE);
+    sseConnection.addEventListener('groupe_updated',    handleGroupeSSE);
+    sseConnection.addEventListener('groupe_deleted',    handleGroupeSSE);
 }
 
 /**
  * Gère les événements d'inscription reçus via SSE.
  * Mise à jour chirurgicale : met à jour uniquement les compteurs en mémoire
  * et les éléments DOM concernés, sans fetchAllData().
+ *
+ * Note : si une action locale est en cours (_pendingActions), on ignore l'event SSE
+ * pour éviter les race conditions (l'action locale fera sa propre synchro).
  */
 async function handleInscriptionEvent(event) {
     try {
         const data = JSON.parse(event.data);
-        console.log('[SSE] [INFO] Événement reçu:', event.type, data);
 
         const activiteId = data.activite_id;
         const eleveId    = data.eleve_id;
         const seanceId   = data.seance_id;
 
+        // Cas 1 : action encore EN COURS (verrou actif) — on ignore car l'optimiste est déjà posé
+        // et le finally va mettre à jour _lastActionTsByKey.
+        const inFlight = eleveId === currentUser?.id && (
+            _pendingActions.has(`inscr-act-${activiteId}`) ||
+            _pendingActions.has(`desinscr-act-${activiteId}`) ||
+            _pendingActions.has(`inscr-seance-${seanceId}`) ||
+            _pendingActions.has(`desinscr-seance-${seanceId}`)
+        );
+        if (inFlight) {
+            console.log('[SSE] [SKIP] Action encore en cours, SSE ignoré');
+            return;
+        }
+
+        // Cas 2 : echo SSE de NOTRE action récente — on ignore seulement si l'event SSE
+        // correspond exactement à ce qu'on vient de faire (même type créé/supprimé).
+        // On utilise un timestamp court (1.5s) pour ne pas bloquer les actions rapides enchaînées.
+        const nowTs = Date.now();
+        const ECHO_GRACE_MS = 1500;
+        // Détecter si cet event SSE est l'écho de NOTRE propre action récente (<1.5s).
+        // Les inscriptions manuelles par admin/prof ont eleveId = l'élève inscrit,
+        // pas le user courant → pas de filtre echo pour elles (ce qui est voulu :
+        // l'admin doit voir son propre compteur se mettre à jour).
+        const isEcho = eleveId === currentUser?.id && (() => {
+            const t = (k) => { const ts = _lastActionTsByKey.get(k); return ts && (nowTs - ts) < ECHO_GRACE_MS; };
+            // 'inscription_created' couvre maintenant aussi les inscriptions manuelles
+            // (ancien 'inscription_manuelle_created'), mais l'écho ne s'applique que
+            // si c'est bien l'utilisateur courant qui s'est inscrit lui-même.
+            if (event.type === 'inscription_created' || event.type === 'inscription_manuelle_created')
+                return t(`inscr-act-${activiteId}`);
+            if (event.type === 'inscription_deleted')
+                return t(`desinscr-act-${activiteId}`);
+            if (event.type === 'inscription_seance_created')
+                return t(`inscr-seance-${seanceId}`);
+            if (event.type === 'inscription_seance_deleted')
+                return t(`desinscr-seance-${seanceId}`);
+            return false;
+        })();
+        if (isEcho) {
+            console.log('[SSE] [SKIP] Echo de notre action (<1.5s), ignoré');
+            return;
+        }
+
         // --- Mise à jour du modèle en mémoire ---
+        // IMPORTANT : mettre à jour _serverNbInscrits EN PREMIER, avant tout appel
+        // à _updateActiviteCardProf ou getInscritsCount, pour que ces fonctions lisent
+        // la valeur authoritative du serveur et non l'ancien compteur local.
         if (activiteId) {
             const act = activites.find(a => a.id === activiteId);
             if (act) {
                 if (event.type === 'inscription_created' || event.type === 'inscription_manuelle_created') {
+                    // 1. Setter le compteur serveur EN PREMIER (source de vérité)
+                    if (data.nb_inscrits !== undefined && !act.separable) {
+                        act._serverNbInscrits = data.nb_inscrits;
+                    }
+                    // 2. Mettre à jour la liste locale (pour les vues qui itèrent dessus)
                     if (!act.separable && eleveId && !act.inscriptions.includes(eleveId)) {
                         act.inscriptions.push(eleveId);
                     }
-                    if (data.nb_inscrits !== undefined) {
-                        act._nb_inscrits = data.nb_inscrits;
-                    }
                 } else if (event.type === 'inscription_deleted') {
+                    // 1. Compteur serveur en premier
+                    if (data.nb_inscrits !== undefined && !act.separable) {
+                        act._serverNbInscrits = data.nb_inscrits;
+                    }
+                    // 2. Liste locale
                     if (!act.separable) {
                         act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
                     }
-                    if (data.nb_inscrits !== undefined) {
-                        act._nb_inscrits = data.nb_inscrits;
-                    }
                 } else if (event.type === 'inscription_seance_created' && seanceId) {
                     const seance = act.seances?.find(s => s.id === seanceId);
-                    if (seance && eleveId && !seance.inscriptions.includes(eleveId)) {
-                        seance.inscriptions.push(eleveId);
-                        if (act.separable && !act.inscriptions.includes(eleveId)) {
-                            act.inscriptions.push(eleveId);
+                    if (seance) {
+                        // 1. Compteur séance en premier
+                        if (data.nb_inscrits_seance !== undefined) {
+                            seance._serverNbInscrits = data.nb_inscrits_seance;
                         }
-                    }
-                    if (data.nb_inscrits_seance !== undefined && seance) {
-                        seance._nb_inscrits = data.nb_inscrits_seance;
+                        // 2. Liste locale
+                        if (eleveId && !seance.inscriptions.includes(eleveId)) {
+                            seance.inscriptions.push(eleveId);
+                            if (act.separable && !act.inscriptions.includes(eleveId)) {
+                                act.inscriptions.push(eleveId);
+                            }
+                        }
                     }
                 } else if (event.type === 'inscription_seance_deleted' && seanceId) {
                     const seance = act.seances?.find(s => s.id === seanceId);
                     if (seance && eleveId) {
+                        // 1. Compteur séance en premier
+                        if (data.nb_inscrits_seance !== undefined) {
+                            seance._serverNbInscrits = data.nb_inscrits_seance;
+                        }
+                        // 2. Liste locale
                         seance.inscriptions = seance.inscriptions.filter(id => id !== eleveId);
-                        // Si l'élève n'a plus aucune séance, retirer de act.inscriptions
+                        // Si l'élève n'a plus aucune séance dans cette activité → retirer de act.inscriptions
                         if (act.separable) {
                             const encoreInscrit = act.seances.some(s => s.inscriptions.includes(eleveId));
                             if (!encoreInscrit) act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
                         }
-                    }
-                    if (data.nb_inscrits_seance !== undefined && seance) {
-                        seance._nb_inscrits = data.nb_inscrits_seance;
                     }
                 }
             }
@@ -4518,8 +4907,11 @@ async function handleInscriptionEvent(event) {
         // --- Mise à jour DOM ciblée ---
         if (currentUser.role === 'eleve') {
             majComptesActivitesEleve();
-            // Rafraîchir le modal si l'activité concernée est ouverte
-            if (activiteId) {
+            // Rafraîchir le modal uniquement si c'est l'activité actuellement ouverte.
+            // BUG FIX : comparer activiteId à _currentModalActivityId, pas juste vérifier
+            // si "un" modal est visible — sinon n'importe quelle inscription pourrait
+            // déclencher un refresh du mauvais modal.
+            if (_currentModalActivityId && activiteId === _currentModalActivityId) {
                 const modal = document.getElementById('activity-modal');
                 if (modal?.classList.contains('visible')) {
                     const act = activites.find(a => a.id === activiteId);
@@ -4527,19 +4919,23 @@ async function handleInscriptionEvent(event) {
                 }
             }
         } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {
-            // Mise à jour uniquement de la card concernée
+            // Mise à jour chirurgicale de la card (compteur) sans re-render complet.
+            // _serverNbInscrits est déjà setté avant cet appel dans le bloc ci-dessus.
             if (activiteId) _updateActiviteCardProf(activiteId);
 
-            // Rafraîchir le panneau "élèves non inscrits" si ouvert
+            // Rafraîchir le panneau "élèves non inscrits" si le filtre est actif
             { const gfv = icGet('groupe-filter-select'); if (gfv) await chargerElevesNonInscrits(gfv); }
 
-            // Rafraîchir le modal si l'activité concernée est ouverte
-            const modal = document.getElementById('activity-modal');
-            if (modal?.classList.contains('visible') && activiteId) {
-                const act = activites.find(a => a.id === activiteId);
-                if (act) showActivityDetails(act);
+            // Rafraîchir le modal de détail uniquement si c'est l'activité ouverte.
+            // Même logique que côté élève : utiliser _currentModalActivityId.
+            if (_currentModalActivityId && activiteId === _currentModalActivityId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible')) {
+                    const act = activites.find(a => a.id === activiteId);
+                    if (act) showActivityDetails(act);
+                }
             }
-            console.log('[SSE] [OK] Interface prof mise à jour');
+            console.log('[SSE] [OK] Interface prof/admin mise à jour (activite_id=' + activiteId + ')');
         }
 
     } catch (e) {
@@ -4562,11 +4958,11 @@ function _updateActiviteCardProf(activiteId) {
     const card = document.querySelector(`.activity-card[data-activity-id="${activiteId}"]`);
     if (!card) { majListeActivitesProf(); return; }  // fallback si introuvable
 
-    const inscritsCount = act.inscriptions?.length || 0;
-    // Mettre à jour le badge inscrits
-    const badge = card.querySelector('.inscrits-badge, .activity-details');
+    const inscritsCount = getInscritsCount(act);
+    // Cibler précisément la div compteur (évite d'écraser "Classes :")
+    const badge = card.querySelector('[data-inscrits-counter]');
     if (badge) {
-        badge.innerHTML = `<strong>${inscritsCount}/${act.effectif_max}</strong> inscrit${inscritsCount !== 1 ? 's' : ''}`;
+        badge.innerHTML = `Inscrits : <strong>${inscritsCount}/${act.effectif_max}</strong>`;
     }
 }
 
@@ -4603,14 +4999,32 @@ async function handleActiviteEvent(event) {
         if (currentUser.role === 'eleve') {
             majComptesActivitesEleve();
             updateEmploiDuTempsEleve();
+            // Rafraîchir le modal élève si l'activité ouverte a changé
+            if (_currentModalActivityId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible')) {
+                    const act = activites.find(a => a.id === _currentModalActivityId);
+                    // Si l'activité a été supprimée, fermer le modal
+                    if (!act) { closeActivityModal(); }
+                    else { showActivityDetailsEleve(act); }
+                }
+            }
         } else {
             majListeActivitesProf();
             updateScheduleViewProf();
-            // Rafraîchir le modal si ouvert
-            const modal = document.getElementById('activity-modal');
-            if (modal && modal.classList.contains('visible') && data.id) {
-                const activite = activites.find(a => a.id === data.id);
-                if (activite) showActivityDetails(activite);
+            // Rafraîchir le modal uniquement si l'activité OUVERTE a été modifiée.
+            // BUG FIX : utiliser _currentModalActivityId (l'activité visible dans le modal)
+            // et NON data.id (l'activité qui vient d'être modifiée côté serveur).
+            // Avant ce fix, n'importe quelle modification d'activité pouvait
+            // "basculer" le modal vers l'activité modifiée, même si l'utilisateur
+            // avait ouvert le modal d'une activité différente.
+            if (_currentModalActivityId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible')) {
+                    const act = activites.find(a => a.id === _currentModalActivityId);
+                    if (!act) { closeActivityModal(); }
+                    else { showActivityDetails(act); }
+                }
             }
         }
     } catch (e) {
@@ -4803,10 +5217,14 @@ window.addEventListener('unhandledrejection', (e) => {
     try{
         console.log('[START] Initialisation de l\'application...');
 
-        const hasValidSession = await checkAuthStatus();
+        // Sync heure serveur en parallele du checkAuth
+        const [, hasValidSession] = await Promise.all([
+            syncServerTime(),
+            checkAuthStatus()
+        ]);
 
         if (hasValidSession) {
-            console.log('[OK] Session existante détectée');
+            console.log('[OK] Session existante detectee');
             await fetchAllData();
         } else {
             console.log('Aucune session active, affichage du login');
@@ -4816,13 +5234,11 @@ window.addEventListener('unhandledrejection', (e) => {
         }
 
         onAuthChange();
-        console.log('[OK] Application initialisée');
+        console.log('[OK] Application initialisee');
     } catch(e){
         console.error('[KO] Erreur lors de l\'initialisation:', e);
         const loginMsg = $('#login-msg');
-        if(loginMsg) {
-            loginMsg.textContent = 'Erreur de connexion au serveur';
-        }
+        if(loginMsg) loginMsg.textContent = 'Erreur de connexion au serveur';
         currentUser = null;
         classes = [];
         users = [];
@@ -4902,7 +5318,7 @@ function majVisibiliteTabEchanges() {
 }
 
 
-// ── Vue admin : vœux formulés + demandes d'échange ───────────
+// -- Vue admin : vœux formulés + demandes d'échange -----------
 async function chargerEchangesAdmin(panel) {
     const groupesActifs = groupes.filter(g => g.echanges_actifs);
 
@@ -5328,7 +5744,7 @@ async function ouvrirModalVoeu(groupeId) {
 }
 
 async function retirerVoeu(voeuId) {
-    if (!confirm('Retirer ce vœu d\'échange ?')) return;
+    if (!await showConfirm('Retirer ce vœu d\'échange ?')) return;
     try {
         await fetch(`/echanges/voeux/${voeuId}`, { method: 'DELETE', credentials: 'same-origin' });
         showToast('Vœu retiré.');
@@ -5344,7 +5760,7 @@ async function retirerVoeu(voeuId) {
 }
 
 async function proposerEchange(voeuAId, voeuBId) {
-    if (!confirm('Proposer cet échange à l\'élève concerné ? Il devra accepter avant validation.')) return;
+    if (!await showConfirm('Proposer cet échange à l\'élève concerné ? Il devra accepter avant validation.')) return;
     try {
         await apiPost('/echanges/procedures', { voeu_a_id: voeuAId, voeu_b_id: voeuBId });
         showToast('Procédure d\'échange lancée ! L\'autre élève doit maintenant accepter.');
@@ -5395,7 +5811,7 @@ async function chargerPendingProcedures() {
 
         let html = '';
 
-        // ── Panneau vœux (admin uniquement) ──────────────────────
+        // -- Panneau vœux (admin uniquement) ----------------------
         if (isAdmin) {
             html += `
             <details class="panel-collapsible mt-16" open>
@@ -5438,7 +5854,7 @@ async function chargerPendingProcedures() {
             </details>`;
         }
 
-        // ── Panneau procédures pending ────────────────────────────
+        // -- Panneau procédures pending ----------------------------
         html += `
             <details class="panel-collapsible mt-16" open>
                 <summary class="panel-header">
@@ -5464,7 +5880,7 @@ async function chargerPendingProcedures() {
 }
 
 async function validerEchange(procId) {
-    if (!confirm('Valider définitivement cet échange ? Les inscriptions seront permutées.')) return;
+    if (!await showConfirm('Valider définitivement cet échange ? Les inscriptions seront permutées.')) return;
     try {
         await apiPost(`/echanges/procedures/${procId}/valider`, {});
         showToast('Échange validé et inscriptions permutées !');
@@ -5476,7 +5892,7 @@ async function validerEchange(procId) {
 }
 
 async function annulerEchangeProf(procId) {
-    if (!confirm('Refuser cet échange ? Les deux vœux resteront actifs.')) return;
+    if (!await showConfirm('Refuser cet échange ? Les deux vœux resteront actifs.')) return;
     try {
         await apiPost(`/echanges/procedures/${procId}/annuler`, {});
         showToast('Échange refusé.');

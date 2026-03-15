@@ -1,0 +1,463 @@
+/* ============================================================
+   auth.css - CSS commun à toutes les pages d'authentification
+   CONCORDE : first_login, forgot_password, prof_signup
+
+   Ce fichier remplace les 3 CSS séparés (first_login.css,
+   forgot_password.css, prof_signup.css) qui dupliquaient
+   quasiment le même code. Toute modification de l'apparence
+   des pages auth se fait ici.
+
+   TABLE DES MATIÈRES :
+   1. Variables & reset
+   2. Layout de page (fond dégradé, carte centrée)
+   3. En-tête de carte (bandeau bleu→orange)
+   4. Corps de carte
+   5. Steps (étapes multi-formulaires)
+   6. Champs & formulaires
+   7. Jauge de force du mot de passe (prof_signup)
+   8. Boutons
+   9. Messages d'état (erreur, succès, info)
+  10. Boîte de succès finale
+  11. Responsive
+============================================================ */
+
+
+/* -- 1. Variables & reset ---------------------------------- */
+:root {
+  /* Couleurs - alignées sur styles.css de l'appli principale */
+  --auth-primary:      #0b5ccc;
+  --auth-primary-dark: #0941a0;
+  --auth-accent:       #d55f1f;
+  --auth-success:      #059669;
+  --auth-success-dark: #047857;
+  --auth-error:        #dc2626;
+  --auth-error-bg:     #fef2f2;
+  --auth-error-border: #ef4444;
+  --auth-text:         #111827;
+  --auth-text-secondary: #374151;
+  --auth-muted:        #6b7280;
+  --auth-border:       #e5e7eb;
+  --auth-border-focus: rgba(11, 92, 204, 0.12);
+
+  /* Forme */
+  --auth-radius:    8px;
+  --auth-radius-lg: 14px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+
+/* -- 2. Layout de page ------------------------------------- */
+body {
+  font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  background: linear-gradient(135deg, var(--auth-primary) 0%, var(--auth-accent) 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--auth-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Carte principale - partagée par first_login et forgot_password */
+.auth-card {
+  background: white;
+  border-radius: var(--auth-radius-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  max-width: 480px;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Variante plus large pour prof_signup (plus de champs) */
+.auth-card--wide {
+  max-width: 500px;
+  /* Le prof_signup n'utilise pas le bandeau header/content,
+     il a un padding direct sur la carte */
+  padding: 40px;
+}
+
+
+/* -- 3. En-tête de carte ----------------------------------- */
+.auth-header {
+  background: linear-gradient(135deg, var(--auth-primary), var(--auth-accent));
+  color: white;
+  padding: 28px 30px;
+  text-align: center;
+}
+
+.auth-header h1 {
+  font-size: 26px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.auth-header p {
+  font-size: 13px;
+  opacity: 0.88;
+}
+
+/* Logo emoji / icône (prof_signup) */
+.auth-logo {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--auth-primary), var(--auth-accent));
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  margin-bottom: 15px;
+  box-shadow: 0 8px 24px rgba(11, 92, 204, 0.3);
+}
+
+.auth-logo-container {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.auth-logo-container h1 {
+  color: var(--auth-primary);
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.auth-logo-container .auth-subtitle {
+  margin-bottom: 0;
+}
+
+
+/* -- 4. Corps de carte ------------------------------------- */
+.auth-content {
+  padding: 36px 30px;
+  animation: authFadeIn 0.35s ease;
+}
+
+@keyframes authFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.auth-content h2 {
+  color: var(--auth-text);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  color: var(--auth-muted);
+  font-size: 14px;
+  margin-bottom: 28px;
+  line-height: 1.55;
+}
+
+
+/* -- 5. Steps (navigation multi-étapes) ------------------- */
+/* Les steps sont affichés/masqués par JS via .hidden */
+.auth-step.hidden { display: none; }
+
+
+/* -- 6. Champs & formulaires ------------------------------- */
+.auth-form-group {
+  margin-bottom: 20px;
+}
+
+/* Boîte d'information (prof_signup: email de l'invitation) */
+.auth-info-box {
+  background: #f8fafc;
+  border-left: 4px solid var(--auth-primary);
+  padding: 15px;
+  margin-bottom: 25px;
+  border-radius: var(--auth-radius);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Inputs natifs (utilisés dans les pages non-InputComp) */
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  width: 100%;
+  padding: 11px 14px;
+  border: 2px solid var(--auth-border);
+  border-radius: var(--auth-radius);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--auth-text);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus {
+  outline: none;
+  border-color: var(--auth-primary);
+  box-shadow: 0 0 0 3px var(--auth-border-focus);
+}
+
+input::placeholder { color: #d1d5db; }
+
+input:disabled {
+  background: #f1f5f9;
+  color: var(--auth-muted);
+  cursor: not-allowed;
+}
+
+/* États de validation en temps réel */
+input.input-valid   { border-color: var(--auth-success); }
+input.input-invalid { border-color: var(--auth-error); }
+
+/* -- Champ code OTP ---------------------------------------------------------
+   On utilise un wrapper statique qui imite la structure HTML d'InputComp
+   (ic-wrapper > ic-field > ic-label + ic-input) avec la classe ic-otp-wrap
+   en plus. Cela permet de surcharger .ic-input avec une spécificité
+   .ic-otp-wrap .ic-input = (0,0,2,0) qui bat .ic-input seul = (0,0,1,0).
+   Le label flottant et le hint sont gérés par IC_Portal.css normalement.
+   Le JS gère ic-focused / ic-has-value via les events focus/blur/input.       */
+
+/* Agrandir le field pour accueillir les grands chiffres */
+.ic-otp-wrap .ic-field {
+  min-height: 56px;
+  cursor: text;
+}
+
+/* Style OTP sur le vrai input - spécificité (0,0,2,0) > (0,0,1,0) de .ic-input */
+.ic-otp-wrap .ic-input {
+  text-align:    center;
+  letter-spacing: 6px;
+  font-size:     22px;
+  font-weight:   700;
+  font-family:   monospace;
+  /* Compenser le letter-spacing après le dernier chiffre */
+  padding-right: calc(var(--ic-px, 14px) + 6px);
+}
+
+/* Placeholder visible (InputComp le masque par défaut) */
+.ic-otp-wrap .ic-input::placeholder {
+  color: #d1d5db;
+  font-size: 18px;
+  letter-spacing: 4px;
+}
+
+/* Le label flottant doit rester en police normale */
+.ic-otp-wrap .ic-label {
+  letter-spacing: normal;
+  font-size:      var(--ic-lbl-fs, 12px);
+  font-family:    var(--ic-font, sans-serif);
+}
+
+
+/* -- 7. Jauge de force du mot de passe (prof_signup) ------- */
+.auth-password-strength {
+  margin-top: 8px;
+}
+
+.auth-strength-bar {
+  height: 4px;
+  background: var(--auth-border);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.auth-strength-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--auth-success);
+  transition: width 0.3s, background 0.3s;
+}
+
+.auth-helper-text {
+  font-size: 12px;
+  color: var(--auth-muted);
+  margin-top: 4px;
+}
+
+
+/* -- 8. Boutons -------------------------------------------- */
+/* Bouton principal (pleine largeur) */
+.auth-btn {
+  display: block;
+  width: 100%;
+  padding: 13px 20px;
+  background: linear-gradient(135deg, var(--auth-primary), var(--auth-primary-dark));
+  color: white;
+  border: none;
+  border-radius: var(--auth-radius);
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.15s;
+  margin-top: 8px;
+}
+
+.auth-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(11, 92, 204, 0.35);
+}
+
+.auth-btn:active { transform: translateY(0); }
+
+.auth-btn:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+/* Bouton lien (ex: "Renvoyer le code") */
+.auth-btn-link {
+  background: none;
+  border: none;
+  color: var(--auth-primary);
+  font-weight: 600;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.auth-btn-link:disabled {
+  color: #9ca3af;
+  cursor: default;
+  text-decoration: none;
+}
+
+/* Lien retour (ex: "<- Retour à la connexion") */
+.auth-back-link {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+}
+
+.auth-back-link a {
+  color: var(--auth-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-back-link a:hover { text-decoration: underline; }
+
+/* Lien renvoi de code */
+.auth-resend-link {
+  text-align: center;
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--auth-muted);
+}
+
+
+/* -- 9. Messages d'état ------------------------------------ */
+/* Erreur inline (sous un champ ou bloc d'étape) */
+.auth-error {
+  background: var(--auth-error-bg);
+  color: #b91c1c;
+  padding: 11px 14px;
+  border-radius: var(--auth-radius);
+  border-left: 4px solid var(--auth-error-border);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.auth-error.hidden { display: none; }
+
+/* Message global (succès ou erreur, utilisé dans prof_signup) */
+.auth-message {
+  padding: 12px;
+  border-radius: var(--auth-radius);
+  margin-bottom: 20px;
+  display: none;
+  font-size: 14px;
+}
+
+.auth-message.error {
+  background: #fff5f7;
+  color: #dd1738;
+  border: 1px solid #dd1738;
+}
+
+.auth-message.success {
+  background: #f0fdf4;
+  color: var(--auth-success);
+  border: 1px solid var(--auth-success);
+}
+
+/* Indicateur de chargement (prof_signup, info-box) */
+.auth-loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--auth-muted);
+}
+
+
+/* -- 10. Boîte de succès finale ---------------------------- */
+.auth-success-box {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+
+.auth-success-icon {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, var(--auth-success), var(--auth-success-dark));
+  color: white;
+  border-radius: 50%;
+  font-size: 30px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.auth-success-box h2 {
+  color: var(--auth-success);
+  margin-bottom: 10px;
+}
+
+.auth-success-box p {
+  color: #4b5563;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+/* Le bouton "Se connecter" dans la success-box est inline, pas pleine largeur */
+.auth-success-box .auth-btn {
+  display: inline-block;
+  width: auto;
+  padding: 12px 40px;
+}
+
+
+/* -- 11. Responsive ---------------------------------------- */
+@media (max-width: 520px) {
+  .auth-card {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .auth-card--wide {
+    padding: 28px 20px;
+  }
+
+  .auth-content {
+    padding: 28px 20px;
+  }
+
+  .auth-header {
+    padding: 22px 20px;
+  }
+}

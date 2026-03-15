@@ -6,7 +6,7 @@
            select (single), multiselect, date, time, datetime
    ============================================================ */
 
-/* ── SVG ────────────────────────────────────────────────────── */
+/* -- SVG ------------------------------------------------------ */
 const IC_SVG = {
   eye:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   eyeOff:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
@@ -193,7 +193,7 @@ class InputComp {
     }
   }
 
-  /* ── Lecture HTML source ───────────────────────────────────── */
+  /* -- Lecture HTML source ------------------------------------- */
   _readFromSource() {
     const s = this._source, tag = s.tagName.toLowerCase();
     if (!this.opts.name && s.name)  this.opts.name = s.name;
@@ -547,7 +547,7 @@ class InputComp {
     if (clr) clr.addEventListener('click',()=>{ this.setValue(''); inp.focus(); });
   }
 
-  /* ── Select (single) ─────────────────────────────────────── */
+  /* -- Select (single) --------------------------------------- */
   _bindSelect() {
     const w=this.wrapper, anchor=w.querySelector('.ic-select-anchor');
     anchor.addEventListener('click',  ()=>this._open?this._closePortal():this._openSelect());
@@ -601,7 +601,7 @@ class InputComp {
     drop.querySelectorAll('.ic-select-option').forEach(o=>o.classList.toggle('ic-selected', String(o.dataset.value)===String(val)));
   }
 
-  /* ── MultiSelect ─────────────────────────────────────────── */
+  /* -- MultiSelect ------------------------------------------- */
   _bindMulti() {
     const w=this.wrapper, anchor=w.querySelector('.ic-select-anchor');
     anchor.addEventListener('click', e=>{ if(e.target.closest('.ic-tag-remove'))return; this._open?this._closePortal():this._openMulti(); });
@@ -690,7 +690,7 @@ class InputComp {
     });
   }
 
-  /* ── Picker ───────────────────────────────────────────────── */
+  /* -- Picker ------------------------------------------------- */
   _bindPicker() {
     const anchor=this.wrapper.querySelector('.ic-picker-anchor');
     anchor.addEventListener('click',  ()=>this._open?this._closePortal():this._openPicker());
@@ -713,64 +713,140 @@ class InputComp {
 
   _bindPickerDrop(drop) {
     const close=()=>this._closePortal();
+
+    // -------------------------------------------------------------------------
+    // CAUSE RACINE DU BUG EXPONENTIEL (corrigé ici) :
+    //
+    // L'ancienne implémentation de rerender() faisait :
+    //   drop.innerHTML = newContent;   // patch in-place du HTML
+    //   this._bindPickerDrop(drop);    // rebind sur LE MÊME nœud drop
+    //
+    // Résultat : chaque clic → rerender() → +1 listener 'click' sur drop.
+    // Après N clics : N listeners empilés. Au clic suivant, _calNav est
+    // appelé N fois → changement de 2^N mois au lieu de 1.
+    //
+    // Fix : remplacer ENTIÈREMENT le nœud drop (replaceWith) pour que le
+    // nouveau nœud soit vierge de tout listener. On bind une seule fois
+    // dessus, et on met à jour this._portalEl pour que le portal garde
+    // la bonne référence.
+    // -------------------------------------------------------------------------
     const rerender=()=>{
-      drop.innerHTML=this._htmlToDom(this._mkPickerDrop()).innerHTML;
-      this._bindPickerDrop(drop);
-      IC_Portal.reposition(drop);
+      // Créer un nœud DOM entièrement neuf (0 listeners).
+      const newDrop = this._htmlToDom(this._mkPickerDrop());
+
+      // Transférer les custom properties de positionnement de l'ancien nœud
+      // vers le nouveau AVANT le replaceWith, pour qu'il apparaisse exactement
+      // au même endroit sans aucune transition visible.
+      // Sans ce transfert, newDrop n'a pas --ic-drop-top/left définis → position 0,0
+      // (coin haut gauche) pendant le frame où IC_Portal.reposition() n'a pas encore tourné.
+      const posTop  = drop.style.getPropertyValue('--ic-drop-top');
+      const posLeft = drop.style.getPropertyValue('--ic-drop-left');
+      const posW    = drop.style.getPropertyValue('--ic-drop-width');
+      if(posTop)  newDrop.style.setProperty('--ic-drop-top',   posTop);
+      if(posLeft) newDrop.style.setProperty('--ic-drop-left',  posLeft);
+      if(posW)    newDrop.style.setProperty('--ic-drop-width', posW);
+      // Transférer aussi la classe ic-drop-above (ouverture vers le haut)
+      if(drop.classList.contains('ic-drop-above')) newDrop.classList.add('ic-drop-above');
+
+      // Transférer les métadonnées du portal (_icAnchor, _icMinWidth) pour que
+      // IC_Portal.reposition() fonctionne correctement sur le nouveau nœud.
+      newDrop._icAnchor   = drop._icAnchor;
+      newDrop._icMinWidth = drop._icMinWidth;
+
+      // Remplacer l'ancien nœud — ses listeners disparaissent avec lui (pas de fuite).
+      drop.replaceWith(newDrop);
+
+      // Mettre à jour les références locales et d'instance.
+      drop = newDrop;
+      this._portalEl = newDrop;
+
+      // Recalculer la position précise (taille réelle du nouveau contenu peut différer).
+      IC_Portal.reposition(newDrop);
+
+      // Bind une seule et unique fois sur le nouveau nœud.
+      this._bindPickerDrop(newDrop);
     };
 
     drop.addEventListener('click', e=>{
       const t=e.target;
-      if(t.closest('.ic-cal-prev')){ this._calNav(-1); rerender(); return; }
-      if(t.closest('.ic-cal-next')){ this._calNav(+1); rerender(); return; }
-      if(t.closest('.ic-cal-title')){ this._viewMode=this._viewMode==='days'?'months':this._viewMode==='months'?'years':'days'; rerender(); return; }
 
-      const day=t.closest('.ic-cal-day:not(.ic-cal-disabled)');
-      if(day&&!day.classList.contains('ic-cal-other-month')||day&&day.dataset.year){
-        if(!this._pickerDate) this._pickerDate=new Date();
-        this._pickerDate.setFullYear(+day.dataset.year,+day.dataset.month,+day.dataset.day);
-        this._viewMode='days';
+      // Navigation calendrier (prev/next mois, année, page d'années).
+      // stopPropagation + preventDefault évitent les comportements parasites.
+      // Pas de guard _navPending : le bug exponentiel est résolu à la racine
+      // par replaceWith() dans rerender() — chaque nœud n'a qu'un seul listener.
+      if(t.closest('.ic-cal-prev') || t.closest('.ic-cal-next')){
+        e.stopPropagation();
+        e.preventDefault();
+        this._calNav(t.closest('.ic-cal-prev') ? -1 : +1);
         rerender();
-        if(this.opts.type==='date'){this._confirmPicker();close();}
         return;
       }
 
+      // Clic sur le titre du calendrier → changer de mode (jours → mois → années)
+      if(t.closest('.ic-cal-title')){
+        this._viewMode = this._viewMode==='days' ? 'months' : this._viewMode==='months' ? 'years' : 'days';
+        rerender();
+        return;
+      }
+
+      // Sélection d'un jour
+      const day=t.closest('.ic-cal-day:not(.ic-cal-disabled)');
+      if(day && (!day.classList.contains('ic-cal-other-month') || day.dataset.year)){
+        if(!this._pickerDate) this._pickerDate=new Date();
+        this._pickerDate.setFullYear(+day.dataset.year, +day.dataset.month, +day.dataset.day);
+        this._viewMode='days';
+        rerender();
+        if(this.opts.type==='date'){ this._confirmPicker(); close(); }
+        return;
+      }
+
+      // Sélection d'un mois (vue mois)
       const mon=t.closest('.ic-cal-month-cell');
       if(mon){
         if(!this._pickerDate) this._pickerDate=new Date();
         const cur=this._pickerDate;
-        this._pickerDate=new Date(cur.getFullYear(),+mon.dataset.month,
-          Math.min(cur.getDate(),new Date(cur.getFullYear(),+mon.dataset.month+1,0).getDate()),
-          cur.getHours(),cur.getMinutes(),cur.getSeconds());
-        this._viewMode='days'; rerender(); return;
+        this._pickerDate=new Date(
+          cur.getFullYear(), +mon.dataset.month,
+          Math.min(cur.getDate(), new Date(cur.getFullYear(), +mon.dataset.month+1, 0).getDate()),
+          cur.getHours(), cur.getMinutes(), cur.getSeconds()
+        );
+        this._viewMode='days';
+        rerender();
+        return;
       }
 
+      // Sélection d'une année (vue années)
       const yr=t.closest('.ic-cal-year-cell');
       if(yr){
         if(!this._pickerDate) this._pickerDate=new Date();
         const cur=this._pickerDate;
-        this._pickerDate=new Date(+yr.dataset.year,cur.getMonth(),
-          Math.min(cur.getDate(),new Date(+yr.dataset.year,cur.getMonth()+1,0).getDate()),
-          cur.getHours(),cur.getMinutes(),cur.getSeconds());
-        this._yearPage=null; this._viewMode='months'; rerender(); return;
+        this._pickerDate=new Date(
+          +yr.dataset.year, cur.getMonth(),
+          Math.min(cur.getDate(), new Date(+yr.dataset.year, cur.getMonth()+1, 0).getDate()),
+          cur.getHours(), cur.getMinutes(), cur.getSeconds()
+        );
+        this._yearPage=null;
+        this._viewMode='months';
+        rerender();
+        return;
       }
 
-      // Drum arrows
-      const darrow = t.closest('.ic-drum-arrow');
-      if (darrow) {
-        if (!this._pickerDate) this._pickerDate = new Date();
+      // Flèches haut/bas du drum (heures/minutes/secondes)
+      const darrow=t.closest('.ic-drum-arrow');
+      if(darrow){
+        if(!this._pickerDate) this._pickerDate=new Date();
         const drum  = darrow.dataset.drum;
         const max   = parseInt(darrow.closest('.ic-drum-col').dataset.max);
-        const isUp  = darrow.classList.contains('ic-drum-up');
-        const delta = isUp ? -1 : 1;
+        const delta = darrow.classList.contains('ic-drum-up') ? -1 : 1;
         this._drumStep(drum, delta, max);
         this._rerenderDrums(drop);
         return;
       }
-      // Click direct sur un item drum prev/next
-      const ditem = t.closest('.ic-drum-item:not(.ic-drum-cur)');
-      if (ditem) {
-        if (!this._pickerDate) this._pickerDate = new Date();
+
+      // Clic sur un item drum adjacent (prev/next visible)
+      const ditem=t.closest('.ic-drum-item:not(.ic-drum-cur)');
+      if(ditem){
+        if(!this._pickerDate) this._pickerDate=new Date();
         const col   = ditem.closest('.ic-drum-col');
         const drum  = col.dataset.drum;
         const max   = parseInt(col.dataset.max);
@@ -780,6 +856,7 @@ class InputComp {
         return;
       }
 
+      // Boutons de pied de calendrier
       if(t.closest('.ic-cal-btn-ok'))    { this._confirmPicker(); close(); return; }
       if(t.closest('.ic-cal-btn-today')) { this._pickerDate=new Date(); this._viewMode='days'; rerender(); return; }
       if(t.closest('.ic-cal-btn-clear')) { this._pickerDate=null; this.setValue(''); close(); return; }
@@ -824,33 +901,51 @@ class InputComp {
     }, { passive: true });
   }
 
+  /**
+   * Navigation dans le calendrier : avance/recule d'une unité selon le mode de vue.
+   * - mode 'days'   : d = ±1 → change le mois affiché
+   * - mode 'months' : d = ±1 → change l'année affichée
+   * - mode 'years'  : d = ±1 → avance/recule d'une page de 12 ans
+   *
+   * Appelée depuis le handler click (une seule fois par clic grâce à replaceWith
+   * dans rerender() — voir _bindPickerDrop pour l'explication du fix exponentiel).
+   *
+   * @param {number} d - Direction : +1 (suivant) ou -1 (précédent)
+   */
   _calNav(d) {
     if (!this._pickerDate) this._pickerDate = new Date();
     if (this._viewMode === 'days') {
-      // Navigation mois : changer seulement le mois sans accumuler de décalage
+      // Navigation mois : recalcul propre pour éviter les débordements de date.
+      // Ex : 31 janvier + 1 mois → 3 mars si on fait setMonth(+1) naïvement.
+      // On fixe d'abord le jour à 1 pour naviguer sans débordement, puis on
+      // remet le jour original (clampé au dernier jour du nouveau mois).
       const cur = this._pickerDate;
-      const y = cur.getFullYear(), m = cur.getMonth() + d;
-      // Normaliser : setFullYear(y, m) gère les débordements jan/dec
-      const t = new Date(cur);
-      t.setDate(1);
+      const y   = cur.getFullYear();
+      const m   = cur.getMonth() + d;           // peut sortir de [0,11], c'est voulu
+      const t   = new Date(cur);
+      t.setDate(1);                              // évite les débordements de mois
       t.setFullYear(y + Math.floor(m / 12), ((m % 12) + 12) % 12);
       this._pickerDate = new Date(
         t.getFullYear(), t.getMonth(),
-        Math.min(cur.getDate(), new Date(t.getFullYear(), t.getMonth()+1, 0).getDate()),
+        // Clamp le jour au dernier jour du nouveau mois (ex: 31 → 30 en avril)
+        Math.min(cur.getDate(), new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()),
         cur.getHours(), cur.getMinutes(), cur.getSeconds()
       );
     } else if (this._viewMode === 'months') {
-      // Navigation année
+      // Navigation année : simple ±1 an, conserver mois/jour/heure
       this._pickerDate = new Date(
-        this._pickerDate.getFullYear() + d, this._pickerDate.getMonth(),
-        this._pickerDate.getDate(), this._pickerDate.getHours(),
-        this._pickerDate.getMinutes(), this._pickerDate.getSeconds()
+        this._pickerDate.getFullYear() + d,
+        this._pickerDate.getMonth(),
+        this._pickerDate.getDate(),
+        this._pickerDate.getHours(),
+        this._pickerDate.getMinutes(),
+        this._pickerDate.getSeconds()
       );
     } else {
-      // Navigation page d'années : avancer/reculer de 12 ans
+      // Navigation page d'années : avance/recule de 12 ans d'un coup
       if (this._yearPage === null) {
         const base = this._pickerDate.getFullYear();
-        this._yearPage = base - (base % 12);
+        this._yearPage = base - (base % 12); // ancre sur un multiple de 12
       }
       this._yearPage += d * 12;
     }
@@ -934,7 +1029,7 @@ class InputComp {
     return false;
   }
 
-  /* ── Portal helpers ──────────────────────────────────────── */
+  /* -- Portal helpers ---------------------------------------- */
   _htmlToDom(html) {
     const tmp=document.createElement('div'); tmp.innerHTML=html.trim(); return tmp.firstElementChild;
   }
@@ -946,7 +1041,7 @@ class InputComp {
     const a=this.wrapper.querySelector('[aria-expanded]'); if(a) a.setAttribute('aria-expanded','false');
   }
 
-  /* ── Helpers ─────────────────────────────────────────────── */
+  /* -- Helpers ----------------------------------------------- */
   _validate() {
     const v=this._value; let err='';
     const len=String(v||'').length;
@@ -1044,10 +1139,10 @@ class InputComp {
   validate()  { return this._validate(); }
   destroy()   { this._closePortal(); document.removeEventListener('mousedown',this._onOutside); this.wrapper.remove(); }
 
-  /* ── Compatibilité API Select_Comp / MultiSelect ────────────
+  /* -- Compatibilité API Select_Comp / MultiSelect ------------
      Permet de remplacer new MultiSelect(…) par new InputComp(…)
      sans modifier les appels existants dans script.js
-  ─────────────────────────────────────────────────────────── */
+  ----------------------------------------------------------- */
 
   /** [{value, text}] — équivalent de MultiSelect.selectedItems */
   get selectedItems() {
@@ -1117,7 +1212,7 @@ class InputComp {
   }
 }
 
-/* ── Auto-init ──────────────────────────────────────────────── */
+/* -- Auto-init ------------------------------------------------ */
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-input-comp]').forEach(el => {
     let opts={};

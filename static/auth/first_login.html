@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Première connexion - CONCORDE</title>
+  <!--
+    Ordre de chargement :
+    1. Input_Comp.css  - styles du composant input (champs, selects…)
+    2. auth.css        - styles communs à toutes les pages auth
+    Input_Comp.js est chargé en bas de body (avant first_login.js).
+  -->
+  <link rel="stylesheet" href="/static/Input_Comp.css">
+  <link rel="stylesheet" href="/static/auth/auth.css">
+</head>
+<body>
+
+  <div class="auth-card">
+
+    <!-- Bandeau CONCORDE -->
+    <div class="auth-header">
+      <h1>CONCORDE</h1>
+      <p>Première connexion</p>
+    </div>
+
+    <div class="auth-content">
+
+      <!-- ÉTAPE 1 : envoi du code -->
+      <div id="step-send" class="auth-step">
+        <h2>Vérification de votre identité</h2>
+        <p class="auth-subtitle">
+          Un code de vérification à 6 chiffres va être envoyé
+          à votre adresse email.
+        </p>
+
+        <div id="send-error" class="auth-error hidden" role="alert" aria-live="polite"></div>
+
+        <button id="btn-send-code" class="auth-btn">
+          Envoyer le code par email
+        </button>
+
+        <p class="auth-back-link">
+          <a href="/">&#8592; Retour à la connexion</a>
+        </p>
+      </div>
+
+      <!-- ÉTAPE 2 : saisie code + nouveau mot de passe -->
+      <div id="step-verify" class="auth-step hidden">
+        <h2>Définir votre mot de passe</h2>
+        <p class="auth-subtitle">
+          Entrez le code reçu par email, puis choisissez votre mot de passe.
+        </p>
+
+        <div class="auth-form-group">
+          <div class="ic-wrapper ic-md ic-otp-wrap" data-input-id="code">
+            <div class="ic-field">
+              <label class="ic-label">Code de vérification</label>
+              <input
+                type="text"
+                id="code"
+                name="code"
+                class="ic-input"
+                maxlength="6"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                spellcheck="false">
+            </div>
+            <div class="ic-footer">
+              <span class="ic-hint">6 chiffres reçus par email</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="auth-form-group">
+          <input
+            type="password"
+            id="password"
+            name="password"
+            minlength="8"
+            autocomplete="new-password"
+            data-input-comp='{"label":"Nouveau mot de passe","showPassword":true,"hint":"Minimum 8 caractères","icon":"lock"}'>
+        </div>
+
+        <div class="auth-form-group">
+          <input
+            type="password"
+            id="confirm-password"
+            name="confirm_password"
+            minlength="8"
+            autocomplete="new-password"
+            data-input-comp='{"label":"Confirmer le mot de passe","showPassword":true,"icon":"lock"}'>
+        </div>
+
+        <div id="verify-error" class="auth-error hidden" role="alert" aria-live="polite"></div>
+
+        <button id="btn-verify" class="auth-btn">
+          Définir mon mot de passe
+        </button>
+
+        <p class="auth-resend-link">
+          Vous n'avez pas reçu le code ?
+          <button id="btn-resend" class="auth-btn-link">Renvoyer</button>
+        </p>
+      </div>
+
+      <!--  ÉTAPE 3 : succès -->
+      <div id="step-success" class="auth-step hidden">
+        <div class="auth-success-box">
+          <div class="auth-success-icon" aria-hidden="true">✔</div>
+          <h2>Mot de passe défini !</h2>
+          <p>Votre compte est maintenant actif.</p>
+          <a href="/" class="auth-btn">Se connecter</a>
+        </div>
+      </div>
+
+    </div><!-- /.auth-content -->
+  </div><!-- /.auth-card -->
+
+  <!--
+    Input_Comp.js doit être chargé AVANT first_login.js
+    car first_login.js lit window._IC_instances (peuplé par IC au DOMContentLoaded).
+  -->
+  <script src="/static/Input_Comp.js"></script>
+  <script src="/static/auth/first_login.js"></script>
+</body>
+</html>

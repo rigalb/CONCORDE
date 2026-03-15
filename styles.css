@@ -2504,7 +2504,6 @@ textarea {
     transition: opacity 0.6s ease, transform 0.6s ease;
   }
 
-
   .short-title {
     opacity: 1;
     transform: translateY(0);
@@ -3335,4 +3334,104 @@ textarea {
 .echange-pending-card--admin .btn {
   padding: 10px 20px;
   font-size: 14px;
+}
+
+/* ===========================
+   App Dialog (remplace alert/confirm natifs)
+   =========================== */
+#app-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+    animation: dialog-fade-in .15s ease;
+}
+#app-dialog-overlay.app-dialog-closing {
+    animation: dialog-fade-out .18s ease forwards;
+}
+@keyframes dialog-fade-in  { from { opacity:0; } to { opacity:1; } }
+@keyframes dialog-fade-out { from { opacity:1; } to { opacity:0; } }
+
+.app-dialog {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.2);
+    padding: 28px 24px 20px;
+    max-width: 400px;
+    width: calc(100% - 32px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: dialog-slide-in .15s ease;
+}
+@keyframes dialog-slide-in {
+    from { transform: translateY(-12px) scale(.97); opacity:0; }
+    to   { transform: translateY(0)     scale(1);   opacity:1; }
+}
+.app-dialog-icon {
+    font-size: 28px;
+    line-height: 1;
+    text-align: center;
+}
+.app-dialog-body {
+    font-size: 14px;
+    color: #374151;
+    line-height: 1.55;
+    text-align: center;
+}
+.app-dialog-body .dialog-p {
+    margin: 0 0 8px;
+}
+.app-dialog-body .dialog-p:last-child {
+    margin-bottom: 0;
+}
+.app-dialog-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 4px;
+}
+.app-dialog-actions .btn {
+    min-width: 90px;
+    padding: 8px 20px;
+    font-size: 14px;
+}
+
+/* ===========================
+   MODAL CUSTOM — remplace alert() et confirm()
+   =========================== */
+.custom-modal-overlay {
+    z-index: 99999;
+}
+
+.custom-modal-content {
+    animation: modalFadeIn .18s ease;
+}
+
+.custom-modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.custom-modal-footer .btn {
+    min-width: 90px;
+}
+
+.modal-body[id="cmodal-msg"] {
+    padding: 16px 20px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text, #1e293b);
+    white-space: pre-wrap;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-12px) scale(.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }

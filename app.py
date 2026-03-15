@@ -50,45 +50,116 @@ from mail_service import send_email, send_invitation_email, BASE_URL
 # SYSTÈME SSE
 # ========================
 class SSEManager:
+  """
+  Gestionnaire de connexions SSE (Server-Sent Events).
+
+  Règle : 1 connexion SSE max par user_id.
+  - Quand un même user ouvre une 2e session (nouvel onglet, nouvel appareil),
+    l'ancienne connexion SSE reçoit l'event 'kicked' et est supprimée côté serveur.
+  - Le kick peut être déclenché DÈS le login (via kick_user) pour invalider
+    immédiatement l'ancienne connexion, sans attendre que le nouveau /sse s'ouvre.
+  - Le JS, en recevant 'kicked', doit appeler /logout pour supprimer le cookie,
+    puis basculer sur l'écran de connexion.
+  """
   def __init__(self):
-    self.listeners: Dict[str, queue.Queue] = {}
+    self.listeners: Dict[str, queue.Queue] = {}  # client_id -> queue de messages
+    self.user_sessions: Dict[int, str] = {}      # user_id  -> client_id actif
     self.lock = threading.Lock()
 
-  def add_listener(self, client_id: str) -> queue.Queue:
-    """Ajoute un nouveau listener SSE"""
+  # ------------------------------------------------------------------
+  # Enregistrement / suppression d'un listener SSE
+  # ------------------------------------------------------------------
+
+  def add_listener(self, user_id: int, client_id: str) -> queue.Queue:
+    """
+    Enregistre une nouvelle connexion SSE pour user_id.
+    Si une connexion précédente existe, elle reçoit 'kicked' et est retirée.
+    """
     with self.lock:
-      q = queue.Queue(maxsize=50)
+      old_client = self.user_sessions.get(user_id)
+      if old_client and old_client in self.listeners:
+        # Notifier l'ancienne connexion avant de la couper
+        try:
+          self.listeners[old_client].put_nowait({'event': 'kicked', 'data': {}})
+        except Exception:
+          pass
+        del self.listeners[old_client]
+        logger.info(f"SSE kick (add_listener): user {user_id}, ancien client={old_client}")
+
+      q = queue.Queue(maxsize=250)
       self.listeners[client_id] = q
-      logger.info(f"SSE listener ajouté: {client_id} (total: {len(self.listeners)})")
+      self.user_sessions[user_id] = client_id
+      logger.info(f"SSE connecté: {client_id} user={user_id} (total: {len(self.listeners)})")
       return q
 
-  def remove_listener(self, client_id: str):
-    """Retire un listener SSE"""
+  def remove_listener(self, user_id: int, client_id: str):
+    """Retire un listener SSE (appelé quand la connexion se ferme proprement)."""
     with self.lock:
-      if client_id in self.listeners:
-        del self.listeners[client_id]
-        logger.info(f"SSE listener retiré: {client_id} (total: {len(self.listeners)})")
+      self.listeners.pop(client_id, None)
+      if self.user_sessions.get(user_id) == client_id:
+        self.user_sessions.pop(user_id, None)
+      logger.info(f"SSE déconnecté: {client_id} (total: {len(self.listeners)})")
+
+  # ------------------------------------------------------------------
+  # Kick immédiat au moment du login (AVANT que /sse soit rouvert)
+  # ------------------------------------------------------------------
+
+  def kick_user(self, user_id: int):
+    """
+    Envoie 'kicked' à la connexion SSE active de user_id et la retire.
+    Appelé depuis /login pour invalider instantanément l'ancienne session,
+    sans attendre que le nouveau client ouvre sa connexion /sse.
+    Si l'ancien client n'a pas encore de connexion SSE active (ex : page non chargée),
+    cet appel est un no-op.
+    """
+    with self.lock:
+      old_client = self.user_sessions.get(user_id)
+      if not old_client or old_client not in self.listeners:
+        return  # Pas de connexion SSE active, rien à faire
+      try:
+        self.listeners[old_client].put_nowait({'event': 'kicked', 'data': {}})
+      except Exception:
+        pass
+      del self.listeners[old_client]
+      self.user_sessions.pop(user_id, None)
+      logger.info(f"SSE kick (login): user {user_id}, client={old_client}")
+
+  # ------------------------------------------------------------------
+  # Diffusion d'un événement à tous les clients connectés
+  # ------------------------------------------------------------------
 
   def broadcast(self, event_type: str, data: dict):
-    """Diffuse un événement à tous les listeners"""
+    """
+    Envoie un événement SSE à tous les clients connectés.
+    Le lock n'est tenu que pour prendre un snapshot de la liste -
+    jamais pendant les put_nowait, ce qui évite tout blocage.
+    Les clients dont la queue est pleine (connexion morte) sont retirés.
+    """
     with self.lock:
-      dead_listeners = []
-      for client_id, q in self.listeners.items():
-        try:
-          q.put_nowait({
-            'event': event_type,
-            'data': data
-          })
-        except queue.Full:
-          logger.warning(f"Queue pleine pour {client_id}")
-          dead_listeners.append(client_id)
-        except Exception as e:
-          logger.error(f"Erreur broadcast vers {client_id}: {e}")
-          dead_listeners.append(client_id)
+      snapshot = list(self.listeners.items())
 
-      # Nettoyer les listeners morts
-      for client_id in dead_listeners:
-        del self.listeners[client_id]
+    msg = {'event': event_type, 'data': data}
+    dead = []
+    for client_id, q in snapshot:
+      try:
+        q.put_nowait(msg)
+      except queue.Full:
+        dead.append(client_id)
+      except Exception:
+        dead.append(client_id)
+
+    # Nettoyage des connexions mortes (queue saturée = client disparu)
+    if dead:
+      with self.lock:
+        for cid in dead:
+          # Retirer aussi user_sessions pour éviter les fantômes
+          for uid, c in list(self.user_sessions.items()):
+            if c == cid:
+              self.user_sessions.pop(uid, None)
+              break
+          self.listeners.pop(cid, None)
+      logger.info(f"SSE broadcast '{event_type}': {len(dead)} client(s) mort(s) retirés")
+
 
 # Instance globale
 sse_manager = SSEManager()
@@ -358,7 +429,7 @@ def _release_db(conn):
   _write_pool.release(conn)
 
 def get_db_read():
-  """Connexion thread-local réutilisable — uniquement pour SELECT.
+  """Connexion thread-local réutilisable - uniquement pour SELECT.
   Ne jamais appeler _release_db(conn) dessus."""
   return get_db_connection_tl()
 
@@ -527,7 +598,7 @@ def login():
 
     conn = get_db_read()
     user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    # connexion read thread-local — pas de release
+    # connexion read thread-local - pas de release
 
     if user and check_password_hash(user["password_hash"], password):
       """
@@ -547,14 +618,23 @@ def login():
         })"""
 
       # --- Connexion normale ---
-      session["user_id"] = user["id"]
-      session["role"] = user["role"]
-      session["classe_id"] = user["classe_id"]
-      session["prenom"] = user["prenom"]
-      session["nom"] = user["nom"]
-      session['last_activity'] = datetime.now().timestamp()
+      # BUG FIX : kick immédiat de l'ancienne session SSE au moment du login.
+      # Sans ça, le kick se fait seulement au prochain /sse, créant une fenêtre
+      # où les deux connexions coexistent et le "mauvais" client peut être kické.
+      sse_manager.kick_user(user["id"])
 
-      logger.info(f"Connexion réussie: {username} (ID: {user['id']}) depuis {request.remote_addr}")
+      # Régénération de la session Flask pour prévenir la fixation de session.
+      # session.clear() invalide le cookie précédent côté serveur.
+      session.clear()
+      session["user_id"]       = user["id"]
+      session["role"]          = user["role"]
+      session["classe_id"]     = user["classe_id"]
+      session["prenom"]        = user["prenom"]
+      session["nom"]           = user["nom"]
+      session['last_activity'] = datetime.now().timestamp()
+      session.permanent        = True  # durée de vie = PERMANENT_SESSION_LIFETIME (8h)
+
+      logger.info(f"Connexion: {username} (ID: {user['id']}) depuis {request.remote_addr}")
 
       return jsonify({
         "success": True,
@@ -581,13 +661,18 @@ def login():
 def logout():
   user_id = session.get('user_id')
   logger.info(f"Déconnexion user ID: {user_id}")
+  # Fermer proprement la connexion SSE avant de vider la session Flask.
+  # Cas typique : appelé par le JS après réception d'un event 'kicked',
+  # pour s'assurer que le cookie ne permettra pas de se reconnecter au reload.
+  if user_id:
+    sse_manager.kick_user(user_id)
   session.clear()
   return jsonify({"success": True})
 
 @app.route("/me")
 @login_required
 def me():
-  # Données déjà en session — pas de hit DB
+  # Données déjà en session - pas de hit DB
   try:
     return jsonify({
       "id":       session["user_id"],
@@ -604,50 +689,44 @@ def me():
 @login_required
 def sse():
   """Endpoint SSE pour les mises à jour en temps réel"""
-  user_id = session.get("user_id")
+  user_id   = session.get("user_id")
   client_id = f"{user_id}_{secrets.token_hex(4)}"
 
   def generate():
     # Ajouter le listener via SSEManager
-    q = sse_manager.add_listener(client_id)
-
+    q = sse_manager.add_listener(user_id, client_id)
     try:
-      # Message de connexion initial
       yield f"data: {json.dumps({'type': 'connected', 'client_id': client_id})}\n\n"
 
       # Heartbeat pour garder la connexion vivante
-      last_heartbeat = time.time()
-      # Timeout de 10 minutes sans activité client → ferme la connexion
-      # (le JS reconnecte automatiquement à l'onerror)
-      MAX_IDLE = 600
+      last_hb = time.time()
+      MAX_IDLE = 600        # 10 min sans activite = fermeture (le JS reconnecte automatiquement à l'onerror)
 
       while True:
         try:
-          elapsed = time.time() - last_heartbeat
+          elapsed = time.time() - last_hb
 
           # Fermer la connexion proprement après MAX_IDLE secondes
           if elapsed > MAX_IDLE:
-            logger.info(f"[SSE] Timeout idle {client_id}, fermeture")
             break
-
-          # Envoyer un heartbeat toutes les 30 secondes
           if elapsed > 30:
             yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-            last_heartbeat = time.time()
-
-          # Attendre un message avec timeout
+            last_hb = time.time()
           try:
             message = q.get(timeout=1)
+            last_hb = time.time()           # reset idle sur tout message
+            if message['event'] == 'kicked':
+              # On envoie l'event au client pour qu'il se deconnecte,
+              # puis on sort de la boucle immediatement.
+              yield f"event: kicked\ndata: {{}}\n\n"
+              return
             yield f"event: {message['event']}\ndata: {json.dumps(message['data'])}\n\n"
           except queue.Empty:
             continue
-
         except GeneratorExit:
           break
-
     finally:
-      # Retirer le listener
-      sse_manager.remove_listener(client_id)
+      sse_manager.remove_listener(user_id, client_id)
 
   return Response(
     generate(),
@@ -659,10 +738,15 @@ def sse():
     }
   )
 
-
 # ========================
 # DONNÉES DE BASE
 # ========================
+@app.route("/api/server-time")
+def server_time():
+  """Retourne l'heure serveur (Paris) en ISO pour que le front puisse
+  calculer un offset et ne plus dependre de l'horloge locale du navigateur."""
+  return jsonify({"now": now_local_str()})
+
 @app.route("/classes")
 @login_required
 def get_classes():
@@ -759,7 +843,7 @@ def get_activites():
         r["activite_id"]: datetime.fromisoformat(r["derniere_seance"])
         for r in seances_rows if r["derniere_seance"]
       }
-    # conn read thread-local — pas de release
+    # conn read thread-local - pas de release
 
     result = []
     now = now_local()
@@ -1241,7 +1325,7 @@ def generer_pdf_seance(seance_id):
     story.append(info_table)
     story.append(Spacer(1, 0.2*cm))
 
-    # TABLEAU ÉLÈVES — STYLE REGISTRE
+    # TABLEAU ÉLÈVES - STYLE REGISTRE
     headers = ["N°", "Nom", "Prénom", "Classe"]
 
     # Largeur A4 utilisable (21cm - 2cm de marges)
@@ -1250,7 +1334,7 @@ def generer_pdf_seance(seance_id):
     FIXED_W = 0.9 * cm  # N°
 
     # Calculer la largeur minimale nécessaire pour Nom et Prénom
-    # Helvetica ≈ 0.55pt par caractère à 8pt → ~0.194mm/char
+    # Helvetica ≈ 0.55pt par caractère à 8pt -> ~0.194mm/char
     CHAR_W_CM = 0.194 / 10  # en cm par caractère à taille 8pt
     PAD_CM    = 0.4          # padding interne (2+2)
 
@@ -1376,8 +1460,9 @@ def inscrire():
     if not classe_id:
       return jsonify({"error": "Classe non définie"}), 400
 
+    # -- Vérifications légères HORS transaction (pas de verrou encore) ----------
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur  = conn.cursor()
 
     act = cur.execute("""
       SELECT a.* FROM activites a
@@ -1393,82 +1478,88 @@ def inscrire():
       _release_db(conn)
       return jsonify({"error": "Cette activité est sécable, inscrivez-vous séance par séance"}), 400
 
-    now = now_local()
+    now_ts = now_local()
     ouverture = datetime.fromisoformat(act["date_ouverture_inscriptions"])
     fermeture = datetime.fromisoformat(act["date_fermeture_inscriptions"])
-
-    if now < ouverture or now > fermeture:
+    if now_ts < ouverture or now_ts > fermeture:
       _release_db(conn)
       return jsonify({"error": "Période d'inscription fermée"}), 400
 
-    if act["groupe_id"]:
-      conflits = cur.execute("""
-        SELECT DISTINCT a.titre
-        FROM activites a
-        JOIN seances s ON a.id = s.activite_id
-        JOIN presences p ON s.id = p.seance_id
-        WHERE a.groupe_id = ?
-        AND p.eleve_id = ?
-        AND a.id != ?
-      """, (act["groupe_id"], user_id, activite_id)).fetchall()
+    # -- Transaction IMMEDIATE : verrou exclusif writer dès le BEGIN ----------
+    # Garantit qu'aucun autre writer ne peut s'intercaler entre le CHECK et l'INSERT.
+    try:
+      cur.execute("BEGIN IMMEDIATE")
 
-      if conflits:
+      # Vérif doublon
+      existing = cur.execute("""
+        SELECT 1 FROM presences
+        WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
+      """, (user_id, activite_id)).fetchone()
+      if existing:
+        cur.execute("ROLLBACK")
         _release_db(conn)
-        activite_conflit = conflits[0]["titre"]
-        return jsonify({
-          "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
-        }), 400
+        return jsonify({"error": "Déjà inscrit"}), 400
 
-    seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
+      # Vérif groupe exclusif
+      if act["groupe_id"]:
+        conflit = cur.execute("""
+          SELECT a.titre FROM activites a
+          JOIN seances s ON a.id = s.activite_id
+          JOIN presences p ON s.id = p.seance_id
+          WHERE a.groupe_id=? AND p.eleve_id=? AND a.id!=?
+          LIMIT 1
+        """, (act["groupe_id"], user_id, activite_id)).fetchone()
+        if conflit:
+          cur.execute("ROLLBACK")
+          _release_db(conn)
+          return jsonify({"error": f"Déjà inscrit à '{conflit['titre']}' du même groupe"}), 400
 
-    if not seances:
-      _release_db(conn)
-      return jsonify({"error": "Aucune séance pour cette activité"}), 400
-
-    existing = cur.execute("""
-      SELECT 1 FROM presences
-      WHERE eleve_id=? AND seance_id IN (SELECT id FROM seances WHERE activite_id=?)
-    """, (user_id, activite_id)).fetchone()
-
-    if existing:
-      _release_db(conn)
-      return jsonify({"error": "Déjà inscrit"}), 400
-
-    for seance in seances:
-      count = cur.execute("""
-        SELECT COUNT(*) FROM presences WHERE seance_id=?
-      """, (seance["id"],)).fetchone()[0]
-
-      if count >= act["effectif_max"]:
+      seances = cur.execute("SELECT id FROM seances WHERE activite_id=?", (activite_id,)).fetchall()
+      if not seances:
+        cur.execute("ROLLBACK")
         _release_db(conn)
-        return jsonify({"error": f"Effectif complet pour au moins une séance"}), 400
+        return jsonify({"error": "Aucune séance pour cette activité"}), 400
 
-    for seance in seances:
-      cur.execute("""
-        INSERT INTO presences (seance_id, eleve_id, present, commentaire)
-        VALUES (?, ?, 0, '')
-      """, (seance["id"], user_id))
+      # Vérif effectif MAX - atomique car on est sous verrou writer
+      for seance in seances:
+        cnt = cur.execute(
+          "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance["id"],)
+        ).fetchone()[0]
+        if cnt >= act["effectif_max"]:
+          cur.execute("ROLLBACK")
+          _release_db(conn)
+          return jsonify({"error": "Effectif complet"}), 400
 
-    cur.execute("""
-      INSERT INTO inscriptions (eleve_id, activite_id, date_inscription)
-      VALUES (?, ?, ?)
-    """, (user_id, activite_id, now_local_str()))
+      # Tout OK - on insère
+      for seance in seances:
+        cur.execute(
+          "INSERT INTO presences (seance_id, eleve_id, present, commentaire) VALUES (?,?,0,'')",
+          (seance["id"], user_id)
+        )
+      cur.execute(
+        "INSERT INTO inscriptions (eleve_id, activite_id, date_inscription) VALUES (?,?,?)",
+        (user_id, activite_id, now_local_str())
+      )
+      cur.execute("COMMIT")
 
-    conn.commit()
+    except Exception as tx_err:
+      try: cur.execute("ROLLBACK")
+      except: pass
+      _release_db(conn)
+      raise tx_err
 
-    # Compter les inscrits actuels pour mise à jour UI sans refetch
-    nb_inscrits = get_db_read().execute(
+    # nb_inscrits inclus dans le payload SSE - lu après commit (cohérent)
+    nb_inscrits = cur.execute(
       "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
     ).fetchone()[0]
+    _release_db(conn)
 
-    # Broadcast SSE
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
     sse_manager.broadcast('inscription_created', {
-      'eleve_id': user_id,
-      'activite_id': activite_id,
-      'nb_inscrits': nb_inscrits
+      'eleve_id': user_id, 'activite_id': activite_id, 'nb_inscrits': nb_inscrits
     })
-    logger.info(f"Inscription (NON sécable): user {user_id} -> activité {activite_id} (toutes séances)")
-    return jsonify({"success": True})
+    logger.info(f"Inscription: user {user_id} -> activite {activite_id}")
+    return jsonify({"success": True, "nb_inscrits": nb_inscrits})
 
   except ValueError as ve:
     return jsonify({"error": str(ve)}), 400
@@ -1515,11 +1606,13 @@ def desinscrire():
     affected = result.rowcount
     conn.commit()
 
-    nb_inscrits = get_db_read().execute(
+    # Lire le nouveau compteur depuis cur (connexion encore ouverte, cohérente post-commit)
+    nb_inscrits = cur.execute(
       "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
     ).fetchone()[0]
+    _release_db(conn)
 
-    # Broadcast SSE
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
     sse_manager.broadcast('inscription_deleted', {
       'eleve_id': eleve_id,
       'activite_id': activite_id,
@@ -1602,38 +1695,51 @@ def inscrire_seance():
           "error": f"Vous êtes déjà inscrit à '{activite_conflit}' du même groupe exclusif"
         }), 400
 
-    count = cur.execute("SELECT COUNT(*) FROM presences WHERE seance_id=?",
-                        (seance_id,)).fetchone()[0]
-    if count >= act["effectif_max"]:
+    # -- Transaction IMMEDIATE - verrou writer avant le check ---------------
+    try:
+      cur.execute("BEGIN IMMEDIATE")
+
+      existing = cur.execute(
+        "SELECT 1 FROM presences WHERE eleve_id=? AND seance_id=?",
+        (user_id, seance_id)
+      ).fetchone()
+      if existing:
+        cur.execute("ROLLBACK")
+        _release_db(conn)
+        return jsonify({"error": "Déjà inscrit à cette séance"}), 400
+
+      count = cur.execute(
+        "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance_id,)
+      ).fetchone()[0]
+      if count >= act["effectif_max"]:
+        cur.execute("ROLLBACK")
+        _release_db(conn)
+        return jsonify({"error": "Séance complète"}), 400
+
+      cur.execute(
+        "INSERT INTO presences (seance_id, eleve_id, present, commentaire) VALUES (?,?,0,'')",
+        (seance_id, user_id)
+      )
+      cur.execute("COMMIT")
+
+    except Exception as tx_err:
+      try: cur.execute("ROLLBACK")
+      except: pass
       _release_db(conn)
-      return jsonify({"error": "Séance complète"}), 400
+      raise tx_err
 
-    existing = cur.execute("SELECT 1 FROM presences WHERE eleve_id=? AND seance_id=?",
-                          (user_id, seance_id)).fetchone()
-    if existing:
-      _release_db(conn)
-      return jsonify({"error": "Déjà inscrit à cette séance"}), 400
-
-    cur.execute("""
-      INSERT INTO presences (seance_id, eleve_id, present, commentaire)
-      VALUES (?, ?, 0, '')
-    """, (seance_id, user_id))
-
-    conn.commit()
-
-    nb_inscrits_seance = get_db_read().execute(
+    nb_inscrits_seance = cur.execute(
       "SELECT COUNT(*) FROM presences WHERE seance_id=?", (seance_id,)
     ).fetchone()[0]
+    _release_db(conn)
 
-    # Broadcast SSE
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
     sse_manager.broadcast('inscription_seance_created', {
-      'eleve_id': user_id,
-      'seance_id': seance_id,
-      'activite_id': activite_id,
-      'nb_inscrits_seance': nb_inscrits_seance
+      'eleve_id': user_id, 'seance_id': seance_id,
+      'activite_id': activite_id, 'nb_inscrits_seance': nb_inscrits_seance
     })
     logger.info(f"Inscription séance: user {user_id} -> séance {seance_id}")
-    return jsonify({"success": True})
+    return jsonify({"success": True, "nb_inscrits": nb_inscrits_seance})
 
   except ValueError as ve:
     return jsonify({"error": str(ve)}), 400
@@ -1697,6 +1803,7 @@ def desinscrire_seance():
     activite_id_val = activite_id_row["activite_id"] if activite_id_row else None
 
     # Broadcast SSE
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
     sse_manager.broadcast('inscription_seance_deleted', {
       'eleve_id': eleve_id,
       'seance_id': seance_id,
@@ -1725,7 +1832,7 @@ def get_seances():
     role = session["role"]
     classe_id = session.get("classe_id")
 
-    conn = get_db_connection()
+    conn = get_db_read()
 
     if role == "eleve" and classe_id:
       rows = conn.execute("""
@@ -1738,7 +1845,6 @@ def get_seances():
     else:
       rows = conn.execute("SELECT * FROM seances ORDER BY date_heure").fetchall()
 
-    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur /seances: {str(e)}")
@@ -1748,10 +1854,14 @@ def get_seances():
 @login_required
 def get_inscriptions():
   try:
-    conn = get_db_connection()
+    cached = _cache.get("inscriptions_all")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("SELECT * FROM inscriptions ORDER BY date_inscription").fetchall()
-    _release_db(conn)
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("inscriptions_all", result, ttl=5)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /inscriptions: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -1760,13 +1870,17 @@ def get_inscriptions():
 @login_required
 def get_inscriptions_seances():
   try:
-    conn = get_db_connection()
+    cached = _cache.get("inscriptions_seances_all")
+    if cached is not None:
+      return jsonify(cached)
+    conn = get_db_read()
     rows = conn.execute("""
       SELECT seance_id, eleve_id
       FROM presences
     """).fetchall()
-    _release_db(conn)
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+    _cache.set("inscriptions_seances_all", result, ttl=5)
+    return jsonify(result)
   except Exception as e:
     logger.error(f"Erreur /inscriptions/seances: {str(e)}")
     return jsonify({"error": "Erreur serveur"}), 500
@@ -1776,7 +1890,7 @@ def get_inscriptions_seances():
 def get_inscriptions_delta():
   """Retourne uniquement les données de comptage d'une activité spécifique.
   Utilisé par le SSE pour éviter de tout recharger.
-  ?activite_id=X  → compte inscrits + séances avec comptes."""
+  ?activite_id=X  -> compte inscrits + séances avec comptes."""
   try:
     activite_id = request.args.get("activite_id", type=int)
     if not activite_id:
@@ -1832,13 +1946,12 @@ def get_activite_classes():
 def get_eleves_non_inscrits(groupe_id):
   """Récupère la liste des élèves non inscrits à un groupe d'activités"""
   try:
-    conn = get_db_connection()
+    conn = get_db_read()
     cur = conn.cursor()
 
     # Vérifier que le groupe existe
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe:
-      _release_db(conn)
       return jsonify({"error": "Groupe introuvable"}), 404
 
     # Récupérer toutes les activités du groupe
@@ -1847,7 +1960,6 @@ def get_eleves_non_inscrits(groupe_id):
     """, (groupe_id,)).fetchall()
 
     if not activites:
-      _release_db(conn)
       return jsonify({"eleves": []})
 
     activite_ids = [a["id"] for a in activites]
@@ -1860,7 +1972,6 @@ def get_eleves_non_inscrits(groupe_id):
     """.format(','.join('?' * len(activite_ids))), activite_ids).fetchall()
 
     if not classes_ids:
-      _release_db(conn)
       return jsonify({"eleves": []})
 
     classe_ids_list = [c["classe_id"] for c in classes_ids]
@@ -1905,7 +2016,6 @@ def get_eleves_non_inscrits(groupe_id):
         eleve_dict["dernier_mail"] = mail_recent["date_envoi"] if mail_recent else None
         eleves_non_inscrits.append(eleve_dict)
 
-    _release_db(conn)
 
     return jsonify({
       "groupe": dict(groupe),
@@ -1990,7 +2100,7 @@ a {{color: inherit;}}
 
     text_content = f"""Bonjour {eleve['prenom']} {eleve['nom']},
 
-Vous ne vous êtes pas encore inscrit(e) à une activité du groupe "{groupe['nom']}".
+Vous ne vous êtes pas encore inscrit(e) à une activité du groupe « {groupe['nom']} ».
 
 ⚠️ Ce groupe est OBLIGATOIRE. Inscrivez-vous à une activité dans la limite des places disponibles.
 
@@ -2005,7 +2115,7 @@ CONCORDE © 2025"""
     if not success:
       return jsonify({"error": message}), 500
 
-    # Écriture uniquement ici — connexion write pool
+    # Écriture uniquement ici - connexion write pool
     conn = get_db_connection()
     try:
       conn.execute("""
@@ -2121,19 +2231,30 @@ def inscription_manuelle():
 
     conn.commit()
 
-    nb_inscrits = get_db_read().execute(
+    # Lire nb_inscrits depuis la connexion d'écriture encore ouverte (évite une 2e connexion).
+    # Cette lecture est cohérente car on est juste après le commit.
+    nb_inscrits = cur.execute(
       "SELECT COUNT(*) FROM inscriptions WHERE activite_id=?", (activite_id,)
     ).fetchone()[0]
+    _release_db(conn)
 
-    # Broadcast SSE
-    sse_manager.broadcast('inscription_manuelle_created', {
+    # Invalider le cache avant le broadcast SSE pour que les prochains GET
+    # renvoient des données à jour (pas les anciennes valeurs cachées).
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+
+    # Broadcast : 'inscription_created' (et non 'inscription_manuelle_created') pour que
+    # le handler JS générique handleInscriptionEvent mette à jour le compteur admin/prof.
+    # NOTE : nb_inscrits est envoyé dans le payload pour une mise à jour DOM chirurgicale
+    # sans avoir besoin de refaire un GET /inscriptions complet.
+    sse_manager.broadcast('inscription_created', {
       'eleve_id': eleve_id,
       'activite_id': activite_id,
       'by_user_id': session['user_id'],
-      'nb_inscrits': nb_inscrits
+      'nb_inscrits': nb_inscrits,
+      'manuel': True   # flag informatif (non utilisé côté JS pour le routage)
     })
     logger.info(f"Inscription manuelle: élève {eleve_id} -> activité {activite_id} par {session['user_id']}")
-    return jsonify({"success": True})
+    return jsonify({"success": True, "nb_inscrits": nb_inscrits})
 
   except ValueError as ve:
     return jsonify({"error": str(ve)}), 400
@@ -2364,7 +2485,7 @@ def get_groupe_classes():
 def get_appel_info(seance_id):
   """Récupère les infos pour faire l'appel d'une séance"""
   try:
-    conn = get_db_connection()
+    conn = get_db_read()
 
     seance = conn.execute("""
       SELECT s.*, a.titre, a.salle, a.prof_id, a.animateur_id
@@ -2374,7 +2495,6 @@ def get_appel_info(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance:
-      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     if session["role"] != "admin" and seance["prof_id"] != session["user_id"] and seance["animateur_id"] != session["user_id"]:
@@ -2461,7 +2581,7 @@ def save_appel(seance_id):
 def get_appel_status(seance_id):
   """Vérifie si l'appel a été fait pour une séance"""
   try:
-    conn = get_db_connection()
+    conn = get_db_read()
 
     seance = conn.execute("""
       SELECT s.*, a.prof_id, a.animateur_id
@@ -2471,7 +2591,6 @@ def get_appel_status(seance_id):
     """, (seance_id,)).fetchone()
 
     if not seance:
-      _release_db(conn)
       return jsonify({"error": "Séance introuvable"}), 404
 
     animateur_id = seance["animateur_id"] if seance["animateur_id"] else seance["prof_id"]
@@ -2567,7 +2686,7 @@ def create_invitation():
 def list_invitations():
   """Liste toutes les invitations"""
   try:
-    conn = get_db_connection()
+    conn = get_db_read()
     invitations = conn.execute("""
       SELECT
         it.*,
@@ -2578,7 +2697,6 @@ def list_invitations():
       LEFT JOIN users uu ON it.used_by_user_id = uu.id
       ORDER BY it.created_at DESC
     """).fetchall()
-    _release_db(conn)
 
     return jsonify([dict(inv) for inv in invitations])
   except Exception as e:
@@ -2621,13 +2739,12 @@ def get_invitation_info():
     if not token:
       return jsonify({"error": "Token manquant"}), 400
 
-    conn = get_db_connection()
+    conn = get_db_read()
     invitation = conn.execute("""
       SELECT email
       FROM invitation_tokens
       WHERE token=? AND used=0 AND datetime(expires_at) > ?
     """, (token, now_local_str())).fetchone()
-    _release_db(conn)
 
     if not invitation:
       return jsonify({"error": "Token invalide ou expiré"}), 404
@@ -2640,30 +2757,37 @@ def get_invitation_info():
 
 @app.route("/inscription")
 def signup_form():
-  """Affiche le formulaire d'inscription"""
+  """
+  Affiche le formulaire d'inscription professeur.
+  Vérifie la validité du token AVANT de servir la page HTML pour éviter
+  de charger une interface inutile si le lien est expiré.
+  """
   token = request.args.get('token')
 
   if not token:
     return "Token manquant", 400
 
-  conn = get_db_connection()
+  # Vérification du token en lecture seule (pas de modification DB)
+  conn = get_db_read()
   invitation = conn.execute("""
     SELECT * FROM invitation_tokens
     WHERE token=? AND used=0 AND datetime(expires_at) > ?
   """, (token, now_local_str())).fetchone()
-  _release_db(conn)
 
   if not invitation:
+    # Page d'erreur minimaliste - pas besoin d'un template complet
     return """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Lien expiré</title>
-<style>body{font-family:Arial;text-align:center;padding:50px}h1{color:#dd1738}</style>
-</head><body>
+<html lang="fr"><head><meta charset="utf-8"><title>Lien expiré — CONCORDE</title>
+<style>
+  body{font-family:Arial,sans-serif;text-align:center;padding:60px 20px;background:#f6f8fb}
+  h1{color:#dc2626;font-size:24px}p{color:#6b7280;margin-top:12px}
+</style></head><body>
 <h1>❌ Lien d'invitation expiré ou invalide</h1>
 <p>Ce lien a expiré ou a déjà été utilisé.</p>
 <p>Contactez l'administrateur pour obtenir une nouvelle invitation.</p>
 </body></html>""", 404
 
-  return send_from_directory("prof_signup", "prof_signup.html")
+  return send_from_directory("static/auth", "prof_signup.html")
 
 @app.route("/inscription", methods=["POST"])
 def process_signup():
@@ -2772,8 +2896,8 @@ def process_signup():
 
 @app.route("/first-login")
 def first_login_page():
-  """Affiche la page de première connexion."""
-  return send_from_directory("first_login", "first_login.html")
+  """Affiche la page de première connexion élève (static/auth/)."""
+  return send_from_directory("static/auth", "first_login.html")
 
 @app.route("/api/first-login/send-code", methods=["POST"])
 def first_login_send_code():
@@ -2900,8 +3024,8 @@ def first_login_verify():
 
 @app.route("/forgot-password")
 def forgot_password_page():
-  """Affiche la page mot de passe oublié."""
-  return send_from_directory("forgot_password", "forgot_password.html")
+  """Affiche la page de réinitialisation de mot de passe (static/auth/)."""
+  return send_from_directory("static/auth", "forgot_password.html")
 
 @app.route("/api/forgot-password/request", methods=["POST"])
 def forgot_password_request():
@@ -2992,40 +3116,6 @@ def forgot_password_verify():
     logger.error(f"Erreur forgot_password verify: {e}")
     return jsonify({"error": "Erreur serveur"}), 500
 
-@app.route("/")
-def index():
-  return send_from_directory(".", "Concorde.html")
-
-# ========================
-# SERVIR LE FRONT
-# ========================
-@app.route("/<path:filename>")
-def serve_static(filename):
-  # Liste blanche des fichiers autorisés pour la sécurité
-  # Fichiers servis depuis la racine
-  root_files = {
-    "styles.css", "script.js",
-    "Input_Comp.css", "Input_Comp.js",
-  }
-  # Fichiers servis depuis leur sous-dossier
-  subdir_files = {
-    "forgot_password/forgot_password.css":  ("forgot_password", "forgot_password.css"),
-    "forgot_password/forgot_password.js":   ("forgot_password", "forgot_password.js"),
-    "first_login/first_login.css":          ("first_login",     "first_login.css"),
-    "first_login/first_login.js":           ("first_login",     "first_login.js"),
-    "reset_password/reset_password.css":    ("reset_password",  "reset_password.css"),
-    "reset_password/reset_password.js":     ("reset_password",  "reset_password.js"),
-    "prof_signup/prof_signup.css":          ("prof_signup",     "prof_signup.css"),
-    "prof_signup/prof_signup.js":           ("prof_signup",     "prof_signup.js"),
-  }
-
-  if filename in root_files:
-    return send_from_directory(".", filename)
-  if filename in subdir_files:
-    folder, fname = subdir_files[filename]
-    return send_from_directory(folder, fname)
-  else:
-    return "File not found", 404
 
 
 # ============================================================
@@ -3037,12 +3127,11 @@ def serve_static(filename):
 def get_voeux(groupe_id):
   """Tous les vœux actifs d'un groupe (vue élève)."""
   try:
-    conn = get_db_connection()
+    conn = get_db_read()
     cur  = conn.cursor()
 
     groupe = cur.execute("SELECT * FROM groupes_exclusivite WHERE id=?", (groupe_id,)).fetchone()
     if not groupe or not groupe["echanges_actifs"]:
-      _release_db(conn)
       return jsonify({"error": "Groupe introuvable ou échanges désactivés"}), 404
 
     rows = cur.execute("""
@@ -3061,7 +3150,6 @@ def get_voeux(groupe_id):
       ORDER BY v.created_at DESC
     """, (groupe_id,)).fetchall()
 
-    _release_db(conn)
     return jsonify([dict(r) for r in rows])
   except Exception as e:
     logger.error(f"Erreur get_voeux: {e}")
@@ -3451,6 +3539,135 @@ def _executer_echange(cur, proc, va, vb):
     AND id NOT IN (?,?)
   """, (eleve_a, eleve_b, va["groupe_id"], va["id"], vb["id"]))
 
+
+
+
+
+
+
+
+
+
+
+# ========================================================================
+# SERVIR LES FICHIERS STATIQUES
+# ========================================================================
+#
+# Architecture des fichiers statiques :
+#
+#   Racine/            -> Concorde.html, script.js, styles.css (servis par /)
+#   static/            -> Input_Comp.css, Input_Comp.js
+#   static/auth/       -> auth.css, *.html, *.js des pages d'authentification
+#
+# SÉCURITÉ : liste blanche explicite.
+# Aucune traversée de répertoire possible (/../../ etc.) car on ne reconstruit
+# jamais un chemin depuis filename - on mappe un string connu vers un dossier
+# connu. Flask send_from_directory sécurise aussi de son côté.
+# ========================================================================
+
+# Fichiers servis directement depuis la racine du projet
+# -- Liste blanche des fichiers statiques -------------------------------------
+# Les URLs demandées par le navigateur (path:filename = sans le / initial) :
+#   styles.css, script.js           -> servis depuis la racine du projet
+#   static/Input_Comp.css/.js       -> servis depuis static/
+#   static/auth/auth.css            -> servis depuis static/auth/
+#   static/auth/*.js                -> servis depuis static/auth/
+#
+# Concorde.html et les pages auth HTML ont leurs propres routes dédiées
+# (@app.route("/"), @app.route("/first-login"), etc.) et ne passent pas ici.
+
+_ROOT_FILES = frozenset({
+  "styles.css",
+  "script.js",
+})
+
+# Input_Comp : partagé par Concorde.html (racine) et les pages auth.
+# Les pages auth référencent /static/Input_Comp.css et /static/Input_Comp.js
+# (chemins absolus dans le HTML -> pas de problème de résolution relative).
+_STATIC_FILES = frozenset({
+  "static/Input_Comp.css",
+  "static/Input_Comp.js",
+})
+
+# Ressources JS/CSS des pages auth.
+# Les HTML auth référencent /static/auth/auth.css, /static/auth/XX.js.
+_AUTH_STATIC = frozenset({
+  "static/auth/auth.css",
+  "static/auth/first_login.js",
+  "static/auth/forgot_password.js",
+  "static/auth/prof_signup.js",
+})
+
+
+@app.route("/")
+def index():
+  return send_from_directory(".", "Concorde.html")
+
+
+@app.route("/<path:filename>")
+def serve_static(filename):
+  """
+  Route catch-all pour les fichiers statiques.
+  Utilise une liste blanche explicite - aucun chemin hors liste n'est servi.
+  """
+  if filename in _ROOT_FILES:
+    return send_from_directory(".", filename)
+  if filename in _STATIC_FILES:
+    # "static/Input_Comp.css" -> dossier "static", fichier "Input_Comp.css"
+    _, fname = filename.split("/", 1)
+    return send_from_directory("static", fname)
+  if filename in _AUTH_STATIC:
+    # "static/auth/auth.css" -> dossier "static/auth", fichier "auth.css"
+    fname = filename.rsplit("/", 1)[-1]
+    return send_from_directory("static/auth", fname)
+  # Tout autre chemin -> 404 explicite (jamais de fallback silencieux)
+  logger.warning(f"Fichier statique non trouvé : {filename} depuis {request.remote_addr}")
+  return jsonify({"error": "Ressource non trouvée"}), 404
+
+
+
+
+
+
+
+
+"""
+@app.route("/")
+def index():
+  return send_from_directory(".", "Concorde.html")
+
+# ========================
+# SERVIR LE FRONT
+# ========================
+@app.route("/<path:filename>")
+def serve_static(filename):
+  # Liste blanche des fichiers autorisés pour la sécurité
+  # Fichiers servis depuis la racine
+  root_files = {
+    "styles.css", "script.js",
+    "Input_Comp.css", "Input_Comp.js",
+  }
+  # Fichiers servis depuis leur sous-dossier
+  subdir_files = {
+    "forgot_password/forgot_password.css":  ("forgot_password", "forgot_password.css"),
+    "forgot_password/forgot_password.js":   ("forgot_password", "forgot_password.js"),
+    "first_login/first_login.css":          ("first_login",     "first_login.css"),
+    "first_login/first_login.js":           ("first_login",     "first_login.js"),
+    "reset_password/reset_password.css":    ("reset_password",  "reset_password.css"),
+    "reset_password/reset_password.js":     ("reset_password",  "reset_password.js"),
+    "prof_signup/prof_signup.css":          ("prof_signup",     "prof_signup.css"),
+    "prof_signup/prof_signup.js":           ("prof_signup",     "prof_signup.js"),
+  }
+
+  if filename in root_files:
+    return send_from_directory(".", filename)
+  if filename in subdir_files:
+    folder, fname = subdir_files[filename]
+    return send_from_directory(folder, fname)
+  else:
+    return "File not found", 404
+
+"""
 
 # ========================
 # GESTION ERREURS

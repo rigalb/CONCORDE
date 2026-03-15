@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Inscription professeur - CONCORDE</title>
+  <link rel="stylesheet" href="/static/Input_Comp.css">
+  <link rel="stylesheet" href="/static/auth/auth.css">
+</head>
+<body>
+
+  <!--
+    Carte légèrement plus large (.auth-card--wide) pour accueillir
+    tous les champs de l'inscription professeur.
+    Pas de <form> : la soumission est gérée entièrement par prof_signup.js
+    via un bouton + fetch(), comme partout ailleurs dans le projet.
+  -->
+  <div class="auth-card auth-card--wide">
+
+    <!-- Logo + titre (pas de bandeau header ici, style différent) -->
+    <div class="auth-logo-container">
+      <div class="auth-logo" aria-hidden="true">📚</div>
+      <h1>Bienvenue sur CONCORDE</h1>
+      <p class="auth-subtitle">Créez votre compte professeur</p>
+    </div>
+
+    <!-- Boîte d'info invitation (chargée dynamiquement par JS) -->
+    <div class="auth-info-box" id="welcome-info">
+      <div class="auth-loading">Chargement…</div>
+    </div>
+
+    <!-- Message global succès / erreur -->
+    <div id="message" class="auth-message" role="alert" aria-live="polite"></div>
+
+    <!--
+      Le formulaire est masqué jusqu'à validation du token d'invitation.
+      Le JS retire la classe .hidden une fois le token vérifié côté serveur.
+    -->
+    <div id="signup-form" class="hidden">
+
+      <div class="auth-form-group">
+        <!--
+          Username : généré automatiquement depuis l'email de l'invitation.
+          Désactivé → l'utilisateur ne peut pas le modifier.
+        -->
+        <input
+          type="text"
+          id="username"
+          name="username"
+          required
+          disabled
+          autocomplete="username"
+          data-input-comp='{"label":"Nom d&apos;utilisateur","icon":"user","hint":"Généré automatiquement depuis votre email","disabled":true}'>
+      </div>
+
+      <div class="auth-form-group">
+        <input
+          type="text"
+          id="prenom"
+          name="prenom"
+          required
+          autocomplete="given-name"
+          data-input-comp='{"label":"Prénom","icon":"user","required":true,"placeholder":"Ex: Pierre"}'>
+      </div>
+
+      <div class="auth-form-group">
+        <input
+          type="text"
+          id="nom"
+          name="nom"
+          required
+          autocomplete="family-name"
+          data-input-comp='{"label":"Nom","icon":"user","required":true,"placeholder":"Ex: Dupont"}'>
+      </div>
+
+      <div class="auth-form-group">
+        <!--
+          Select matière : InputComp en mode select avec options statiques.
+          La valeur est lue via l'input[type=hidden] créé par InputComp.
+        -->
+        <select
+          id="matiere"
+          name="matiere"
+          required
+          data-input-comp='{"label":"Matière enseignée","required":true,"searchable":true}'>
+          <option value="">- Sélectionnez -</option>
+          <option value="Mathématiques">Mathématiques</option>
+          <option value="Français">Français</option>
+          <option value="Histoire-Géographie">Histoire-Géographie</option>
+          <option value="Sciences">Sciences (SVT / Physique-Chimie)</option>
+          <option value="Anglais">Anglais</option>
+          <option value="Espagnol">Espagnol</option>
+          <option value="Allemand">Allemand</option>
+          <option value="EPS">EPS (Sport)</option>
+          <option value="Arts Plastiques">Arts Plastiques</option>
+          <option value="Musique">Musique</option>
+          <option value="Technologie">Technologie</option>
+          <option value="Latin">Latin</option>
+          <option value="Grec">Grec</option>
+          <option value="Autre">Autre</option>
+        </select>
+      </div>
+
+      <div class="auth-form-group">
+        <input
+          type="password"
+          id="password"
+          name="password"
+          required
+          autocomplete="new-password"
+          data-input-comp='{"label":"Mot de passe","icon":"lock","showPassword":true,"required":true}'>
+        <!-- Jauge de force du mot de passe -->
+        <div class="auth-password-strength">
+          <div class="auth-strength-bar">
+            <div class="auth-strength-fill" id="strength-fill"></div>
+          </div>
+          <div class="auth-helper-text" id="strength-text">Minimum 8 caractères</div>
+        </div>
+      </div>
+
+      <div class="auth-form-group">
+        <input
+          type="password"
+          id="password-confirm"
+          name="password_confirm"
+          required
+          autocomplete="new-password"
+          data-input-comp='{"label":"Confirmer le mot de passe","icon":"lock","showPassword":true,"required":true}'>
+      </div>
+
+      <div class="auth-form-group">
+        <!--
+          Select classe (optionnel) : options chargées dynamiquement via JS
+          (GET /classes après validation du token).
+        -->
+        <select
+          id="classe"
+          name="classe"
+          data-input-comp='{"label":"Classe principale (optionnel)","hint":"Vous pourrez créer des activités pour toutes les classes","searchable":true}'>
+        </select>
+      </div>
+
+      <button type="button" id="btn-submit" class="auth-btn">
+        Créer mon compte
+      </button>
+
+    </div><!-- /#signup-form -->
+
+  </div><!-- /.auth-card -->
+
+  <script src="/static/Input_Comp.js"></script>
+  <script src="/static/auth/prof_signup.js"></script>
+</body>
+</html>
