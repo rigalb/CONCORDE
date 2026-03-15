@@ -1112,7 +1112,7 @@ class InputComp {
 
   _applyDimensions() {
     const { width, minWidth, maxWidth } = this.opts;
-    if (width)    { this.wrapper.style.setProperty('--ic-max-w', width);     this.wrapper.style.width    = width; }
+    if (width)    { this.wrapper.style.setProperty('--ic-max-w', width);     this.wrapper.style.width    = `min(${width}, 100%)`; }
     if (minWidth) { this.wrapper.style.minWidth = minWidth; }
     if (maxWidth) { this.wrapper.style.setProperty('--ic-max-w', maxWidth);  this.wrapper.style.maxWidth = maxWidth; }
   }
