@@ -23,26 +23,8 @@
 
 
 /* -- 1. Variables & reset ---------------------------------- */
-:root {
-  /* Couleurs - alignées sur styles.css de l'appli principale */
-  --auth-primary:      #0b5ccc;
-  --auth-primary-dark: #0941a0;
-  --auth-accent:       #d55f1f;
-  --auth-success:      #059669;
-  --auth-success-dark: #047857;
-  --auth-error:        #dc2626;
-  --auth-error-bg:     #fef2f2;
-  --auth-error-border: #ef4444;
-  --auth-text:         #111827;
-  --auth-text-secondary: #374151;
-  --auth-muted:        #6b7280;
-  --auth-border:       #e5e7eb;
-  --auth-border-focus: rgba(11, 92, 204, 0.12);
+/* Variables définies dans design_tokens.css (chargé avant ce fichier). */
 
-  /* Forme */
-  --auth-radius:    8px;
-  --auth-radius-lg: 14px;
-}
 
 *,
 *::before,
@@ -56,7 +38,7 @@
 /* -- 2. Layout de page ------------------------------------- */
 body {
   font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
-  background: linear-gradient(135deg, var(--auth-primary) 0%, var(--auth-accent) 100%);
+  background: var(--navy-50);
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -70,7 +52,8 @@ body {
 .auth-card {
   background: white;
   border-radius: var(--auth-radius-lg);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  border-top: 3px solid var(--auth-primary);
+  box-shadow: 0 4px 24px rgba(15, 30, 51, 0.14);
   max-width: 480px;
   width: 100%;
   overflow: hidden;
@@ -87,7 +70,7 @@ body {
 
 /* -- 3. En-tête de carte ----------------------------------- */
 .auth-header {
-  background: linear-gradient(135deg, var(--auth-primary), var(--auth-accent));
+  background: var(--auth-primary);
   color: white;
   padding: 28px 30px;
   text-align: center;
@@ -108,7 +91,7 @@ body {
 .auth-logo {
   width: 80px;
   height: 80px;
-  background: linear-gradient(135deg, var(--auth-primary), var(--auth-accent));
+  background: var(--auth-primary);
   border-radius: 16px;
   display: inline-flex;
   align-items: center;
@@ -172,7 +155,7 @@ body {
 
 /* Boîte d'information (prof_signup: email de l'invitation) */
 .auth-info-box {
-  background: #f8fafc;
+  background: var(--navy-50);
   border-left: 4px solid var(--auth-primary);
   padding: 15px;
   margin-bottom: 25px;
@@ -203,10 +186,10 @@ input[type="password"]:focus {
   box-shadow: 0 0 0 3px var(--auth-border-focus);
 }
 
-input::placeholder { color: #d1d5db; }
+input::placeholder { color: var(--auth-border); }
 
 input:disabled {
-  background: #f1f5f9;
+  background: var(--navy-50);
   color: var(--auth-muted);
   cursor: not-allowed;
 }
@@ -242,7 +225,7 @@ input.input-invalid { border-color: var(--auth-error); }
 
 /* Placeholder visible (InputComp le masque par défaut) */
 .ic-otp-wrap .ic-input::placeholder {
-  color: #d1d5db;
+  color: var(--auth-border);
   font-size: 18px;
   letter-spacing: 4px;
 }
@@ -288,7 +271,7 @@ input.input-invalid { border-color: var(--auth-error); }
   display: block;
   width: 100%;
   padding: 13px 20px;
-  background: linear-gradient(135deg, var(--auth-primary), var(--auth-primary-dark));
+  background: var(--auth-primary);
   color: white;
   border: none;
   border-radius: var(--auth-radius);
@@ -310,7 +293,7 @@ input.input-invalid { border-color: var(--auth-error); }
 .auth-btn:active { transform: translateY(0); }
 
 .auth-btn:disabled {
-  background: #d1d5db;
+  background: var(--auth-border);
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
@@ -331,7 +314,7 @@ input.input-invalid { border-color: var(--auth-error); }
 }
 
 .auth-btn-link:disabled {
-  color: #9ca3af;
+  color: var(--auth-muted);
   cursor: default;
   text-decoration: none;
 }
@@ -364,7 +347,7 @@ input.input-invalid { border-color: var(--auth-error); }
 /* Erreur inline (sous un champ ou bloc d'étape) */
 .auth-error {
   background: var(--auth-error-bg);
-  color: #b91c1c;
+  color: var(--auth-error);
   padding: 11px 14px;
   border-radius: var(--auth-radius);
   border-left: 4px solid var(--auth-error-border);
@@ -384,13 +367,13 @@ input.input-invalid { border-color: var(--auth-error); }
 }
 
 .auth-message.error {
-  background: #fff5f7;
-  color: #dd1738;
-  border: 1px solid #dd1738;
+  background: var(--auth-error-bg);
+  color: var(--auth-error);
+  border: 1px solid var(--auth-error);
 }
 
 .auth-message.success {
-  background: #f0fdf4;
+  background: var(--auth-success-bg);
   color: var(--auth-success);
   border: 1px solid var(--auth-success);
 }
@@ -412,7 +395,7 @@ input.input-invalid { border-color: var(--auth-error); }
 .auth-success-icon {
   width: 64px;
   height: 64px;
-  background: linear-gradient(135deg, var(--auth-success), var(--auth-success-dark));
+  background: var(--auth-success);
   color: white;
   border-radius: 50%;
   font-size: 30px;
@@ -429,7 +412,7 @@ input.input-invalid { border-color: var(--auth-error); }
 }
 
 .auth-success-box p {
-  color: #4b5563;
+  color: var(--auth-muted);
   margin-bottom: 24px;
   line-height: 1.6;
 }
@@ -444,10 +427,6 @@ input.input-invalid { border-color: var(--auth-error); }
 
 /* -- 11. Responsive ---------------------------------------- */
 @media (max-width: 520px) {
-  .auth-card {
-    border-radius: 0;
-    box-shadow: none;
-  }
 
   .auth-card--wide {
     padding: 28px 20px;

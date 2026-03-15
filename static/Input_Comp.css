@@ -4,32 +4,168 @@
    ============================================================ */
 
 /* -- Variables ----------------------------------------------- */
+
+
+
+
+/*
 :root {
-  --ic-primary:        #0b5ccc;
-  --ic-primary-light:  rgba(11,92,204,0.10);
-  --ic-error:          #dc2626;
-  --ic-error-light:    rgba(220,38,38,0.10);
-  --ic-success:        #059669;
-  --ic-success-light:  rgba(5,150,105,0.10);
-  --ic-warning:        #d97706;
-  --ic-text:           #111827;
+  --ic-primary:        #1e3a5f;
+  --ic-primary-light:  rgba(30, 58, 95, 0.08);
+  --ic-accent:         #2a6aba;
+  --ic-error:          #c0392b;
+  --ic-error-light:    rgba(192, 57, 43, 0.09);
+  --ic-success:        #1b7a4e;
+  --ic-success-light:  rgba(27, 122, 78, 0.09);
+  --ic-warning:        #b97c0f;
+  --ic-text:           #1f2937;
   --ic-text-muted:     #6b7280;
   --ic-border:         #d1d5db;
   --ic-border-hover:   #9ca3af;
-  --ic-bg:             #ffffff;
-  --ic-bg-disabled:    #f9fafb;
-  --ic-surface:        #f3f4f6;
+  --ic-bg:             #f9fafb;
+  --ic-bg-active:      #ffffff;
+  --ic-bg-disabled:    #f3f4f6;
+  --ic-surface:        #f4f5f7;
   --ic-radius:         8px;
   --ic-radius-sm:      6px;
   --ic-radius-lg:      10px;
-  --ic-font:           "Inter","Segoe UI",Roboto,Arial,sans-serif;
+  --ic-font:           "Inter","Segoe UI",system-ui,sans-serif;
   --ic-font-mono:      "JetBrains Mono","Fira Code","Courier New",monospace;
   --ic-t:              0.18s ease;
-  --ic-shadow-focus:   0 0 0 3px var(--ic-primary-light);
-  --ic-shadow-error:   0 0 0 3px var(--ic-error-light);
-  --ic-shadow-success: 0 0 0 3px var(--ic-success-light);
-  --ic-drop-shadow:    0 8px 28px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+  --ic-shadow-focus:   0 0 0 3px rgba(var(--ic-accent-rgb), 0.14);
+  --ic-shadow-error:   0 0 0 3px rgba(192, 57, 43, 0.10);
+  --ic-shadow-success: 0 0 0 3px rgba(27, 122, 78, 0.10);
+  --ic-drop-shadow:    0 4px 16px rgba(15, 30, 51, 0.12), 0 1px 4px rgba(15, 30, 51, 0.08);
 }
+*/
+
+
+
+
+
+
+:root {
+  /* ========================================================
+     PALETTE — les seules valeurs à modifier pour recolorer
+     ======================================================== */
+
+  /* Navy (couleur principale) */
+  --navy-900:  #0f1e33;
+  --navy-800:  #162b4a;
+  --navy-700:  #1e3a5f;   /* primary — fond boutons, header, badges */
+  --navy-600:  #254d80;
+  --navy-500:  #2a6aba;   /* accent — liens, focus, interactif */
+  --navy-400:  #4d88ce;
+  --navy-300:  #7aaee0;
+  --navy-200:  #b8cfe8;
+  --navy-100:  #d6e6f5;
+  --navy-50:   #eef3f9;   /* fond très clair */
+
+  /* RGB pour rgba() — mettre à jour si navy-700 change */
+  --navy-700-rgb: 30, 58, 95;
+  --navy-500-rgb: 42, 106, 186;
+
+  /* Texte sur fond navy — jamais blanc pur */
+  --text-on-dark: #f0f4f8;
+
+  /* Semantic */
+  --success:        #1b7a4e;
+  --success-light:  #e8f5ee;
+  --success-border: #a3d4ba;
+  --success-dark:   #145e3f;
+
+  --warning:        #b97c0f;
+  --warning-light:  #fef3d0;
+  --warning-border: #f5c842;
+  --warning-dark:   #9a6600;
+
+  --error:          #c0392b;
+  --error-light:    #fde8e5;
+  --error-border:   #f09595;
+  --error-dark:     #9c2b1e;
+
+  /* Badges état (voeux, pastilles) */
+  --badge-info-bg:     #dbeafe;
+  --badge-info-text:   #1e40af;
+  --badge-ok-bg:       #dcfce7;
+  --badge-ok-text:     #166534;
+  --badge-purple-bg:   #ede9fe;
+  --badge-purple-text: #5b21b6;
+
+
+  /* ========================================================
+     TOKENS SÉMANTIQUES — référencent la palette ci-dessus
+     ======================================================== */
+
+  /* Surfaces */
+  --bg:      #f4f5f7;
+  --card:    #ffffff;
+  --surface: #f9fafb;
+
+  /* Texte */
+  --text:           #1f2937;
+  --text-secondary: #374151;
+  --text-muted:     #6b7280;
+  --text-placeholder: #9ca3af;
+
+  /* Bordures */
+  --border:       #d1d5db;
+  --border-light: #e5e7eb;
+
+
+  /* ========================================================
+     TOKENS INPUTCOMP — ic-* utilisés par Input_Comp.css
+     ======================================================== */
+
+  --ic-primary:        var(--navy-700);
+  --ic-primary-light:  rgba(var(--navy-700-rgb), 0.08);
+  --ic-primary-rgb:    var(--navy-700-rgb);
+  --ic-accent:         var(--navy-500);
+  --ic-accent-rgb:     var(--navy-500-rgb);
+  --ic-error:          var(--error);
+  --ic-error-light:    rgba(192, 57, 43, 0.09);
+  --ic-success:        var(--success);
+  --ic-success-light:  rgba(27, 122, 78, 0.09);
+  --ic-warning:        var(--warning);
+  --ic-text:           var(--text);
+  --ic-text-muted:     var(--text-muted);
+  --ic-border:         var(--border);
+  --ic-border-hover:   #9ca3af;
+  --ic-bg:             var(--surface);
+  --ic-bg-active:      var(--card);
+  --ic-bg-disabled:    #f3f4f6;
+  --ic-surface:        var(--bg);
+  --ic-radius:         8px;
+  --ic-radius-sm:      6px;
+  --ic-radius-lg:      10px;
+  --ic-font:           "Inter", "Segoe UI", system-ui, sans-serif;
+  --ic-font-mono:      "JetBrains Mono", "Fira Code", "Courier New", monospace;
+  --ic-t:              0.18s ease;
+  --ic-shadow-focus:   0 0 0 3px rgba(var(--navy-500-rgb), 0.14);
+  --ic-shadow-error:   0 0 0 3px rgba(192, 57, 43, 0.10);
+  --ic-shadow-success: 0 0 0 3px rgba(27, 122, 78, 0.10);
+  --ic-drop-shadow:    0 4px 16px rgba(var(--navy-700-rgb), 0.12),
+                       0 1px 4px  rgba(var(--navy-700-rgb), 0.08);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .ic-wrapper *, .ic-wrapper *::before, .ic-wrapper *::after { box-sizing: border-box; }
 
@@ -66,7 +202,7 @@
 
 .ic-field:hover:not(.ic-disabled) { border-color: var(--ic-border-hover); }
 
-.ic-wrapper.ic-focused        .ic-field { border-color: var(--ic-primary); box-shadow: var(--ic-shadow-focus); }
+.ic-wrapper.ic-focused        .ic-field { border-color: var(--ic-accent); background: var(--ic-bg-active); box-shadow: var(--ic-shadow-focus); }
 .ic-wrapper.ic-has-error      .ic-field { border-color: var(--ic-error); }
 .ic-wrapper.ic-has-error.ic-focused .ic-field { box-shadow: var(--ic-shadow-error); }
 .ic-wrapper.ic-has-success    .ic-field { border-color: var(--ic-success); }
@@ -98,8 +234,8 @@
   top: 0;
   transform: translateY(-50%);
   font-size: var(--ic-lbl-fs);
-  color: var(--ic-primary);
-  background: var(--ic-bg);
+  color: var(--ic-accent);
+  background: var(--ic-bg-active);
   font-weight: 600;
   letter-spacing: 0.02em;
 }

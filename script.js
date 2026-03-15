@@ -144,7 +144,7 @@ function showAlert(message, title = 'Information') {
         document.body.appendChild(overlay);
 
         const close = () => { overlay.remove(); resolve(); };
-        overlay.querySelector('#cmodal-ok').addEventListener('click', close);
+        overlay.querySelector('#cmodal-ok').addEventListener('click', (e) => { e.stopPropagation(); close(); });
         // Fermer avec Entrée ou Échap
         const onKey = (e) => {
             if (e.key === 'Enter' || e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(); }
@@ -182,8 +182,8 @@ function showConfirm(message, title = 'Confirmation', confirmLabel = 'Confirmer'
         document.body.appendChild(overlay);
 
         const close = (result) => { overlay.remove(); resolve(result); };
-        overlay.querySelector('#cmodal-confirm').addEventListener('click', () => close(true));
-        overlay.querySelector('#cmodal-cancel').addEventListener('click', () => close(false));
+        overlay.querySelector('#cmodal-confirm').addEventListener('click', (e) => { e.stopPropagation(); close(true); });
+        overlay.querySelector('#cmodal-cancel').addEventListener('click', (e) => { e.stopPropagation(); close(false); });
         // Entrée = confirmer, Échap = annuler
         const onKey = (e) => {
             if (e.key === 'Enter')  { document.removeEventListener('keydown', onKey); close(true); }
@@ -371,7 +371,8 @@ function setupEventDelegation() {
         }
 
         // === CARTES D'ACTIVITÉ (CLIC GLOBAL) ===
-        if (card && !btn) {
+        // Ne pas ouvrir le modal si le clic vient d'un bouton ou d'un enfant de bouton
+        if (card && !btn && !e.target.closest('button, .btn, .seance-btn, .btn-mini, .btn-action')) {
             const activityId = parseInt(card.dataset.activityId);
             const activite = activites.find(a => a.id === activityId);
 
@@ -1523,7 +1524,7 @@ function majListeActivitesEleve() {
             if(inscriptionsEleve) totalIns++;
 
             const actCard = document.createElement('div');
-            actCard.className = 'activity-card' + (inscriptionsEleve ? ' selected' : '');
+            actCard.className = 'activity-card' + (inscriptionsEleve ? ' selected inscrit' : '');
             actCard.dataset.activityId = act.id;  // FIX doublons: id unique pour majComptesActivitesEleve
 
             const animateurNom = act.animateur_prenom && act.animateur_nom
@@ -1725,6 +1726,7 @@ function majComptesActivitesEleve() {
                 if (!act.separable) {
                     const isInscrit = act.inscriptions?.includes(currentUser.id);
                     card.classList.toggle('selected', isInscrit);
+                    card.classList.toggle('inscrit', isInscrit);
                     const header = card.querySelector('.activity-card-header');
                     if (header) {
                         let badge = header.querySelector('.seance-status.inscrit');
@@ -1757,6 +1759,12 @@ function majComptesActivitesEleve() {
                             btn.onclick = (e) => { e.stopPropagation(); inscrireActivite(act.id); };
                         }
                     }
+                }
+
+                // Mettre à jour la classe inscrit sur la card (séparable)
+                if (act.separable) {
+                    const isInscritSeparable = act.seances?.some(s => s.inscriptions?.includes(currentUser.id));
+                    card.classList.toggle('inscrit', !!isInscritSeparable);
                 }
 
                 // Mettre à jour les compteurs et boutons par séance (separable)
@@ -2153,7 +2161,7 @@ async function inscrireSeance(seanceId) {
 
         majComptesActivitesEleve();
         const actActualisee = activites.find(a => a.id === seance.activite_id);
-        if (actActualisee) showActivityDetailsEleve(actActualisee);
+        if (actActualisee && _currentModalActivityId === actActualisee.id) showActivityDetailsEleve(actActualisee);
         updateEmploiDuTempsEleve();
 
         await apiPost('/inscriptions/seance', {seance_id: seanceId});
@@ -2205,7 +2213,7 @@ async function desinscrireSeance(seanceId) {
         majComptesActivitesEleve();
         if (seance) {
             const actLocale = activites.find(a => a.id === seance.activite_id);
-            if (actLocale) showActivityDetailsEleve(actLocale);
+            if (actLocale && _currentModalActivityId === actLocale.id) showActivityDetailsEleve(actLocale);
         }
         updateEmploiDuTempsEleve();
 
