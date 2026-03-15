@@ -490,25 +490,37 @@ function getWeekNumber(date) {
     return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
 }
 
+/**
+ * Retourne la hauteur en pixels d'une case horaire.
+ * Miroir exact des valeurs définies dans styles.css / design_tokens.css.
+ * C'est la source de vérité JS — modifier ici ET dans le CSS ensemble.
+ *
+ * Breakpoints CSS → --hour-height :
+ *   base (<480px)  : 35px
+ *   480px+         : 40px
+ *   768px+         : 50px
+ *   1024px+        : 55px
+ *   1280px+        : 60px
+ */
+function getHourHeight() {
+    const w = window.innerWidth;
+    if (w >= 1280) return 60;
+    if (w >= 1024) return 55;
+    if (w >= 768)  return 50;
+    if (w >= 480)  return 40;
+    return 35;
+}
+
+const SCHEDULE_START_HOUR = 7;
+const SCHEDULE_END_HOUR   = 20; // inclus (affichage jusqu'à 20h)
+const SCHEDULE_HOURS      = SCHEDULE_END_HOUR - SCHEDULE_START_HOUR; // 13 tranches
+
 function timeToMinutes(dateTime) {
     const date = new Date(dateTime);
     const hours = date.getHours();
     const minutes = date.getMinutes();
-    const baseMinutes = (hours - 7) * 60 + minutes;
-
-    // Adapter selon la largeur d'écran (pixels par heure)
-    const width = window.innerWidth;
-    let pixelsPerHour;
-
-    if (width >= 1920) {
-        pixelsPerHour = 60;
-    } else if (width >= 1280) {
-        pixelsPerHour = 50;
-    } else {
-        pixelsPerHour = 40;
-    }
-
-    return (baseMinutes / 60) * pixelsPerHour;
+    const baseMinutes = (hours - SCHEDULE_START_HOUR) * 60 + minutes;
+    return (baseMinutes / 60) * getHourHeight();
 }
 
 /* ===========================
@@ -2850,52 +2862,38 @@ function updateWeekDisplayProf() {
 }
 
 function createScheduleGridProf() {
-    const container = $('#emploi-du-temps-prof');
-    container.innerHTML = '';
+    // Cibler les éléments existants dans le HTML statique
+    const timeSlots = $('#time-slots-prof');
+    const daysGrid  = $('#days-grid-prof');
+    if (!timeSlots || !daysGrid) return;
+
+    timeSlots.innerHTML = '';
+    daysGrid.innerHTML  = '';
 
     const monday = getMonday(new Date());
     monday.setDate(monday.getDate() + (currentWeekOffsetProf * 7));
 
-    const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
 
-    // Créer structure avec flexbox comme dans projet_visuel.html
-    const table = document.createElement('div');
-    table.className = 'schedule-table';
-
-    // Colonne des heures
-    const hourColumn = document.createElement('div');
-    hourColumn.className = 'schedule-hour-cell';
-
-    const spacer = document.createElement('div');
-    spacer.className = 'day-header-spacer';
-    hourColumn.appendChild(spacer);
-
-
-    // Créer les cellules d'heures (7h à 18h) avec hauteur adaptative
-    const width = window.innerWidth;
-    let hourHeight;
-    if (width >= 1920) hourHeight = 60;
-    else if (width >= 1280) hourHeight = 50;
-    else hourHeight = 40
-
-    const totalContentHeight = hourHeight * 12; // Hauteur totale du contenu
-
-    // Créer les cellules d'heures (7h à 18h)
-    for (let hour = 7; hour <= 18; hour++) {
+    // — Colonne des heures (7h à 20h) —
+    // 13 cellules normales + 1 label de fin à hauteur 0
+    for (let hour = SCHEDULE_START_HOUR; hour <= SCHEDULE_END_HOUR; hour++) {
         const hourCell = document.createElement('div');
         hourCell.className = 'schedule-cell';
-        hourCell.style.height = hourHeight + 'px'; // AJOUT : forcer la hauteur
+        if (hour === SCHEDULE_END_HOUR) {
+            hourCell.style.cssText = 'height:0;overflow:visible;border-bottom:none;';
+        } else {
+            hourCell.style.height = 'var(--hour-height)';
+        }
         hourCell.textContent = `${hour.toString().padStart(2, '0')}:00`;
-        hourColumn.appendChild(hourCell);
+        timeSlots.appendChild(hourCell);
     }
 
-    table.appendChild(hourColumn);
-
-    // Grille des jours
-    const daysGrid = document.createElement('div');
-    daysGrid.className = 'days-grid';
+    // — Grille des 7 jours —
+    const dayLabels  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    const dayKeys    = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
     for (let i = 0; i < 7; i++) {
         const currentDay = new Date(monday);
@@ -2907,44 +2905,32 @@ function createScheduleGridProf() {
         const dayCol = document.createElement('div');
         dayCol.className = 'day-column';
 
-        // Formatage de la date
-        const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-        const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-
-        const dayLabel = dayNames[i];
-        const dayNum = currentDay.getDate();
-        const monthLabel = monthNames[currentDay.getMonth()];
-
         // En-tête du jour
         const header = document.createElement('div');
-        header.className = `schedule-header-cell ${isToday ? 'today' : ''}`;
-        header.textContent = `${dayLabel} ${dayNum} ${monthLabel}`;
+        header.className = `schedule-header-cell${isToday ? ' today' : ''}`;
+        header.innerHTML = `<span class="day-name">${dayLabels[i]}</span><span class="day-number">${currentDay.getDate()} ${monthNames[currentDay.getMonth()]}</span>`;
         dayCol.appendChild(header);
 
-        // Contenu du jour
+        // Contenu du jour (hauteur gérée par CSS : calc(var(--hour-height) * 13))
         const content = document.createElement('div');
-        content.className = `day-content ${isToday ? 'today-column' : ''}`;
-        content.dataset.day = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][i];
+        content.className = `day-content${isToday ? ' today-column' : ''}`;
+        content.dataset.day = dayKeys[i];
 
-        // Lignes d'heures avec hauteur adaptative
-        const totalHeight = hourHeight * 12;
-        content.style.height = totalHeight + 'px';
-
-        // Lignes d'heures (12 heures x 60px = 720px)
-        for (let j = 0; j < 12; j++) {
+        for (let j = 0; j < SCHEDULE_HOURS; j++) {
             const line = document.createElement('div');
             line.className = 'hour-line';
-            line.style.top = (j * hourHeight) + 'px';
-            line.style.height = hourHeight + 'px';
+            line.style.top = `calc(var(--hour-height) * ${j})`;
             content.appendChild(line);
+
+            const halfLine = document.createElement('div');
+            halfLine.className = 'half-hour-line';
+            halfLine.style.top = `calc(var(--hour-height) * ${j} + var(--hour-height) / 2)`;
+            content.appendChild(halfLine);
         }
 
         dayCol.appendChild(content);
         daysGrid.appendChild(dayCol);
     }
-
-    table.appendChild(daysGrid);
-    container.appendChild(table);
 }
 
 function updateScheduleViewProf() {
@@ -2988,11 +2974,7 @@ function updateScheduleViewProf() {
                     seanceBlock.className = `seance-block-prof activity-color-${act.id % 8} ${isPast ? 'past' : ''}`;
                     seanceBlock.dataset.activityId = act.id;
 
-                    const width = window.innerWidth;
-                    let pixelsPerMinute;
-                    if (width >= 1920) pixelsPerMinute = 1;
-                    else if (width >= 1280) pixelsPerMinute = 50/60;
-                    else pixelsPerMinute = 40/60;
+                    const pixelsPerMinute = getHourHeight() / 60;
 
                     seanceBlock.style.top = `${topMinutes}px`;
                     seanceBlock.style.height = `${duree * pixelsPerMinute}px`;
@@ -3097,47 +3079,37 @@ function updateWeekDisplayEleve() {
 }
 
 function createScheduleGridEleve() {
-    const container = $('#emploi-du-temps-eleve');
-    container.innerHTML = '';
+    // Cibler les éléments existants dans le HTML statique
+    const timeSlots = $('#time-slots-eleve');
+    const daysGrid  = $('#days-grid-eleve');
+    if (!timeSlots || !daysGrid) return;
+
+    timeSlots.innerHTML = '';
+    daysGrid.innerHTML  = '';
 
     const monday = getMonday(new Date());
     monday.setDate(monday.getDate() + (currentWeekOffsetEleve * 7));
 
-    const dayNames = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
 
-    // Créer structure avec flexbox
-    const table = document.createElement('div');
-    table.className = 'schedule-table';
-
-    // Colonne des heures
-    const hourColumn = document.createElement('div');
-    hourColumn.className = 'schedule-hour-cell';
-
-    const spacer = document.createElement('div');
-    spacer.className = 'day-header-spacer';
-    hourColumn.appendChild(spacer);
-
-    // Créer les cellules d'heures (7h à 18h) avec hauteur adaptive
-    const width = window.innerWidth;
-    let hourHeight;
-    if (width >= 1920) hourHeight = 60;
-    else if (width >= 1280) hourHeight = 50;
-    else hourHeight = 40;
-
-    for (let hour = 7; hour <= 18; hour++) {
+    // — Colonne des heures (7h à 20h) —
+    for (let hour = SCHEDULE_START_HOUR; hour <= SCHEDULE_END_HOUR; hour++) {
         const hourCell = document.createElement('div');
         hourCell.className = 'schedule-cell';
+        if (hour === SCHEDULE_END_HOUR) {
+            hourCell.style.cssText = 'height:0;overflow:visible;border-bottom:none;';
+        } else {
+            hourCell.style.height = 'var(--hour-height)';
+        }
         hourCell.textContent = `${hour.toString().padStart(2, '0')}:00`;
-        hourColumn.appendChild(hourCell);
+        timeSlots.appendChild(hourCell);
     }
 
-    table.appendChild(hourColumn);
-
-    // Grille des jours
-    const daysGrid = document.createElement('div');
-    daysGrid.className = 'days-grid';
+    // — Grille des 7 jours —
+    const dayLabels  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    const dayKeys    = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
     for (let i = 0; i < 7; i++) {
         const currentDay = new Date(monday);
@@ -3149,43 +3121,32 @@ function createScheduleGridEleve() {
         const dayCol = document.createElement('div');
         dayCol.className = 'day-column';
 
-        // Formatage de la date
-        const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-        const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-
-        const dayLabel = dayNames[i];
-        const dayNum = currentDay.getDate();
-        const monthLabel = monthNames[currentDay.getMonth()];
-
         // En-tête du jour
         const header = document.createElement('div');
-        header.className = `schedule-header-cell ${isToday ? 'today' : ''}`;
-        header.textContent = `${dayLabel} ${dayNum} ${monthLabel}`;
+        header.className = `schedule-header-cell${isToday ? ' today' : ''}`;
+        header.innerHTML = `<span class="day-name">${dayLabels[i]}</span><span class="day-number">${currentDay.getDate()} ${monthNames[currentDay.getMonth()]}</span>`;
         dayCol.appendChild(header);
 
-        // Contenu du jour
+        // Contenu du jour (hauteur gérée par CSS : calc(var(--hour-height) * 13))
         const content = document.createElement('div');
-        content.className = `day-content ${isToday ? 'today-column' : ''}`;
-        content.dataset.day = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'][i];
+        content.className = `day-content${isToday ? ' today-column' : ''}`;
+        content.dataset.day = dayKeys[i];
 
-        // Lignes d'heures avec hauteur adaptative
-        const totalHeight = hourHeight * 12;
-        content.style.height = totalHeight + 'px';
-
-        for (let j = 0; j < 12; j++) {
+        for (let j = 0; j < SCHEDULE_HOURS; j++) {
             const line = document.createElement('div');
             line.className = 'hour-line';
-            line.style.top = (j * hourHeight) + 'px';
-            line.style.height = hourHeight + 'px';
+            line.style.top = `calc(var(--hour-height) * ${j})`;
             content.appendChild(line);
+
+            const halfLine = document.createElement('div');
+            halfLine.className = 'half-hour-line';
+            halfLine.style.top = `calc(var(--hour-height) * ${j} + var(--hour-height) / 2)`;
+            content.appendChild(halfLine);
         }
 
         dayCol.appendChild(content);
         daysGrid.appendChild(dayCol);
     }
-
-    table.appendChild(daysGrid);
-    container.appendChild(table);
 }
 
 function updateEmploiDuTempsEleve() {
@@ -3234,11 +3195,7 @@ function updateEmploiDuTempsEleve() {
                     seanceBlock.className = `seance-block-eleve activity-color-${act.id % 8} ${isPast ? 'past' : ''}`;
                     seanceBlock.dataset.activityId = act.id;
 
-                    const width = window.innerWidth;
-                    let pixelsPerMinute;
-                    if (width >= 1920) pixelsPerMinute = 1;
-                    else if (width >= 1280) pixelsPerMinute = 50/60;
-                    else pixelsPerMinute = 40/60;
+                    const pixelsPerMinute = getHourHeight() / 60;
 
                     seanceBlock.style.top = `${topMinutes}px`;
                     seanceBlock.style.height = `${duree * pixelsPerMinute}px`;

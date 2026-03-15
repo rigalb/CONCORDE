@@ -37,7 +37,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Chemin vers la base de données (doit correspondre à app.py)
-DB = "essaie.db"
+import os as _os
+DB = _os.environ.get("DB_PATH", "essaie.db")
 
 
 # ==============================================================================

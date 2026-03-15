@@ -167,6 +167,14 @@
   --gap:       16px;
   --max-width: 1600px;
 
+  /* Hauteur d'une case horaire dans l'emploi du temps.
+     Mise à jour à chaque breakpoint dans styles.css.
+     Lire en JS via : parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hour-height')) */
+  --hour-height: 35px;
+  /* Nombre d'heures affichées (7h → 20h = 13) */
+  --schedule-start-hour: 7;
+  --schedule-hours: 13;
+
   font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
 
 

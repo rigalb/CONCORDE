@@ -1044,7 +1044,7 @@ header {
 }
 
 .schedule-cell {
-  height: 35px;
+  height: var(--hour-height);
   border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: flex-start;
@@ -1122,15 +1122,24 @@ header {
 /* Day content */
 .day-content {
   position: relative;
-  height: 420px; /* 12 hours × 35px */
+  height: calc(var(--hour-height) * 13); /* 13 hours × height (7h→20h) */
 }
 
 .hour-line {
   position: absolute;
   width: 100%;
-  height: 35px;
+  height: var(--hour-height);
   border-bottom: 1px solid var(--border-light);
   background: var(--card);
+}
+
+/* Ligne de demi-heure */
+.half-hour-line {
+  position: absolute;
+  width: 100%;
+  border-bottom: 1px dashed var(--border-light);
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .day-content.today-column {
@@ -2339,6 +2348,7 @@ textarea {
   SMALL DEVICES (480px+)
 ---------------------------------------- */
 @media (min-width: 480px) {
+  :root { --hour-height: 40px; }
   body {
     padding: 12px;
   }
@@ -2402,16 +2412,16 @@ textarea {
   }
 
   .schedule-cell {
-    height: 40px;
+    height: var(--hour-height);
     font-size: 9px;
   }
 
   .day-content {
-    height: 480px;
+    height: calc(var(--hour-height) * 13);
   }
 
   .hour-line {
-    height: 40px;
+    height: var(--hour-height);
   }
 
   .seance-block-prof,
@@ -2477,6 +2487,7 @@ textarea {
 
   :root {
     --gap: 18px;
+    --hour-height: 50px;
   }
 
   .wrap {
@@ -2615,16 +2626,16 @@ textarea {
   }
 
   .schedule-cell {
-    height: 50px;
+    height: var(--hour-height);
     font-size: 10px;
   }
 
   .day-content {
-    height: 600px;
+    height: calc(var(--hour-height) * 13);
   }
 
   .hour-line {
-    height: 50px;
+    height: var(--hour-height);
   }
 
   .seance-block-prof,
@@ -2732,6 +2743,7 @@ textarea {
 @media (min-width: 1024px) {
   :root {
     --gap: 20px;
+    --hour-height: 55px;
   }
 
   .wrap {
@@ -2840,16 +2852,16 @@ textarea {
   }
 
   .schedule-cell {
-    height: 55px;
+    height: var(--hour-height);
     font-size: 11px;
   }
 
   .day-content {
-    height: 660px;
+    height: calc(var(--hour-height) * 13);
   }
 
   .hour-line {
-    height: 55px;
+    height: var(--hour-height);
   }
 
   .seance-block-prof,
@@ -2934,6 +2946,7 @@ textarea {
   DESKTOPS (1280px+)
 ---------------------------------------- */
 @media (min-width: 1280px) {
+  :root { --hour-height: 60px; }
   .wrap {
     max-width: 95%;
   }
@@ -2968,16 +2981,16 @@ textarea {
   }
 
   .schedule-cell {
-    height: 60px;
+    height: var(--hour-height);
     font-size: 11px;
   }
 
   .day-content {
-    height: 720px;
+    height: calc(var(--hour-height) * 13);
   }
 
   .hour-line {
-    height: 60px;
+    height: var(--hour-height);
   }
 
   .seance-block-prof,
