@@ -134,7 +134,7 @@ function showAlert(message, title = 'Information') {
                 <div class="modal-header">
                     <h3 id="cmodal-title">${title}</h3>
                 </div>
-                <div class="modal-body" id="cmodal-msg" style="white-space:pre-wrap;">${message}</div>
+                <div class="modal-body cmodal-msg" id="cmodal-msg">${message}</div>
                 <div class="custom-modal-footer">
                     <button id="cmodal-ok" class="btn" autofocus>OK</button>
                 </div>
@@ -171,7 +171,7 @@ function showConfirm(message, title = 'Confirmation', confirmLabel = 'Confirmer'
                 <div class="modal-header">
                     <h3 id="cmodal-title">${title}</h3>
                 </div>
-                <div class="modal-body" id="cmodal-msg" style="white-space:pre-wrap;">${message}</div>
+                <div class="modal-body cmodal-msg" id="cmodal-msg">${message}</div>
                 <div class="custom-modal-footer">
                     <button id="cmodal-cancel" class="btn secondary">${cancelLabel}</button>
                     <button id="cmodal-confirm" class="btn" autofocus>${confirmLabel}</button>
@@ -495,7 +495,7 @@ function getWeekNumber(date) {
  * Miroir exact des valeurs définies dans styles.css / design_tokens.css.
  * C'est la source de vérité JS — modifier ici ET dans le CSS ensemble.
  *
- * Breakpoints CSS → --hour-height :
+ * Breakpoints CSS -> --hour-height :
  *   base (<480px)  : 35px
  *   480px+         : 40px
  *   768px+         : 50px
@@ -674,6 +674,30 @@ async function checkAuthStatus() {
 /* ===========================
     Récupération des données
     =========================== */
+/**
+ * Charge toutes les pages d'un endpoint paginé.
+ * Supporte : réponse tableau brut OU { data, has_more, page }
+ */
+async function _fetchAllPages(url) {
+    const first = await apiGet(url).catch(() => ({ data: [] }));
+    // Réponse non paginée (tableau brut) -> retour direct
+    if (Array.isArray(first)) return first;
+
+    let results = first.data ?? [];
+    let page = first.page ?? 1;
+    let hasMore = first.has_more ?? false;
+
+    while (hasMore) {
+        page++;
+        const next = await apiGet(`${url}?page=${page}`).catch(() => ({ data: [], has_more: false }));
+        const nextData = Array.isArray(next) ? next : (next.data ?? []);
+        results = results.concat(nextData);
+        hasMore = Array.isArray(next) ? false : (next.has_more ?? false);
+    }
+
+    return results;
+}
+
 async function fetchAllData() {
     try {
         if (!currentUser) {
@@ -695,8 +719,6 @@ async function fetchAllData() {
             rawActivites,
             rawActiviteClasses,
             rawSeances,
-            rawInscriptions,
-            rawInscriptionsSeances
         ] = await Promise.all([
             apiGet('/classes'),
             isStaff ? apiGet('/users').catch(() => []) : Promise.resolve([currentUser]),
@@ -705,8 +727,6 @@ async function fetchAllData() {
             apiGet('/activites'),
             apiGet('/activite_classes'),
             apiGet('/seances'),
-        apiGet('/inscriptions').catch(() => ({ data: [] })),
-        apiGet('/inscriptions/seances').catch(() => ({ data: [] }))
         ]);
 
         classes       = rawClasses;
@@ -714,11 +734,9 @@ async function fetchAllData() {
         groupes       = rawGroupes;
         groupeClasses = rawGroupeClasses;
 
-        // Les endpoints /inscriptions et /inscriptions/seances sont paginés :
-        // la réponse est { data: [...], page, total, has_more }
-        // On extrait .data (ou on accepte un tableau brut pour rétrocompat)
-        const inscriptionsData      = Array.isArray(rawInscriptions)      ? rawInscriptions      : (rawInscriptions?.data      ?? []);
-        const inscriptionsSeancesData = Array.isArray(rawInscriptionsSeances) ? rawInscriptionsSeances : (rawInscriptionsSeances?.data ?? []);
+        // Charger TOUTES les pages d'inscriptions (endpoint paginé)
+        const inscriptionsData        = await _fetchAllPages('/inscriptions');
+        const inscriptionsSeancesData = await _fetchAllPages('/inscriptions/seances');
 
         // Enrichir chaque activité
         activites = rawActivites.map(act => {
@@ -1576,10 +1594,7 @@ function majListeActivitesEleve() {
                     const effectifInfo = document.createElement('span');
                     effectifInfo.className = 'seance-effectif';
                     effectifInfo.textContent = `${inscritsSeance}/${act.effectif_max}`;
-                    effectifInfo.style.fontSize = '10px';
-                    effectifInfo.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
-                    effectifInfo.style.fontWeight = '600';
-                    effectifInfo.style.marginRight = '8px';
+                    effectifInfo.classList.toggle('seance-effectif--full', inscritsSeance >= act.effectif_max);
 
                     const btn = document.createElement('button');
                     btn.className = 'seance-btn';
@@ -1616,13 +1631,10 @@ function majListeActivitesEleve() {
                 });
             } else {
                 const btnContainer = document.createElement('div');
-                btnContainer.style.marginTop = '8px';
-                btnContainer.style.paddingTop = '8px';
-                btnContainer.style.borderTop = '1px solid #e2e8f0';
+                btnContainer.className = 'seance-btn-container';
 
                 const btn = document.createElement('button');
-                btn.className = 'btn';
-                btn.style.width = '100%';
+                btn.className = 'btn btn--full';
 
                 if (!inscriptionsOuvertes) {
                     btn.textContent = 'Inscriptions fermées';
@@ -1689,7 +1701,7 @@ function majComptesActivitesEleve() {
     activites.forEach(act => {
         if (!act.classe_ids.includes(classeId)) return;
         const ouverture = new Date(act.date_ouverture_inscriptions);
-        // Si la période vient d'ouvrir (dans les 10 dernières secondes) → re-render complet
+        // Si la période vient d'ouvrir (dans les 10 dernières secondes) -> re-render complet
         if (ouverture <= now && (now - ouverture) < 10000) {
             needsFullRender = true;
         }
@@ -1783,7 +1795,7 @@ function majComptesActivitesEleve() {
                                 const effectifSpan = item.querySelector('.seance-effectif');
                                 if (effectifSpan) {
                                     effectifSpan.textContent = `${inscritsSeance}/${act.effectif_max}`;
-                                    effectifSpan.style.color = inscritsSeance >= act.effectif_max ? '#dd1738' : 'var(--muted)';
+                                    effectifSpan.classList.toggle('seance-effectif--full', inscritsSeance >= act.effectif_max);
                                 }
                                 // Mettre à jour l'état du bouton (si la séance n'est pas passée/fermée)
                                 if (!btn.disabled || btn.classList.contains('inscrit') || btn.classList.contains('libre')) {
@@ -2016,27 +2028,20 @@ async function inscrireActivite(activiteId) {
     if (btn) { btn.disabled = true; btn.textContent = 'En cours…'; }
 
     try {
-        // Vérification groupe d'exclusivité côté client (AMÉLIORÉE)
         const activite = activites.find(a => a.id === activiteId);
+
+        // Vérification groupe d'exclusivité côté client
         if (activite && activite.groupe_id) {
             // Chercher si déjà inscrit à une autre activité du même groupe
             const conflit = activites.find(a => {
-                if (a.groupe_id !== activite.groupe_id || a.id === activiteId) {
-                    return false;
-                }
-
+                if (a.groupe_id !== activite.groupe_id || a.id === activiteId) return false;
                 // Vérifier inscription selon le type d'activité
-                if (a.separable) {
-                    // Pour activité séparable, vérifier chaque séance
-                    return a.seances?.some(seance =>
-                        seance.inscriptions?.includes(currentUser.id)
-                    );
-                } else {
-                    // Pour activité non séparable, vérifier inscription globale
-                    return a.inscriptions?.includes(currentUser.id);
-                }
-            });
 
+                // Pour activité séparable, vérifier chaque séance
+                if (a.separable) return a.seances?.some(seance => seance.inscriptions?.includes(currentUser.id));
+                // Pour activité non séparable, vérifier inscription globale
+                return a.inscriptions?.includes(currentUser.id);
+            });
             if (conflit) {
                 await showAlert(`Impossible : vous êtes déjà inscrit à "${conflit.titre}" du même groupe d'activité.`);
                 return;
@@ -2055,15 +2060,23 @@ async function inscrireActivite(activiteId) {
         updateEmploiDuTempsEleve();
 
         await apiPost('/inscriptions', {activite_id: activiteId});
-        // La mise à jour optimiste est déjà en place.
-        // Le SSE confirmera le vrai nb_inscrits depuis le serveur via majComptesActivitesEleve().
-        // Pas de fetchAllData() ici pour ne pas bloquer les actions rapides enchaînées.
+        // Le SSE echo va confirmer nb_inscrits depuis le serveur.
     } catch(e) {
-        // Rollback si erreur : resynchronisation complète
-        await fetchAllData();
-        majListeActivitesEleve();
-        updateEmploiDuTempsEleve();
-        await showAlert('Erreur: ' + e.message);
+        if (e.message?.includes('Déjà inscrit')) {
+            // Désynchronisation : corriger le modèle local sans re-render brutal
+            const activite = activites.find(a => a.id === activiteId);
+            if (activite && !activite.separable && !activite.inscriptions.includes(currentUser.id)) {
+                activite.inscriptions.push(currentUser.id);
+            }
+            majComptesActivitesEleve();
+            updateEmploiDuTempsEleve();
+        } else {
+            // Rollback si erreur : resynchronisation complète
+            await fetchAllData();
+            majListeActivitesEleve();
+            updateEmploiDuTempsEleve();
+            await showAlert('Erreur: ' + e.message);
+        }
     } finally {
         _lastActionTsByKey.set(`inscr-act-${activiteId}`, Date.now());
         _btnDebounce.set(lockKey, Date.now());
@@ -2255,7 +2268,7 @@ function majListeActivitesProf() {
         return;
     }
 
-    // Grouper par groupe_id (null → "Sans groupe")
+    // Grouper par groupe_id (null -> "Sans groupe")
     const parGroupe = new Map();
     // D'abord les groupes connus dans l'ordre
     groupes.forEach(g => parGroupe.set(g.id, { groupe: g, actes: [] }));
@@ -2872,7 +2885,7 @@ function createScheduleGridProf() {
         const hourCell = document.createElement('div');
         hourCell.className = 'schedule-cell';
         if (hour === SCHEDULE_END_HOUR) {
-            hourCell.style.cssText = 'height:0;overflow:visible;border-bottom:none;';
+            hourCell.classList.add('schedule-cell--end');
         } else {
             hourCell.style.height = 'var(--hour-height)';
         }
@@ -3088,7 +3101,7 @@ function createScheduleGridEleve() {
         const hourCell = document.createElement('div');
         hourCell.className = 'schedule-cell';
         if (hour === SCHEDULE_END_HOUR) {
-            hourCell.style.cssText = 'height:0;overflow:visible;border-bottom:none;';
+            hourCell.classList.add('schedule-cell--end');
         } else {
             hourCell.style.height = 'var(--hour-height)';
         }
@@ -4495,13 +4508,17 @@ function showToast(msg, duration = 3000) {
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'app-toast';
-        toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--primary,#4f46e5);color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s;max-width:320px;';
+        toast.className = 'app-toast';
         document.body.appendChild(toast);
     }
     toast.textContent = msg;
-    toast.style.opacity = '1';
+    toast.classList.remove('app-toast--hidden');
+    toast.classList.add('app-toast--visible');
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+    toast._t = setTimeout(() => {
+        toast.classList.remove('app-toast--visible');
+        toast.classList.add('app-toast--hidden');
+    }, duration);
 }
 
 function initStaticEventListeners() {
@@ -4569,7 +4586,7 @@ function initStaticEventListeners() {
         btnSaveGroupe.addEventListener('click', creerGroupe);
     }
 
-    // Enter dans le champ nom du groupe → valider
+    // Enter dans le champ nom du groupe -> valider
     document.getElementById('nouveau-groupe-nom')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); creerGroupe(); }
     });
@@ -4778,7 +4795,7 @@ async function handleInscriptionEvent(event) {
         const ECHO_GRACE_MS = 1500;
         // Détecter si cet event SSE est l'écho de NOTRE propre action récente (<1.5s).
         // Les inscriptions manuelles par admin/prof ont eleveId = l'élève inscrit,
-        // pas le user courant → pas de filtre echo pour elles (ce qui est voulu :
+        // pas le user courant -> pas de filtre echo pour elles (ce qui est voulu :
         // l'admin doit voir son propre compteur se mettre à jour).
         const isEcho = eleveId === currentUser?.id && (() => {
             const t = (k) => { const ts = _lastActionTsByKey.get(k); return ts && (nowTs - ts) < ECHO_GRACE_MS; };
@@ -4795,15 +4812,10 @@ async function handleInscriptionEvent(event) {
                 return t(`desinscr-seance-${seanceId}`);
             return false;
         })();
-        if (isEcho) {
-            console.log('[SSE] [SKIP] Echo de notre action (<1.5s), ignoré');
-            return;
-        }
-
         // --- Mise à jour du modèle en mémoire ---
-        // IMPORTANT : mettre à jour _serverNbInscrits EN PREMIER, avant tout appel
-        // à _updateActiviteCardProf ou getInscritsCount, pour que ces fonctions lisent
-        // la valeur authoritative du serveur et non l'ancien compteur local.
+        // _serverNbInscrits est TOUJOURS mis à jour (même pour nos propres echos) car
+        // c'est la valeur authoritative du serveur.
+        // act.inscriptions n'est modifié que si ce n'est pas notre echo (déjà fait en optimiste).
         if (activiteId) {
             const act = activites.find(a => a.id === activiteId);
             if (act) {
@@ -4813,7 +4825,7 @@ async function handleInscriptionEvent(event) {
                         act._serverNbInscrits = data.nb_inscrits;
                     }
                     // 2. Mettre à jour la liste locale (pour les vues qui itèrent dessus)
-                    if (!act.separable && eleveId && !act.inscriptions.includes(eleveId)) {
+                    if (!isEcho && !act.separable && eleveId && !act.inscriptions.includes(eleveId)) {
                         act.inscriptions.push(eleveId);
                     }
                 } else if (event.type === 'inscription_deleted') {
@@ -4822,7 +4834,7 @@ async function handleInscriptionEvent(event) {
                         act._serverNbInscrits = data.nb_inscrits;
                     }
                     // 2. Liste locale
-                    if (!act.separable) {
+                    if (!isEcho && !act.separable) {
                         act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
                     }
                 } else if (event.type === 'inscription_seance_created' && seanceId) {
@@ -4833,7 +4845,7 @@ async function handleInscriptionEvent(event) {
                             seance._serverNbInscrits = data.nb_inscrits_seance;
                         }
                         // 2. Liste locale
-                        if (eleveId && !seance.inscriptions.includes(eleveId)) {
+                        if (!isEcho && eleveId && !seance.inscriptions.includes(eleveId)) {
                             seance.inscriptions.push(eleveId);
                             if (act.separable && !act.inscriptions.includes(eleveId)) {
                                 act.inscriptions.push(eleveId);
@@ -4847,16 +4859,25 @@ async function handleInscriptionEvent(event) {
                         if (data.nb_inscrits_seance !== undefined) {
                             seance._serverNbInscrits = data.nb_inscrits_seance;
                         }
-                        // 2. Liste locale
-                        seance.inscriptions = seance.inscriptions.filter(id => id !== eleveId);
-                        // Si l'élève n'a plus aucune séance dans cette activité → retirer de act.inscriptions
-                        if (act.separable) {
-                            const encoreInscrit = act.seances.some(s => s.inscriptions.includes(eleveId));
-                            if (!encoreInscrit) act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
+                        if (!isEcho) {
+                            // 2. Liste locale
+                            seance.inscriptions = seance.inscriptions.filter(id => id !== eleveId);
+                            // Si l'élève n'a plus aucune séance dans cette activité -> retirer de act.inscriptions
+                            if (act.separable) {
+                                const encoreInscrit = act.seances.some(s => s.inscriptions.includes(eleveId));
+                                if (!encoreInscrit) act.inscriptions = act.inscriptions.filter(id => id !== eleveId);
+                            }
                         }
                     }
                 }
             }
+        }
+
+        // Echo : _serverNbInscrits mis à jour -> rafraîchir compteurs puis sortir
+        if (isEcho) {
+            if (currentUser.role === 'eleve') majComptesActivitesEleve();
+            else if (activiteId) _updateActiviteCardProf(activiteId);
+            return;
         }
 
         // --- Mise à jour DOM ciblée ---
@@ -5007,7 +5028,7 @@ async function handleEchangesSSE(event) {
             chargerPendingProcedures();
         }
 
-        // Mettre à jour le badge vœux
+        // Mettre à jour le badge voeux
         if (typeof majVisibiliteTabEchanges === 'function') {
             majVisibiliteTabEchanges();
         }
@@ -5273,11 +5294,11 @@ function majVisibiliteTabEchanges() {
 }
 
 
-// -- Vue admin : vœux formulés + demandes d'échange -----------
+// -- Vue admin : voeux formulés + demandes d'échange -----------
 async function chargerEchangesAdmin(panel) {
     const groupesActifs = groupes.filter(g => g.echanges_actifs);
 
-    // Récupérer tous les vœux de tous les groupes actifs en parallèle
+    // Récupérer tous les voeux de tous les groupes actifs en parallèle
     let tousVoeux = [];
     try {
         const resultats = await Promise.all(
@@ -5298,18 +5319,18 @@ async function chargerEchangesAdmin(panel) {
     panel.innerHTML = `
         <div class="admin-echanges-wrap">
 
-            <!-- PANNEAU 1 : Vœux formulés -->
+            <!-- PANNEAU 1 : Voeux formulés -->
             <details class="panel-collapsible mt-16" open>
                 <summary class="panel-header">
                     <h4 class="flex items-center gap-8">
                         <svg viewBox="0 0 24 24" class="w-18 h-18 svg-fill-current"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
-                        Vœux formulés
+                        Voeux formulés
                         <span class="nb-badge">(${tousVoeux.length})</span>
                     </h4>
                 </summary>
                 <div class="admin-voeux-liste">
                     ${tousVoeux.length === 0
-                        ? '<p class="muted text-center p-20">Aucun vœu actif.</p>'
+                        ? '<p class="muted text-center p-20">Aucun voeu actif.</p>'
                         : tousVoeux.map(v => renderCarteVoeuAdmin(v)).join('')
                     }
                 </div>
@@ -5350,7 +5371,7 @@ function renderCarteVoeuAdmin(v) {
             ${statut}
         </div>
         <div class="admin-voeu-actions">
-            <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce vœu">
+            <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce voeu">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
                 Supprimer
             </button>
@@ -5494,7 +5515,7 @@ function renderEchangesPanel(container, groupe, voeux) {
         a.groupe_id === groupe.id && a.inscriptions?.includes(currentUser.id)
     );
 
-    // Mes vœux actifs
+    // Mes voeux actifs
     const mesVoeux = voeux.filter(v => v.eleve_id === currentUser.id);
 
     // Badge
@@ -5508,18 +5529,18 @@ function renderEchangesPanel(container, groupe, voeux) {
     let html = `
     <div class="echanges-panel-wrap">
 
-      <!-- Mes vœux -->
+      <!-- Mes voeux -->
       <div class="echanges-section">
         <div class="echanges-section-header">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
-          <h4>Mes vœux d'échange</h4>
+          <h4>Mes voeux d'échange</h4>
           <button class="btn" data-action="ouvrir-voeu" data-groupe-id="${groupe.id}">
             <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"/></svg>
-            Formuler un vœu
+            Formuler un voeu
           </button>
         </div>
         ${mesVoeux.length === 0
-            ? '<p class="muted small">Vous n\'avez pas encore formulé de vœu d\'échange.</p>'
+            ? '<p class="muted small">Vous n\'avez pas encore formulé de voeu d\'échange.</p>'
             : mesVoeux.map(v => renderCarteMonVoeu(v)).join('')
         }
       </div>
@@ -5527,13 +5548,13 @@ function renderEchangesPanel(container, groupe, voeux) {
       <!-- Séparateur -->
       <div class="echanges-sep"></div>
 
-      <!-- Vœux des autres -->
+      <!-- Voeux des autres -->
       <div class="echanges-section">
         <div class="echanges-section-header">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
           </svg>
-          <h4>Vœux des autres élèves</h4>
+          <h4>Voeux des autres élèves</h4>
           <div class="echanges-filtres">
             <button class="btn ${filtreEchanges==='tous'?'':'secondary'}" data-action="filtre-echanges" data-filtre="tous" data-groupe-id="${groupe.id}">Tous</button>
             <button class="btn ${filtreEchanges==='compatibles'?'':'secondary'}" data-action="filtre-echanges" data-filtre="compatibles" data-groupe-id="${groupe.id}">Compatibles avec moi</button>
@@ -5559,7 +5580,7 @@ function renderCarteMonVoeu(v) {
         <span class="voeu-to">${v.activite_cible_titre || '?'}</span>
         <span class="voeu-statut statut-${v.statut}">${labelStatut(v.statut)}</span>
       </div>
-      <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Retirer ce vœu">
+      <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Retirer ce voeu">
         <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
       </button>
     </div>`;
@@ -5573,7 +5594,7 @@ function renderVoeuxAutres(voeux, monActivite) {
         );
     }
     if (filtered.length === 0) {
-        return '<p class="muted small">Aucun vœu' + (filtreEchanges === 'compatibles' ? ' compatible' : '') + ' pour l\'instant.</p>';
+        return '<p class="muted small">Aucun voeu' + (filtreEchanges === 'compatibles' ? ' compatible' : '') + ' pour l\'instant.</p>';
     }
     return filtered.map(v => renderCarteVoeuAutre(v, monActivite)).join('');
 }
@@ -5582,7 +5603,7 @@ function renderCarteVoeuAutre(v, monActivite) {
     // Est-ce un échange possible avec moi ?
     const compatible = monActivite && v.activite_cible_id === monActivite.id;
 
-    // Mon vœu vers son activité actuelle ?
+    // Mon voeu vers son activité actuelle ?
     const monVoeuVersSon = echangesData.voeux.find(mv =>
         mv.eleve_id === currentUser.id && mv.activite_cible_id === v.activite_actuelle_id
     );
@@ -5624,7 +5645,7 @@ function setFiltreEchanges(filtre, groupeId) {
     if (groupe) chargerVoeuxGroupe(groupe, document.getElementById('echanges-content') || document.getElementById('echanges-panel'));
 }
 
-// -- Formuler un vœu -----------------------------------------
+// -- Formuler un voeu -----------------------------------------
 async function ouvrirModalVoeu(groupeId) {
     const groupe = groupes.find(g => g.id === groupeId);
     if (!groupe) return;
@@ -5655,7 +5676,7 @@ async function ouvrirModalVoeu(groupeId) {
           <div class="activity-actions">
             <button class="btn-action inscrire" data-activite-id="${act.id}" data-groupe-id="${groupeId}">
               <svg viewBox="0 0 24 24" class="icon-inline"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-              Formuler ce vœu
+              Formuler ce voeu
             </button>
           </div>
         </div>`;
@@ -5664,7 +5685,7 @@ async function ouvrirModalVoeu(groupeId) {
     modal.innerHTML = `
       <div class="modal-content modal-large">
         <div class="modal-header">
-          <h3>Formuler un vœu d'échange — ${groupe.nom}</h3>
+          <h3>Formuler un voeu d'échange — ${groupe.nom}</h3>
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
@@ -5685,7 +5706,7 @@ async function ouvrirModalVoeu(groupeId) {
                     activite_cible_id: parseInt(btn.dataset.activiteId)
                 });
                 modal.remove();
-                showToast('Vœu enregistré !');
+                showToast('Voeu enregistré !');
                 await fetchAllData();
                 chargerEchangesEleve();
             } catch(err) {
@@ -5699,10 +5720,10 @@ async function ouvrirModalVoeu(groupeId) {
 }
 
 async function retirerVoeu(voeuId) {
-    if (!await showConfirm('Retirer ce vœu d\'échange ?')) return;
+    if (!await showConfirm('Retirer ce voeu d\'échange ?')) return;
     try {
         await fetch(`/echanges/voeux/${voeuId}`, { method: 'DELETE', credentials: 'same-origin' });
-        showToast('Vœu retiré.');
+        showToast('Voeu retiré.');
         await fetchAllData();
         if (currentUser?.role === 'admin') {
             chargerPendingProcedures();
@@ -5752,7 +5773,7 @@ async function chargerPendingProcedures() {
         const badge = document.getElementById('badge-pending');
         if (badge) { badge.textContent = procs.length; badge.classList.toggle('hidden', procs.length === 0); }
 
-        // Vœux actifs (admin seulement)
+        // Voeux actifs (admin seulement)
         let tousVoeux = [];
         if (isAdmin) {
             const groupesActifs = groupes.filter(g => g.echanges_actifs);
@@ -5766,20 +5787,20 @@ async function chargerPendingProcedures() {
 
         let html = '';
 
-        // -- Panneau vœux (admin uniquement) ----------------------
+        // -- Panneau voeux (admin uniquement) ----------------------
         if (isAdmin) {
             html += `
             <details class="panel-collapsible mt-16" open>
                 <summary class="panel-header">
                     <h4 class="flex items-center gap-8">
                         <svg viewBox="0 0 24 24" class="w-18 h-18 svg-fill-current"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zM3 21a9 9 0 0118 0H3z"/></svg>
-                        Vœux formulés
+                        Voeux formulés
                         <span class="nb-badge">(${tousVoeux.length})</span>
                     </h4>
                 </summary>
                 <div class="admin-voeux-liste">
                     ${tousVoeux.length === 0
-                        ? '<p class="muted text-center p-20">Aucun vœu actif.</p>'
+                        ? '<p class="muted text-center p-20">Aucun voeu actif.</p>'
                         : tousVoeux.map(v => {
                             const statut = v.statut === 'en_procedure'
                                 ? '<span class="voeu-statut statut-en_procedure">En cours</span>'
@@ -5797,7 +5818,7 @@ async function chargerPendingProcedures() {
                                     ${statut}
                                 </div>
                                 <div class="admin-voeu-actions">
-                                    <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce vœu">
+                                    <button class="btn ghost btn-sm" data-action="retirer-voeu" data-voeu-id="${v.id}" title="Supprimer ce voeu">
                                         <svg class="icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
                                         Supprimer
                                     </button>
@@ -5847,7 +5868,7 @@ async function validerEchange(procId) {
 }
 
 async function annulerEchangeProf(procId) {
-    if (!await showConfirm('Refuser cet échange ? Les deux vœux resteront actifs.')) return;
+    if (!await showConfirm('Refuser cet échange ? Les deux voeux resteront actifs.')) return;
     try {
         await apiPost(`/echanges/procedures/${procId}/annuler`, {});
         showToast('Échange refusé.');

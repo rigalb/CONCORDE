@@ -3428,3 +3428,15 @@ textarea {
     from { opacity: 0; transform: translateY(-12px) scale(.97); }
     to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* ===========================
+   CSP-SAFE — classes remplaçant les styles inline JS
+   =========================== */
+.seance-effectif { font-size: 10px; color: var(--text-muted); font-weight: 600; margin-right: 8px; }
+.seance-effectif--full { color: #dd1738; }
+.seance-btn-container { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+.btn--full { width: 100%; }
+.seance-label { min-width: 110px; }
+.app-toast { position: fixed; bottom: 24px; right: 24px; background: var(--primary, #4f46e5); color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,.2); transition: opacity .3s; max-width: 320px; opacity: 0; }
+.app-toast--visible { opacity: 1; }
+.app-toast--hidden  { opacity: 0; }
+.schedule-cell--end { height: 0 !important; overflow: visible; border-bottom: none; }
