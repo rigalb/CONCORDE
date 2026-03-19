@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # -- Stdlib ---------------------------------------------------------------
-from flask import Flask, request, session, jsonify, send_from_directory, send_file, Response
+from flask import Flask, request, session, jsonify, send_from_directory, send_file, Response, g
 import queue
 import json
 import time
@@ -332,6 +332,39 @@ app.config.update(
 )
 
 # ========================
+# MIDDLEWARE PRIORITÉ ADMIN
+# ========================
+@app.before_request
+def _mark_admin_priority():
+  """Enregistre les requêtes admin prioritaires et vérifie les timeouts"""
+  g.is_admin_priority = request.headers.get('X-Admin-Priority', 'false').lower() == 'true'
+  if g.is_admin_priority:
+    from flask import session as flask_session
+    user_id = flask_session.get('user_id')
+    # Log les requêtes admin prioritaires
+    logger.info(f"[ADMIN PRIORITY] {request.method} {request.path} from user {user_id}")
+  
+  # Vérifier les timeouts de déconnexion
+  if 'user_id' in session:
+    user_id = session['user_id']
+    conn = get_db_read()
+    user = conn.execute("SELECT blocked_until FROM users WHERE id=?", (user_id,)).fetchone()
+    _release_db(conn)
+    
+    if user and user['blocked_until']:
+      # Vérifier si le timeout est toujours actif
+      blocked_until_dt = datetime.fromisoformat(user['blocked_until'])
+      if blocked_until_dt > now_local():
+        # Timeout actif - déconnecter l'utilisateur
+        session.clear()
+        logger.warning(f"[TIMEOUT] User {user_id} déconnecté automatiquement (timeout)")
+        # Envoyer un event SSE pour notifier le client
+        sse_manager.kick_user(user_id)
+        # Si c'est un SSE qui fait cette requête, fermer la connexion
+        if request.path == '/sse':
+          return jsonify({"error": "Compte désactivé par timeout"}), 403
+
+# ========================
 # RATE LIMITING (Flask-Limiter)
 # ========================
 limiter = Limiter(
@@ -380,6 +413,12 @@ def init_db():
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA cache_size=-32000;")
     conn.execute("PRAGMA temp_store=MEMORY;")
+
+    # -- Colonnes de timeout/blocage (idempotent) --
+    try:
+      conn.execute("ALTER TABLE users ADD COLUMN blocked_until TEXT DEFAULT NULL")
+    except Exception:
+      pass
 
     # -- Colonnes échanges sur groupes_exclusivite (idempotent) --
     try:
@@ -1666,6 +1705,8 @@ def inscrire():
     sse_manager.broadcast('inscription_created', {
       'eleve_id': user_id, 'activite_id': activite_id, 'nb_inscrits': nb_inscrits
     })
+    # SSE pour rafraîchiir les sessions de l'activité côté élève
+    sse_manager.broadcast('seances_update', {'activite_id': activite_id})
     logger.info(f"Inscription: user {user_id} -> activite {activite_id}")
     return jsonify({"success": True, "nb_inscrits": nb_inscrits})
 
@@ -1726,6 +1767,8 @@ def desinscrire():
       'activite_id': activite_id,
       'nb_inscrits': nb_inscrits
     })
+    # SSE pour rafraîchiir les sessions de l'activité côté élève
+    sse_manager.broadcast('seances_update', {'activite_id': activite_id})
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
@@ -1854,6 +1897,8 @@ def inscrire_seance():
       'eleve_id': user_id, 'seance_id': seance_id,
       'activite_id': activite_id, 'nb_inscrits_seance': nb_inscrits_seance
     })
+    # SSE pour rafraîchir les sessions de l'activité
+    sse_manager.broadcast('seances_update', {'activite_id': activite_id})
     logger.info(f"Inscription séance: user {user_id} -> séance {seance_id}")
     return jsonify({"success": True, "nb_inscrits": nb_inscrits_seance})
 
@@ -1929,6 +1974,8 @@ def desinscrire_seance():
       'activite_id': activite_id_val,
       'nb_inscrits_seance': nb_inscrits_seance
     })
+    # SSE pour rafraîchir les sessions de l'activité
+    sse_manager.broadcast('seances_update', {'activite_id': activite_id_val})
     if affected == 0:
       return jsonify({"error": "Inscription non trouvée"}), 400
 
@@ -3752,6 +3799,651 @@ _AUTH_STATIC = frozenset({
   "static/auth/forgot_password.js",
   "static/auth/prof_signup.js",
 })
+
+
+# ================================================================
+# ADMIN — Stockage en mémoire (timeouts, tracking login failures)
+# ================================================================
+_admin_timeouts: dict = {}          # user_id -> {until: datetime, reason: str}
+_admin_timeouts_lock = threading.Lock()
+_login_failures: dict = defaultdict(list)  # ip -> [datetime, ...]
+_login_failures_lock = threading.Lock()
+
+def _init_admin_tables():
+  try:
+    conn = get_db_connection()
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS admin_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        user_id INTEGER,
+        actor_id INTEGER,
+        ip TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )
+    """)
+    conn.commit()
+
+    # Recharger en mémoire les timeouts encore actifs depuis la DB
+    # (survie aux redémarrages du serveur)
+    now = now_local()
+    rows = conn.execute(
+      "SELECT id, blocked_until FROM users WHERE blocked_until IS NOT NULL"
+    ).fetchall()
+    with _admin_timeouts_lock:
+      for row in rows:
+        try:
+          until_dt = datetime.fromisoformat(row['blocked_until'])
+          if until_dt > now:
+            if row['id'] not in _admin_timeouts:
+              _admin_timeouts[row['id']] = {
+                'until': until_dt,
+                'reason': 'timeout persisté (redémarrage serveur)',
+              }
+        except Exception:
+          pass
+
+    _release_db(conn)
+  except Exception as e:
+    logger.warning(f"init admin_events: {e}")
+
+try:
+  _init_admin_tables()
+except Exception:
+  pass
+
+def _log_admin(type_: str, msg: str, user_id=None, actor_id=None):
+  try:
+    conn = get_db_connection()
+    conn.execute(
+      "INSERT INTO admin_events (type, message, user_id, actor_id, ip) VALUES (?,?,?,?,?)",
+      (type_, msg, user_id, actor_id,
+       request.remote_addr if request and request.remote_addr else None)
+    )
+    conn.commit()
+    _release_db(conn)
+  except Exception as e:
+    logger.warning(f"_log_admin: {e}")
+
+def _get_timeout(user_id: int):
+  """Retourne le timeout actif pour user_id ou None."""
+  now = datetime.now()
+  with _admin_timeouts_lock:
+    t = _admin_timeouts.get(user_id)
+  if t and t['until'] > now:
+    return t
+  return None
+
+# Middleware : bloquer les requêtes API des users sous timeout admin
+@app.before_request
+def check_admin_timeout():
+  p = request.path
+  # Ne pas bloquer : login, logout, me, sse, pages HTML, admin lui-même
+  skip = ('/', '/login', '/logout', '/me', '/sse', '/api/server-time',
+          '/first-login', '/forgot-password', '/inscription')
+  if p in skip or p.startswith('/admin') or not p.startswith('/'):
+    return None
+  uid = session.get('user_id')
+  if not uid:
+    return None
+  t = _get_timeout(uid)
+  if t:
+    remaining = max(0, int((t['until'] - datetime.now()).total_seconds() / 60))
+    secs = max(0, int((t['until'] - datetime.now()).total_seconds()))
+    if secs < 120:
+      time_str = f"{secs} seconde{'s' if secs != 1 else ''}"
+    else:
+      time_str = f"{remaining} minute{'s' if remaining != 1 else ''}"
+    return jsonify({
+      "error": f"Accès temporairement restreint ({time_str}). Raison : {t.get('reason','—')}",
+      "rate_limited": True,
+      "timeout_until": t['until'].isoformat(),
+      "seconds_left": secs,
+    }), 429
+
+# Enregistrer les échecs de login pour les stats
+_orig_login_handler = None
+
+# -- GET /admin/stats ------------------------------------------
+@app.route("/admin/stats", methods=["GET"])
+@role_required('admin')
+def admin_stats():
+  try:
+    conn = get_db_read()
+    r = lambda q, *a: conn.execute(q, a).fetchone()[0]
+
+    total_users     = r("SELECT COUNT(*) FROM users")
+    total_eleves    = r("SELECT COUNT(*) FROM users WHERE role='eleve'")
+    total_profs     = r("SELECT COUNT(*) FROM users WHERE role IN ('prof','admin')")
+    total_activites = r("SELECT COUNT(*) FROM activites")
+    total_inscrip   = r("SELECT COUNT(*) FROM inscriptions")
+    total_groupes   = r("SELECT COUNT(*) FROM groupes_exclusivite")
+    total_seances   = r("SELECT COUNT(*) FROM seances")
+    eleves_inscrits = r("SELECT COUNT(DISTINCT eleve_id) FROM inscriptions")
+    taux = round(eleves_inscrits / total_eleves * 100, 1) if total_eleves > 0 else 0
+
+    with sse_manager.lock:
+      active_sessions = len(sse_manager.listeners)
+
+    top_activites = conn.execute("""
+      SELECT a.id, a.titre, a.effectif_max, COUNT(i.id) as nb_inscrits,
+             ROUND(COUNT(i.id)*100.0/MAX(a.effectif_max,1),1) as taux_remplissage
+      FROM activites a LEFT JOIN inscriptions i ON a.id=i.activite_id
+      GROUP BY a.id ORDER BY taux_remplissage DESC, nb_inscrits DESC
+    """).fetchall()
+
+    classes_stats = conn.execute("""
+      SELECT c.nom, COUNT(DISTINCT u.id) as nb_eleves,
+             COUNT(DISTINCT i.id) as nb_inscriptions
+      FROM classes c
+      LEFT JOIN users u ON u.classe_id=c.id AND u.role='eleve'
+      LEFT JOIN inscriptions i ON i.eleve_id=u.id
+      GROUP BY c.id ORDER BY c.nom
+    """).fetchall()
+
+    now = datetime.now()
+    with _admin_timeouts_lock:
+      active_timeouts = sum(1 for t in _admin_timeouts.values() if t['until'] > now)
+
+    return jsonify({
+      "total_users": total_users, "total_eleves": total_eleves,
+      "total_profs": total_profs, "total_activites": total_activites,
+      "total_inscriptions": total_inscrip, "total_groupes": total_groupes,
+      "total_seances": total_seances, "eleves_inscrits": eleves_inscrits,
+      "taux_inscription": taux, "active_sessions": active_sessions,
+      "active_timeouts": active_timeouts,
+      "top_activites": [dict(r) for r in top_activites],
+      "classes_stats": [dict(r) for r in classes_stats],
+    })
+  except Exception as e:
+    logger.error(f"admin_stats: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+# -- GET /admin/rate-limits ------------------------------------
+@app.route("/admin/rate-limits", methods=["GET"])
+@role_required('admin')
+def admin_rate_limits():
+  try:
+    conn = get_db_read()
+    now = datetime.now()
+    result = []
+    with _admin_timeouts_lock:
+      snap = dict(_admin_timeouts)
+    for uid, info in snap.items():
+      if info['until'] <= now:
+        continue
+      user = conn.execute(
+        "SELECT id,prenom,nom,email,role FROM users WHERE id=?", (uid,)
+      ).fetchone()
+      if user:
+        secs = max(0, int((info['until'] - now).total_seconds()))
+        result.append({
+          "id": uid,
+          "username": f"{user['prenom']} {user['nom'] or ''}".strip(),
+          "email": user['email'] or '—',
+          "role": user['role'],
+          "timeout_until": info['until'].isoformat(),
+          "timeout_reason": info.get('reason', 'tentatives infructueuses'),
+          "seconds_left": secs,
+          "minutes_left": max(0, secs // 60),
+        })
+    result.sort(key=lambda x: x['seconds_left'], reverse=True)
+    return jsonify({"users": result, "count": len(result)})
+  except Exception as e:
+    logger.error(f"admin_rate_limits: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+# -- POST /admin/rate-limits/<id>/timeout ---------------------
+@app.route("/admin/rate-limits/<int:uid>/timeout", methods=["POST"])
+@role_required('admin')
+def admin_add_timeout(uid):
+  try:
+    d = request.json or {}
+    minutes = max(1, min(10080, int(d.get('minutes', 30))))
+    reason  = sanitize_string(d.get('reason', '') or 'tentatives infructueuses', 200)
+    
+    conn = get_db_connection()
+    user = conn.execute("SELECT prenom, nom FROM users WHERE id=?", (uid,)).fetchone()
+    if not user:
+      _release_db(conn)
+      return jsonify({"error": "Utilisateur introuvable"}), 404
+    
+    # Calculer la date/heure de fin du timeout
+    blocked_until = now_local() + timedelta(minutes=minutes)
+    
+    # Mettre à jour la base de données
+    conn.execute("UPDATE users SET blocked_until=? WHERE id=?", 
+                 (blocked_until.isoformat(), uid))
+    conn.commit()
+    _release_db(conn)
+
+    # Synchroniser le dict mémoire (source de vérité pour /admin/rate-limits)
+    with _admin_timeouts_lock:
+      _admin_timeouts[uid] = {'until': blocked_until, 'reason': reason}
+
+    # Envoyer un event SSE pour kick immédiatement l'utilisateur
+    sse_manager.kick_user(uid)
+    
+    name = f"{user['prenom']} {user['nom'] or ''}".strip()
+    _log_admin('admin', f"Timeout {minutes}min → {name}: {reason}", user_id=uid, actor_id=session['user_id'])
+    
+    logger.info(f"[TIMEOUT] Admin a assigné un timeout à user {uid} jusqu'à {blocked_until}")
+    return jsonify({"success": True, "until": blocked_until.isoformat()})
+  except Exception as e:
+    logger.error(f"admin_add_timeout: {e}")
+    return jsonify({"error": "Erreur serveur"}), 500
+
+# -- POST /admin/rate-limits/<id>/lift ------------------------
+@app.route("/admin/rate-limits/<int:uid>/lift", methods=["POST"])
+@role_required('admin')
+def admin_lift_timeout(uid):
+  try:
+    with _admin_timeouts_lock:
+      removed = _admin_timeouts.pop(uid, None)
+    # Effacer aussi en DB pour cohérence
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET blocked_until=NULL WHERE id=?", (uid,))
+    conn.commit()
+    _release_db(conn)
+    if removed:
+      _log_admin('admin', f"Timeout levé pour user {uid}", user_id=uid, actor_id=session['user_id'])
+    return jsonify({"success": True, "was_active": removed is not None})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/rate-limits/<id>/extend ----------------------
+@app.route("/admin/rate-limits/<int:uid>/extend", methods=["POST"])
+@role_required('admin')
+def admin_extend_timeout(uid):
+  try:
+    d = request.json or {}
+    minutes = max(1, min(10080, int(d.get('minutes', 30))))
+    now = datetime.now()
+    with _admin_timeouts_lock:
+      cur = _admin_timeouts.get(uid)
+      base = cur['until'] if cur and cur['until'] > now else now
+      new_until = base + timedelta(minutes=minutes)
+      _admin_timeouts[uid] = {**(cur or {}), 'until': new_until}
+    # Synchroniser en DB
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET blocked_until=? WHERE id=?", (new_until.isoformat(), uid))
+    conn.commit()
+    _release_db(conn)
+    _log_admin('admin', f"Timeout +{minutes}min pour user {uid}", user_id=uid, actor_id=session['user_id'])
+    return jsonify({"success": True, "until": new_until.isoformat()})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/rate-limits/lift-all -------------------------
+@app.route("/admin/rate-limits/lift-all", methods=["POST"])
+@role_required('admin')
+def admin_lift_all():
+  try:
+    with _admin_timeouts_lock:
+      n = len(_admin_timeouts); _admin_timeouts.clear()
+    # Effacer aussi en DB
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET blocked_until=NULL WHERE blocked_until IS NOT NULL")
+    conn.commit()
+    _release_db(conn)
+    _log_admin('admin', f"Tous timeouts levés ({n})", actor_id=session['user_id'])
+    return jsonify({"success": True, "lifted": n})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+@app.route("/admin/rate-limits/reset-all", methods=["POST"])
+@role_required('admin')
+def admin_reset_all():
+  return admin_lift_all()
+
+# -- POST /admin/rate-limits/timeout-all ----------------------
+@app.route("/admin/rate-limits/timeout-all", methods=["POST"])
+@role_required('admin')
+def admin_timeout_all():
+  try:
+    d = request.json or {}
+    minutes = max(1, min(1440, int(d.get('minutes', 30))))
+    reason  = sanitize_string(d.get('reason', 'Maintenance en cours'), 200)
+    rows = get_db_read().execute(
+      "SELECT id FROM users WHERE role!='admin' AND id!=?", (session['user_id'],)
+    ).fetchall()
+    until = datetime.now() + timedelta(minutes=minutes)
+    with _admin_timeouts_lock:
+      for row in rows:
+        _admin_timeouts[row['id']] = {'until': until, 'reason': reason}
+    _log_admin('admin', f"Timeout global {minutes}min ({len(rows)} users): {reason}", actor_id=session['user_id'])
+    return jsonify({"success": True, "affected": len(rows)})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- GET /admin/sessions ---------------------------------------
+@app.route("/admin/sessions", methods=["GET"])
+@role_required('admin')
+def admin_sessions():
+  try:
+    conn = get_db_read()
+    with sse_manager.lock:
+      snap = dict(sse_manager.user_sessions)
+    result = []
+    for uid, cid in snap.items():
+      u = conn.execute("SELECT id,prenom,nom,role,email FROM users WHERE id=?", (uid,)).fetchone()
+      if u:
+        result.append({
+          "user_id": uid, "client_id": cid,
+          "name": f"{u['prenom']} {u['nom'] or ''}".strip(),
+          "role": u['role'], "email": u['email'] or '—',
+        })
+    return jsonify({"sessions": result, "count": len(result)})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/sessions/flush --------------------------------
+@app.route("/admin/sessions/flush", methods=["POST"])
+@role_required('admin')
+def admin_flush_sessions():
+  try:
+    admin_id = session['user_id']
+    kicked = 0
+    with sse_manager.lock:
+      snap = dict(sse_manager.user_sessions)
+    for uid, cid in snap.items():
+      if uid == admin_id: continue
+      with sse_manager.lock:
+        if cid in sse_manager.listeners:
+          try: sse_manager.listeners[cid].put_nowait({'event':'kicked','data':{'reason':'admin_flush'}})
+          except Exception: pass
+          sse_manager.listeners.pop(cid, None)
+          sse_manager.user_sessions.pop(uid, None)
+          kicked += 1
+    _log_admin('admin', f"Flush sessions: {kicked} terminées", actor_id=admin_id)
+    return jsonify({"success": True, "kicked": kicked})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/sessions/<id>/kick ----------------------------
+@app.route("/admin/sessions/<int:uid>/kick", methods=["POST"])
+@role_required('admin')
+def admin_kick(uid):
+  try:
+    if uid == session['user_id']:
+      return jsonify({"error": "Impossible de se déconnecter soi-même"}), 400
+    sse_manager.kick_user(uid)
+    _log_admin('admin', f"Session user {uid} terminée", actor_id=session['user_id'])
+    return jsonify({"success": True})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- GET /admin/logs -------------------------------------------
+@app.route("/admin/logs", methods=["GET"])
+@role_required('admin')
+def admin_logs():
+  try:
+    limit = min(500, max(10, int(request.args.get('limit', 150))))
+    type_ = request.args.get('type', 'all')
+    conn = get_db_read()
+    if type_ == 'all':
+      rows = conn.execute("""
+        SELECT ae.id,ae.type,ae.message,ae.created_at,ae.ip,
+               TRIM(COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')) as actor_name
+        FROM admin_events ae LEFT JOIN users u ON ae.actor_id=u.id
+        ORDER BY ae.id DESC LIMIT ?
+      """, (limit,)).fetchall()
+    else:
+      rows = conn.execute("""
+        SELECT ae.id,ae.type,ae.message,ae.created_at,ae.ip,
+               TRIM(COALESCE(u.prenom,'') || ' ' || COALESCE(u.nom,'')) as actor_name
+        FROM admin_events ae LEFT JOIN users u ON ae.actor_id=u.id
+        WHERE ae.type=? ORDER BY ae.id DESC LIMIT ?
+      """, (type_, limit)).fetchall()
+    return jsonify({"logs": [{"id":r['id'],"type":r['type'],"message":r['message'],
+                               "user":r['actor_name'] or 'Système',"ip":r['ip'] or '',
+                               "timestamp":r['created_at']} for r in rows]})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/logs/purge ------------------------------------
+@app.route("/admin/logs/purge", methods=["POST"])
+@role_required('admin')
+def admin_purge_logs():
+  try:
+    days = max(1, int((request.json or {}).get('older_than_days', 30)))
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM admin_events WHERE datetime(created_at) < datetime('now', ?)", (f'-{days} days',))
+    deleted = cur.rowcount
+    conn.commit(); _release_db(conn)
+    _log_admin('admin', f"Purge logs: {deleted} entrées > {days}j", actor_id=session['user_id'])
+    return jsonify({"success": True, "deleted": deleted})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- GET /admin/user/<id> --------------------------------------
+@app.route("/admin/user/<int:uid>", methods=["GET"])
+@role_required('admin')
+def admin_get_user(uid):
+  try:
+    conn = get_db_read()
+    user = conn.execute(
+      "SELECT id,prenom,nom,role,classe_id,email,username FROM users WHERE id=?", (uid,)
+    ).fetchone()
+    if not user: return jsonify({"error": "Introuvable"}), 404
+
+    inscriptions = conn.execute("""
+      SELECT a.id,a.titre,a.salle,i.date_inscription,
+             COUNT(CASE WHEN p.present=1 THEN 1 END) as nb_presences,
+             COUNT(p.id) as nb_seances
+      FROM inscriptions i JOIN activites a ON i.activite_id=a.id
+      LEFT JOIN presences p ON p.eleve_id=i.eleve_id
+        AND p.seance_id IN (SELECT id FROM seances WHERE activite_id=a.id)
+      WHERE i.eleve_id=? GROUP BY a.id
+    """, (uid,)).fetchall()
+
+    activites_dispo = []
+    if user['role'] == 'eleve' and user['classe_id']:
+      activites_dispo = conn.execute("""
+        SELECT DISTINCT a.id,a.titre,a.salle,a.effectif_max,
+               COUNT(i2.id) as nb_inscrits
+        FROM activites a JOIN activite_classes ac ON a.id=ac.activite_id
+        LEFT JOIN inscriptions i2 ON i2.activite_id=a.id
+        WHERE ac.classe_id=? AND a.id NOT IN (SELECT activite_id FROM inscriptions WHERE eleve_id=?)
+        GROUP BY a.id ORDER BY a.titre
+      """, (user['classe_id'], uid)).fetchall()
+
+    t = _get_timeout(uid)
+    now = datetime.now()
+    timeout_info = None
+    if t:
+      secs = max(0, int((t['until'] - now).total_seconds()))
+      timeout_info = {"until": t['until'].isoformat(), "reason": t['reason'],
+                      "seconds_left": secs, "minutes_left": max(0, secs // 60)}
+
+    with sse_manager.lock:
+      is_online = uid in sse_manager.user_sessions
+
+    return jsonify({
+      "user": dict(user),
+      "inscriptions": [dict(i) for i in inscriptions],
+      "activites_disponibles": [dict(a) for a in activites_dispo],
+      "timeout": timeout_info,
+      "is_online": is_online,
+    })
+  except Exception as e:
+    logger.error(f"admin_get_user: {e}")
+    return jsonify({"error": str(e)}), 500
+
+# -- PATCH /admin/user/<id> — modifier les infos de base -------
+@app.route("/admin/user/<int:uid>", methods=["PATCH"])
+@role_required('admin')
+def admin_patch_user(uid):
+  """Modifie prenom, nom, email, username, classe_id, role."""
+  try:
+    if uid == session['user_id'] and (request.json or {}).get('role') == 'eleve':
+      return jsonify({"error": "Vous ne pouvez pas changer votre propre rôle en élève"}), 400
+    d = request.json or {}
+    allowed = {'prenom', 'nom', 'email', 'username', 'classe_id', 'role'}
+    updates, params = [], []
+    for field in allowed:
+      if field not in d: continue
+      val = d[field]
+      if field == 'role' and val not in ('eleve','prof','admin'):
+        return jsonify({"error": "Rôle invalide"}), 400
+      if field in ('prenom','nom','email','username'):
+        val = sanitize_string(str(val), 100).strip() if val else None
+      if field == 'classe_id':
+        val = int(val) if val else None
+      updates.append(f"{field}=?"); params.append(val)
+    if not updates:
+      return jsonify({"error": "Aucune donnée à mettre à jour"}), 400
+    conn = get_db_connection()
+    existing = conn.execute("SELECT id,prenom,nom FROM users WHERE id=?", (uid,)).fetchone()
+    if not existing: _release_db(conn); return jsonify({"error": "Introuvable"}), 404
+    # Username unique
+    if 'username=?' in updates:
+      idx = updates.index('username=?')
+      dup = conn.execute("SELECT id FROM users WHERE username=? AND id!=?", (params[idx], uid)).fetchone()
+      if dup: _release_db(conn); return jsonify({"error": "Nom d'utilisateur déjà pris"}), 400
+    conn.execute(f"UPDATE users SET {','.join(updates)} WHERE id=?", params + [uid])
+    conn.commit(); _release_db(conn)
+    _cache.invalidate('users')
+    name = f"{existing['prenom']} {existing['nom'] or ''}".strip()
+    _log_admin('admin', f"Profil modifié: {name} ({', '.join(updates)})",
+               user_id=uid, actor_id=session['user_id'])
+    return jsonify({"success": True})
+  except Exception as e:
+    logger.error(f"admin_patch_user: {e}")
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/user/<id>/reset-password ---------------------
+@app.route("/admin/user/<int:uid>/reset-password", methods=["POST"])
+@role_required('admin')
+def admin_reset_password(uid):
+  try:
+    d = request.json or {}
+    custom_pwd = d.get('password', '').strip()
+    if custom_pwd:
+      if len(custom_pwd) < 6:
+        return jsonify({"error": "Mot de passe trop court (min 6 caractères)"}), 400
+      new_pwd = custom_pwd
+    else:
+      import string as _str
+      alphabet = _str.ascii_letters + _str.digits + '!@#$%'
+      new_pwd = ''.join(secrets.choice(alphabet) for _ in range(12))
+    conn = get_db_connection()
+    u = conn.execute("SELECT id,prenom,nom FROM users WHERE id=?", (uid,)).fetchone()
+    if not u: _release_db(conn); return jsonify({"error": "Introuvable"}), 404
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(new_pwd), uid))
+    conn.commit(); _release_db(conn)
+    name = f"{u['prenom']} {u['nom'] or ''}".strip()
+    mode = "personnalisé" if custom_pwd else "aléatoire"
+    _log_admin('admin', f"MDP {mode} réinitialisé pour {name}", user_id=uid, actor_id=session['user_id'])
+    return jsonify({"success": True, "temp_password": new_pwd if not custom_pwd else None,
+                    "custom": bool(custom_pwd)})
+  except Exception as e:
+    logger.error(f"admin_reset_password: {e}")
+    return jsonify({"error": str(e)}), 500
+
+# -- POST /admin/user/<id>/desinscription ---------------------
+@app.route("/admin/user/<int:uid>/desinscription/<int:act_id>", methods=["DELETE"])
+@role_required('admin')
+def admin_desinscrire(uid, act_id):
+  """Désinscrire manuellement un élève d'une activité."""
+  try:
+    conn = get_db_connection()
+    # Supprimer presences
+    seances = conn.execute("SELECT id FROM seances WHERE activite_id=?", (act_id,)).fetchall()
+    for s in seances:
+      conn.execute("DELETE FROM presences WHERE seance_id=? AND eleve_id=?", (s['id'], uid))
+    conn.execute("DELETE FROM inscriptions WHERE eleve_id=? AND activite_id=?", (uid, act_id))
+    conn.commit(); _release_db(conn)
+    _cache.invalidate('inscriptions_all', 'inscriptions_seances_all')
+    act = get_db_read().execute("SELECT titre FROM activites WHERE id=?", (act_id,)).fetchone()
+    titre = act['titre'] if act else f"#{act_id}"
+    _log_admin('admin', f"Désinscription manuelle de user {uid} de '{titre}'",
+               user_id=uid, actor_id=session['user_id'])
+    sse_manager.broadcast('inscription_deleted', {'eleve_id': uid, 'activite_id': act_id, 'nb_inscrits': 0})
+    return jsonify({"success": True})
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- GET /admin/export -----------------------------------------
+@app.route("/admin/export", methods=["GET"])
+@role_required('admin')
+def admin_export():
+  try:
+    import csv
+    from io import StringIO
+    conn = get_db_read()
+    rows = conn.execute("""
+      SELECT u.prenom,u.nom,u.email,c.nom as classe,a.titre,a.salle,i.date_inscription
+      FROM inscriptions i JOIN users u ON i.eleve_id=u.id
+      LEFT JOIN classes c ON u.classe_id=c.id
+      JOIN activites a ON i.activite_id=a.id ORDER BY u.nom,u.prenom,a.titre
+    """).fetchall()
+    buf = StringIO()
+    w = csv.writer(buf)
+    w.writerow(['Prénom','Nom','Email','Classe','Activité','Salle','Date inscription'])
+    for r in rows:
+      w.writerow([r['prenom'],r['nom'],r['email'] or '',r['classe'] or '',
+                  r['titre'],r['salle'] or '',r['date_inscription'] or ''])
+    return Response(
+      buf.getvalue().encode('utf-8-sig'), mimetype='text/csv',
+      headers={'Content-Disposition': f'attachment; filename=export_{datetime.now().strftime("%Y%m%d")}.csv'}
+    )
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+# -- GET /admin/users (liste paginée) -------------------------
+@app.route("/admin/users", methods=["GET"])
+@role_required('admin')
+def admin_list_users():
+  """Liste tous les users avec stats d'inscription."""
+  try:
+    q   = request.args.get('q', '').strip()
+    role_ = request.args.get('role', '')
+    conn = get_db_read()
+    where, params = [], []
+    if q:
+      like = f"%{q}%"
+      where.append("(u.prenom LIKE ? OR u.nom LIKE ? OR u.email LIKE ? OR u.username LIKE ?)")
+      params += [like, like, like, like]
+    if role_:
+      where.append("u.role=?"); params.append(role_)
+    wclause = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = conn.execute(f"""
+      SELECT u.id,u.prenom,u.nom,u.role,u.classe_id,u.email,u.username,
+             c.nom as classe_nom,
+             COUNT(DISTINCT i.id) as nb_inscriptions
+      FROM users u LEFT JOIN classes c ON u.classe_id=c.id
+      LEFT JOIN inscriptions i ON i.eleve_id=u.id
+      {wclause} GROUP BY u.id ORDER BY u.role,u.nom,u.prenom LIMIT 100
+    """, params).fetchall()
+    return jsonify([dict(r) for r in rows])
+  except Exception as e:
+    return jsonify({"error": str(e)}), 500
+
+
+# Patcher le rate_limit_exceeded pour donner le vrai temps restant
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+  logger.warning(f"Rate limit depuis {request.remote_addr} sur {request.path}")
+  # Flask-Limiter met le retry-after dans le header
+  retry_after = None
+  try:
+    retry_after = int(e.response.headers.get('Retry-After', 0)) if e.response else None
+  except Exception:
+    pass
+  if retry_after and retry_after > 0:
+    if retry_after < 120:
+      time_str = f"{retry_after} seconde{'s' if retry_after != 1 else ''}"
+    else:
+      mins = retry_after // 60
+      time_str = f"{mins} minute{'s' if mins != 1 else ''}"
+    msg = f"Trop de tentatives. Réessayez dans {time_str}."
+  else:
+    msg = "Trop de tentatives infructueuses. Réessayez dans quelques instants."
+  return jsonify({"error": msg, "rate_limited": True,
+                  "retry_after": retry_after}), 429
 
 
 @app.route("/")

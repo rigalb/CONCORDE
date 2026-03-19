@@ -535,8 +535,10 @@ async function _handleApiError(res) {
         throw new Error('Session expirée');
     }
     if (res.status === 429) {
-        await showAlert('Trop de tentatives infructueuses. Veuillez réessayer dans quelques minutes.', 'Limite atteinte');
-        throw new Error('Trop de tentatives');
+        const d = await res.json().catch(() => ({}));
+        const msg = d.error || 'Trop de tentatives. Réessayez dans quelques instants.';
+        await showAlert(msg, 'Accès limité');
+        throw new Error(msg);
     }
     const errorData = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
     throw new Error(errorData.error || `HTTP ${res.status}`);
@@ -544,9 +546,13 @@ async function _handleApiError(res) {
 
 async function apiGet(url) {
     try {
+        const headers = { 'Accept': 'application/json' };
+        if (currentUser?.role === 'admin') {
+            headers['X-Admin-Priority'] = 'true';
+        }
         const res = await fetch(url, {
             credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
+            headers
         });
         if (!res.ok) await _handleApiError(res);
         return res.json();
@@ -558,9 +564,14 @@ async function apiGet(url) {
 
 async function apiPost(url, data) {
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        // Ajouter header de priorité pour requêtes admin
+        if (currentUser?.role === 'admin') {
+            headers['X-Admin-Priority'] = 'true';
+        }
         const res = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             credentials: 'same-origin',
             body: JSON.stringify(data)
         });
@@ -574,9 +585,14 @@ async function apiPost(url, data) {
 
 async function apiPut(url, data) {
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        // Ajouter header de priorité pour requêtes admin
+        if (currentUser?.role === 'admin') {
+            headers['X-Admin-Priority'] = 'true';
+        }
         const res = await fetch(url, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             credentials: 'same-origin',
             body: JSON.stringify(data)
         });
@@ -590,9 +606,14 @@ async function apiPut(url, data) {
 
 async function apiDelete(url, data) {
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        // Ajouter header de priorité pour requêtes admin
+        if (currentUser?.role === 'admin') {
+            headers['X-Admin-Priority'] = 'true';
+        }
         const res = await fetch(url, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             credentials: 'same-origin',
             body: JSON.stringify(data)
         });
@@ -793,9 +814,10 @@ async function fetchAllData() {
     =========================== */
 function onAuthChange(){
     if(currentUser){
-        $('#user-badge').style.display='inline-flex';
+        $('#user-badge').classList.remove('hidden');
         $('#user-name').textContent=`${currentUser.prenom} ${currentUser.nom||''}`;
         $('#logout-btn').classList.remove('hidden');
+        $('#settings-btn')?.classList.remove('hidden');
         const lc = $('#login-card');
         if (lc) { lc.classList.add('hidden'); lc.style.visibility = ''; }
         afficherPageRole(currentUser.role);
@@ -803,8 +825,9 @@ function onAuthChange(){
         initSSE();
         majVisibiliteTabEchanges();
     } else {
-        $('#user-badge').style.display='none';
+        $('#user-badge').classList.add('hidden');
         $('#logout-btn').classList.add('hidden');
+        $('#settings-btn')?.classList.add('hidden');
         const lc = $('#login-card');
         if (lc) { lc.classList.remove('hidden'); lc.style.visibility = ''; }
         cacherToutesPages();
@@ -828,6 +851,9 @@ function afficherPageRole(role){
         initElevesNonInscrits();
         chargerPendingProcedures();
         setupCreationFormEvents();
+        // Onglet Admin : visible seulement pour les admins
+        const adminTabBtn = document.getElementById('prof-tab-btn-admin');
+        if (adminTabBtn) adminTabBtn.classList.toggle('hidden', role !== 'admin');
 
     } else if(role==='eleve'){
         $('#eleve-page').classList.remove('hidden');
@@ -3888,7 +3914,6 @@ function _creerLigneSeance(opts = {}) {
 
     const span = document.createElement('div');
     span.className = 'small muted seance-label';
-    span.style.minWidth = '110px';
     span.textContent = opts.label || 'Séance';
 
     const ic = creerSeanceDatetimeIC(opts.valeurISO || '');
@@ -4479,21 +4504,31 @@ function switchProfTab(tabName) {
     contents.forEach(content => content.classList.remove('active'));
 
     // Activer le bon onglet via son index
-    const tabNames = ['gestion', 'creation', 'echanges'];
-    const tabIndex = tabNames.indexOf(tabName);
-    if (tabIndex >= 0 && tabs[tabIndex]) tabs[tabIndex].classList.add('active');
-
+    // NOTE: le tab admin est hidden pour les non-admins mais on l'inclut dans tabNames
+    // pour que son index corresponde bien au bouton dans le DOM
+    const allTabs = profTabsContainer.querySelectorAll('.prof-tab');
+    const visibleTabNames = [];
+    allTabs.forEach(tab => {
+        if (tab.id === 'prof-tab-btn-admin') visibleTabNames.push('admin');
+        else if (!visibleTabNames.includes('gestion') && !tab.id) visibleTabNames.push('gestion');
+        else visibleTabNames.push(tab.dataset.tab || '');
+    });
+    // Méthode robuste : activer par ID du contenu, pas par index
     const activeContent = document.getElementById(`prof-tab-${tabName}`);
     if (activeContent) activeContent.classList.add('active');
 
-    // Si on revient sur gestion, rafraîchir l'emploi du temps
-    if (tabName === 'gestion') {
-        updateScheduleViewProf();
-    }
-    // Si on ouvre l'onglet échanges, recharger les procédures
-    if (tabName === 'echanges') {
-        chargerPendingProcedures();
-    }
+    // Activer le bouton correspondant par id ou par correspondance data
+    allTabs.forEach(tab => {
+        const tid = tab.id;
+        if (tabName === 'admin'    && tid === 'prof-tab-btn-admin')   tab.classList.add('active');
+        if (tabName === 'echanges' && tid === 'prof-tab-btn-echanges') tab.classList.add('active');
+        if (tabName === 'gestion'  && !tid) tab.classList.add('active');
+        if (tabName === 'creation' && !tid && tab.textContent.includes('Créer')) tab.classList.add('active');
+    });
+
+    if (tabName === 'gestion')  updateScheduleViewProf();
+    if (tabName === 'echanges') chargerPendingProcedures();
+    if (tabName === 'admin')    initAdminPanel();
 }
 
 /* ===========================
@@ -4559,7 +4594,7 @@ function initStaticEventListeners() {
     const profTabsContainer = document.querySelector('#prof-page .prof-tabs');
     if (profTabsContainer) {
         const profTabs = profTabsContainer.querySelectorAll('.prof-tab');
-        const tabNames = ['gestion', 'creation', 'echanges'];
+        const tabNames = ['gestion', 'creation', 'echanges', 'admin'];
         profTabs.forEach((tab, index) => {
             const tabName = tabNames[index] || 'gestion';
             tab.addEventListener('click', () => switchProfTab(tabName));
@@ -4875,7 +4910,10 @@ async function handleInscriptionEvent(event) {
 
         // Echo : _serverNbInscrits mis à jour -> rafraîchir compteurs puis sortir
         if (isEcho) {
-            if (currentUser.role === 'eleve') majComptesActivitesEleve();
+            if (currentUser.role === 'eleve') {
+                majComptesActivitesEleve();
+                updateEmploiDuTempsEleve();
+            }
             else if (activiteId) _updateActiviteCardProf(activiteId);
             return;
         }
@@ -5090,6 +5128,64 @@ async function handleGroupeSSE(event) {
     }
 }
 
+/**
+ * Gère les mises à jour de sessions (seances) - rafraîchit l'affichage des sessions
+ * quand une inscription change.
+ * Côté élève : met à jour l'emploi du temps
+ * Côté prof : met à jour la liste des activités
+ */
+async function handleSeancesUpdate(event) {
+    try {
+        const data = JSON.parse(event.data);
+        const activiteId = data.activite_id;
+
+        if (!activiteId) return;
+
+        console.log('[SSE] Mise à jour sessions pour activité', activiteId);
+
+        // Recalculer le nombre d'inscrits total de l'activité et des séances
+        const activite = activites.find(a => a.id === activiteId);
+        if (!activite) return;
+
+        // Mettre à jour les compteurs de seances selon les inscriptions
+        if (activite.seances && Array.isArray(activite.seances)) {
+            for (const seance of activite.seances) {
+                if (seance.inscriptions && Array.isArray(seance.inscriptions)) {
+                    seance._serverNbInscrits = seance.inscriptions.length;
+                }
+            }
+        }
+
+        // Mettre à jour l'UI selon le rôle
+        if (currentUser.role === 'eleve') {
+            // Rafraîchir l'emploi du temps et les compteurs
+            majComptesActivitesEleve();
+            updateEmploiDuTempsEleve();
+
+            // Si le modal de détails est ouvert pour cette activité, le rafraîchir
+            if (_currentModalActivityId === activiteId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible') && activite) {
+                    showActivityDetailsEleve(activite);
+                }
+            }
+        } else if (currentUser.role === 'prof' || currentUser.role === 'admin') {
+            // Mettre à jour la card d'activité dans la liste prof
+            _updateActiviteCardProf(activiteId);
+
+            // Rafraîchir le modal de détail si ouvert
+            if (_currentModalActivityId === activiteId) {
+                const modal = document.getElementById('activity-modal');
+                if (modal?.classList.contains('visible') && activite) {
+                    showActivityDetails(activite);
+                }
+            }
+        }
+    } catch(e) {
+        console.error('[SSE] Erreur traitement seances_update:', e);
+    }
+}
+
 /* ===========================
    Event Listeners DOM
    =========================== */
@@ -5103,6 +5199,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialiser les listeners statiques
     initStaticEventListeners();
+
+    // Initialiser le modal paramètres
+    initSettingsModal();
 
     // Initialiser la délégation d'événements
     setupEventDelegation();
@@ -5129,6 +5228,7 @@ document.addEventListener('DOMContentLoaded', function() {
             fermerModalAppel();
             fermerModalInscriptionManuelle();
             fermerModalPDF();
+            document.getElementById('settings-modal')?.classList.remove('visible');
         }
     });
 
@@ -5875,5 +5975,963 @@ async function annulerEchangeProf(procId) {
         chargerPendingProcedures();
     } catch(e) {
         showToast('Erreur : ' + e.message, 4000);
+    }
+}
+/* ============================================================
+   PANNEAU ADMINISTRATION — refonte complète
+   Utilise les vraies routes backend, données réelles depuis DB
+============================================================ */
+
+// -- State ----------------------------------------------------
+let _rlData = [], _sessionsData = [], _logsData = [];
+let _adminInited = false;
+
+// -- Helper API -----------------------------------------------
+async function _adminGet(path) {
+    try { return await apiGet(path); }
+    catch(e) { console.warn('[Admin]', path, e.message); return null; }
+}
+function _esc(v) {
+    if (v == null) return '';
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _fmtTime(secs) {
+    if (secs <= 0) return '0 s';
+    if (secs < 120) return `${secs} s`;
+    const m = Math.round(secs / 60);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60), rm = m % 60;
+    return rm ? `${h}h${rm}min` : `${h}h`;
+}
+
+// -- Init -----------------------------------------------------
+function initAdminPanel() {
+    if (!_adminInited) {
+        _adminInited = true;
+        _setupAdminEvents();
+    }
+    chargerAdminRateLimits();
+    chargerAdminSessions();
+    chargerAdminStats();
+    chargerAdminLogs('all');
+}
+
+function _setupAdminEvents() {
+    const d = document;
+    // Rate limits
+    d.getElementById('admin-rl-refresh')    ?.addEventListener('click', chargerAdminRateLimits);
+    d.getElementById('admin-rl-add-timeout')?.addEventListener('click', () => _modalAjoutTimeout());
+    d.getElementById('admin-rl-timeout-all')?.addEventListener('click', _timeoutGlobal);
+    d.getElementById('admin-rl-lift-all')   ?.addEventListener('click', _leverTous);
+    d.getElementById('admin-rl-search')     ?.addEventListener('input', e =>
+        _db('rls', () => { const q = e.target.value?.toLowerCase()||''; renderRateLimits(q ? _rlData.filter(u => u.username?.toLowerCase().includes(q)||u.email?.toLowerCase().includes(q)) : _rlData); }, 200));
+    d.getElementById('admin-rl-list')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-aa]'); if (!b) return;
+        const { aa, uid, un } = b.dataset;
+        if (aa==='lift')   _leverTimeout(+uid);
+        if (aa==='extend') _prolongerTimeout(+uid, un);
+        if (aa==='addto')  _modalAjoutTimeout(+uid, un);
+    });
+    // Sessions
+    d.getElementById('admin-sessions-refresh')?.addEventListener('click', chargerAdminSessions);
+    d.getElementById('admin-sessions-flush')  ?.addEventListener('click', _flushSessions);
+    d.getElementById('admin-sessions-list')   ?.addEventListener('click', e => {
+        const b = e.target.closest('[data-aa]'); if (!b) return;
+        if (b.dataset.aa === 'kick') _kickSession(+b.dataset.uid, b.dataset.un);
+    });
+    // Stats
+    d.getElementById('admin-stats-refresh')?.addEventListener('click', chargerAdminStats);
+    d.getElementById('admin-stats-top-activites')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-act-id]'); if (b) _modalDetailsActivite(+b.dataset.actId);
+    });
+    // Users
+    d.getElementById('admin-users-search')?.addEventListener('input', e =>
+        _db('us', () => chargerAdminUsers(e.target.value||''), 300));
+    d.getElementById('admin-users-list')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-aa]'); if (!b) return;
+        const { aa, uid, un, role } = b.dataset;
+        if (aa==='view')    ouvrirModalUser(+uid);
+        if (aa==='reset')   _resetPwd(+uid, un);
+        if (aa==='role')    _changerRole(+uid, un, role);
+        if (aa==='timeout') _modalAjoutTimeout(+uid, un);
+        if (aa==='kick')    _kickSession(+uid, un);
+        if (aa==='uninscr') _desinscription(+uid, un);
+    });
+    // Logs
+    d.getElementById('admin-logs-refresh')?.addEventListener('click', () =>
+        chargerAdminLogs(d.querySelector('.admin-log-filter.active')?.dataset.filter||'all'));
+    d.getElementById('admin-logs-export') ?.addEventListener('click', _exportLogs);
+    d.querySelector('#prof-tab-admin .admin-panel:nth-child(5)')?.addEventListener('click', e => {
+        const b = e.target.closest('.admin-log-filter'); if (!b) return;
+        d.querySelectorAll('.admin-log-filter').forEach(x => x.classList.remove('active'));
+        b.classList.add('active'); chargerAdminLogs(b.dataset.filter);
+    });
+    // Maintenance
+    d.getElementById('admin-maint-flush')   ?.addEventListener('click', _flushSessions);
+    d.getElementById('admin-maint-reset-rl')?.addEventListener('click', _resetRL);
+    d.getElementById('admin-maint-export')  ?.addEventListener('click', _exportData);
+    d.getElementById('admin-maint-purge')   ?.addEventListener('click', _purgeLogs);
+}
+
+const _dbt = new Map();
+function _db(k, fn, ms) { clearTimeout(_dbt.get(k)); _dbt.set(k, setTimeout(fn, ms)); }
+
+/* =======================================
+   PANEL 1 — TIMEOUTS
+======================================= */
+async function chargerAdminRateLimits() {
+    const c = document.getElementById('admin-rl-list'); if (!c) return;
+    c.innerHTML = '<p class="muted text-center p-12">Chargement…</p>';
+    const data = await _adminGet('/admin/rate-limits');
+    _rlData = data?.users ?? [];
+    renderRateLimits(_rlData);
+}
+function renderRateLimits(items) {
+    const c = document.getElementById('admin-rl-list'); if (!c) return;
+    if (!items.length) {
+        c.innerHTML = '<div class="admin-empty"><svg viewBox="0 0 24 24" class="admin-empty-icon"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg><p>Aucun timeout actif</p></div>';
+        return;
+    }
+    c.innerHTML = items.map(u => {
+        const secs = u.seconds_left ?? 0;
+        const pct  = Math.min(100, Math.round((secs / 3600) * 100));
+        const bcl  = secs > 3600 ? 'bar--danger' : secs > 600 ? 'bar--warn' : '';
+        const reason = _esc(u.timeout_reason || 'tentatives infructueuses');
+        return `<div class="admin-rl-item">
+            <div class="admin-rl-info">
+                <span class="admin-rl-name">${_esc(u.username)}</span>
+                <span class="muted small">${_esc(u.email)}</span>
+                <span class="admin-timeout-badge">⏱ ${_fmtTime(secs)} restantes</span>
+                <span class="muted small italic">${reason}</span>
+            </div>
+            <div class="admin-rl-bar-col">
+                <div class="admin-bar-track"><div class="admin-bar ${bcl}" data-w="${pct}"></div></div>
+            </div>
+            <div class="admin-rl-actions">
+                <button class="btn ghost btn-sm" data-aa="lift" data-uid="${u.id}" title="Lever">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>Lever
+                </button>
+                <button class="btn secondary btn-sm" data-aa="extend" data-uid="${u.id}" data-un="${_esc(u.username)}" title="Prolonger">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm.01 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" fill="currentColor"/></svg>+temps
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+    _applyDataW(document.getElementById('admin-rl-list'));
+}
+
+async function _leverTimeout(uid) {
+    if (!await showConfirm('Lever le timeout ?')) return;
+    try { await apiPost(`/admin/rate-limits/${uid}/lift`, {}); showToast('Timeout levé'); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+    chargerAdminRateLimits();
+}
+async function _prolongerTimeout(uid, un) {
+    const ov = _modal('Prolonger le timeout de ' + _esc(un), `
+        <div class="admin-dur-grid">
+            <button class="btn secondary admin-ext-btn" data-m="15">+15 min</button>
+            <button class="btn secondary admin-ext-btn" data-m="30">+30 min</button>
+            <button class="btn secondary admin-ext-btn" data-m="60">+1h</button>
+            <button class="btn danger admin-ext-btn" data-m="1440">+24h</button>
+        </div>`);
+    ov.querySelector('.modal-body').addEventListener('click', async e => {
+        const b = e.target.closest('.admin-ext-btn'); if (!b) return;
+        try { await apiPost(`/admin/rate-limits/${uid}/extend`, { minutes: +b.dataset.m }); showToast(`+${b.dataset.m} min appliqué`); }
+        catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+        ov.remove(); chargerAdminRateLimits();
+    });
+}
+async function _modalAjoutTimeout(uid, un) {
+    const isGlobal = !uid;
+    let selId = uid||null, selName = un||'';
+    const userHtml = isGlobal ? `
+        <p class="muted small mb-4">Sélectionner un utilisateur :</p>
+        <input id="ato-search" class="admin-input mb-4" placeholder="Rechercher…">
+        <div id="ato-list" class="admin-scrollable admin-compact-list mb-12"></div>` :
+        `<p class="muted mb-8">Utilisateur : <strong>${_esc(un)}</strong></p>`;
+    const ov = _modal('Ajouter un timeout', `
+        ${userHtml}
+        <p class="muted small mb-4">Durée :</p>
+        <div class="admin-dur-grid mb-12">
+            <button class="btn secondary ato-dur" data-m="15">15 min</button>
+            <button class="btn secondary ato-dur" data-m="30">30 min</button>
+            <button class="btn secondary ato-dur" data-m="60">1h</button>
+            <button class="btn secondary ato-dur" data-m="360">6h</button>
+            <button class="btn danger ato-dur" data-m="1440">24h</button>
+        </div>
+        <input id="ato-reason" class="admin-input" placeholder="Raison (laissez vide = tentatives infructueuses)">`);
+    if (isGlobal) {
+        const listEl = ov.querySelector('#ato-list');
+        const renderUL = q => {
+            const lq = q.toLowerCase();
+            listEl.innerHTML = (users||[]).filter(u => !q||`${u.prenom} ${u.nom||''} ${u.email||''}`.toLowerCase().includes(lq)).slice(0,15)
+                .map(u => `<div class="admin-compact-row ${selId===u.id?'selected':''}" data-uid="${u.id}" data-un="${_esc(`${u.prenom} ${u.nom||''}`)}">
+                    <div class="admin-user-avatar admin-user-avatar--${u.role}">${(u.prenom[0]||'?').toUpperCase()}</div>
+                    <div class="admin-rl-info"><span class="admin-rl-name">${u.prenom} ${u.nom||''}</span><span class="muted small">${u.email||''}</span></div>
+                </div>`).join('')||'<p class="muted small p-8">Aucun résultat</p>';
+        };
+        renderUL('');
+        ov.querySelector('#ato-search').addEventListener('input', e => renderUL(e.target.value));
+        listEl.addEventListener('click', e => {
+            const r = e.target.closest('[data-uid]'); if (!r) return;
+            listEl.querySelectorAll('.admin-compact-row').forEach(x => x.classList.remove('selected'));
+            r.classList.add('selected'); selId = +r.dataset.uid; selName = r.dataset.un;
+        });
+    }
+    ov.querySelector('.modal-body').addEventListener('click', async e => {
+        const b = e.target.closest('.ato-dur'); if (!b) return;
+        if (!selId) { showToast('Sélectionnez un utilisateur'); return; }
+        const reason = ov.querySelector('#ato-reason')?.value?.trim() || '';
+        try { await apiPost(`/admin/rate-limits/${selId}/timeout`, { minutes: +b.dataset.m, reason }); showToast(`Timeout ${b.dataset.m}min → ${selName}`); }
+        catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+        ov.remove(); chargerAdminRateLimits();
+    });
+}
+async function _timeoutGlobal() {
+    if (!await showConfirm('[WARNING] Timeout global pour TOUS les utilisateurs (hors admins) ?', 'Timeout global')) return;
+    const ov = _modal('Durée + raison du timeout global', `
+        <p class="muted small mb-4">Durée :</p>
+        <div class="admin-dur-grid mb-12">
+            <button class="btn secondary gto-dur" data-m="15">15 min</button>
+            <button class="btn secondary gto-dur" data-m="30">30 min</button>
+            <button class="btn danger gto-dur" data-m="60">1h</button>
+        </div>
+        <input id="gto-reason" class="admin-input" placeholder="Raison (ex : Maintenance en cours)">`);
+    ov.querySelector('.modal-body').addEventListener('click', async e => {
+        const b = e.target.closest('.gto-dur'); if (!b) return;
+        const reason = ov.querySelector('#gto-reason')?.value?.trim() || 'Maintenance en cours';
+        try { const r = await apiPost('/admin/rate-limits/timeout-all', { minutes: +b.dataset.m, reason }); showToast(`Timeout global ${b.dataset.m}min (${r?.affected??'?'} users)`); }
+        catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+        ov.remove(); chargerAdminRateLimits();
+    });
+}
+async function _leverTous() {
+    if (!await showConfirm('Lever tous les timeouts actifs ?')) return;
+    try { const r = await apiPost('/admin/rate-limits/lift-all', {}); showToast(`${r?.lifted??0} timeout(s) levé(s)`); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+    chargerAdminRateLimits();
+}
+
+/* =======================================
+   PANEL 2 — SESSIONS
+======================================= */
+async function chargerAdminSessions() {
+    const c = document.getElementById('admin-sessions-list'); if (!c) return;
+    c.innerHTML = '<p class="muted text-center p-12">Chargement…</p>';
+    const data = await _adminGet('/admin/sessions');
+    _sessionsData = data?.sessions ?? [];
+    const badge = document.getElementById('admin-sessions-count');
+    if (badge) badge.textContent = _sessionsData.length;
+    if (!_sessionsData.length) {
+        c.innerHTML = '<div class="admin-empty"><p>Aucune session active</p></div>'; return;
+    }
+    c.innerHTML = _sessionsData.map(s => `
+        <div class="admin-session-item">
+            <div class="admin-user-avatar admin-user-avatar--${s.role}">${(s.name[0]||'?').toUpperCase()}</div>
+            <div class="admin-rl-info">
+                <span class="admin-rl-name">${_esc(s.name)}</span>
+                <span class="muted small">${_esc(s.email)} · ${s.role}</span>
+            </div>
+            <span class="admin-session-dot" title="Connecté"></span>
+            <button class="btn ghost btn-sm" data-aa="kick" data-uid="${s.user_id}" data-un="${_esc(s.name)}">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v14a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>Kick
+            </button>
+        </div>`).join('');
+}
+async function _kickSession(uid, un) {
+    if (!await showConfirm(`Déconnecter ${_esc(un)} ?`)) return;
+    try { await apiPost(`/admin/sessions/${uid}/kick`, {}); showToast(`${un} déconnecté`); chargerAdminSessions(); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+}
+async function _flushSessions() {
+    if (!await showConfirm('[WARNING] Déconnecter TOUTES les sessions (hors vous) ?')) return;
+    try { const r = await apiPost('/admin/sessions/flush', {}); showToast(`${r?.kicked??0} session(s) terminée(s)`); chargerAdminSessions(); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+}
+
+/* =======================================
+   PANEL 3 — STATISTIQUES
+======================================= */
+async function chargerAdminStats() {
+    const data = await _adminGet('/admin/stats'); if (!data) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? '—'; };
+    set('stat-total-users',        data.total_users);
+    set('stat-total-eleves',       data.total_eleves);
+    set('stat-total-profs',        data.total_profs);
+    set('stat-total-activites',    data.total_activites);
+    set('stat-total-inscriptions', data.total_inscriptions);
+    set('stat-total-groupes',      data.total_groupes);
+    set('stat-total-seances',      data.total_seances);
+    set('stat-eleves-inscrits',    data.eleves_inscrits);
+    set('stat-taux-inscription',   data.taux_inscription != null ? data.taux_inscription + '%' : '—');
+    set('stat-sessions-actives',   data.active_sessions);
+    set('stat-active-timeouts',    data.active_timeouts);
+
+    // Top activités — TOUTES les activités, scrollable
+    const topEl = document.getElementById('admin-stats-top-activites');
+    if (topEl) {
+        if (data.top_activites?.length) {
+            topEl.innerHTML = data.top_activites.map(a => `
+                <div class="admin-top-act-item">
+                    <div class="admin-top-act-info">
+                        <span class="admin-top-act-name">${_esc(a.titre)}</span>
+                        <span class="muted small">${a.nb_inscrits}/${a.effectif_max}</span>
+                    </div>
+                    <div class="admin-top-act-bar-wrap">
+                        <div class="admin-bar-track"><div class="admin-bar ${+a.taux_remplissage>=90?'bar--danger':+a.taux_remplissage>=70?'bar--warn':''}" data-w="${Math.min(100,+a.taux_remplissage)}"></div></div>
+                        <span class="small muted admin-top-pct">${a.taux_remplissage}%</span>
+                    </div>
+                    <button class="btn ghost btn-sm" data-act-id="${a.id}" title="Détail">
+                        <svg class="icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" fill="currentColor"/></svg>
+                    </button>
+                </div>`).join('');
+            _applyDataW(topEl);
+        } else {
+            topEl.innerHTML = '<p class="muted text-center p-12">Aucune activité</p>';
+        }
+    }
+
+    // Classes — scrollable
+    const clEl = document.getElementById('admin-stats-classes');
+    if (clEl && data.classes_stats?.length) {
+        clEl.innerHTML = data.classes_stats.map(c => `
+            <div class="admin-class-row">
+                <span class="admin-class-name">${_esc(c.nom)}</span>
+                <span class="admin-class-badge">${c.nb_eleves} élève${c.nb_eleves>1?'s':''}</span>
+                <span class="muted small">${c.nb_inscriptions} inscription${c.nb_inscriptions>1?'s':''}</span>
+            </div>`).join('');
+    }
+}
+
+function _modalDetailsActivite(actId) {
+    const act = activites.find(a => a.id === actId); if (!act) return;
+    const ins = act.inscriptions?.length || 0;
+    const taux = act.effectif_max > 0 ? Math.round(ins / act.effectif_max * 100) : 0;
+    const inscritsNames = (users||[]).filter(u => act.inscriptions?.includes(u.id))
+        .map(u => `${u.prenom} ${u.nom||''}`.trim());
+    _modal(`Activité : ${_esc(act.titre)}`, `
+        <div class="admin-act-stats-row">
+            <div class="admin-mini-stat"><span class="admin-stat-value">${ins}</span><span class="admin-stat-label">Inscrits</span></div>
+            <div class="admin-mini-stat"><span class="admin-stat-value">${act.effectif_max}</span><span class="admin-stat-label">Max</span></div>
+            <div class="admin-mini-stat"><span class="admin-stat-value">${taux}%</span><span class="admin-stat-label">Taux</span></div>
+            <div class="admin-mini-stat"><span class="admin-stat-value">${act.seances?.length||0}</span><span class="admin-stat-label">Séances</span></div>
+        </div>
+        <div class="admin-bar-track mt-8 mb-12"><div class="admin-bar ${taux>=90?'bar--danger':taux>=70?'bar--warn':''}" data-w="${taux}"></div></div>
+        <p class="small muted mb-4">Salle : ${_esc(act.salle||'—')} · ${act.separable?'Sécable':'Non sécable'}</p>
+        ${act.description?`<p class="small mb-8">${_esc(act.description)}</p>`:''}
+        <p class="small font-600 mt-12 mb-6">Élèves inscrits (${ins}) :</p>
+        <div class="admin-inscrit-list admin-scrollable">
+            ${inscritsNames.length ? inscritsNames.map(n=>`<span class="admin-inscrit-chip">${_esc(n)}</span>`).join('') : '<p class="muted small">Aucun</p>'}
+        </div>`);
+}
+
+/* =======================================
+   PANEL 4 — UTILISATEURS
+======================================= */
+async function chargerAdminUsers(query) {
+    const c = document.getElementById('admin-users-list'); if (!c) return;
+    if (!query.trim()) {
+        c.innerHTML = '<div class="admin-empty"><svg viewBox="0 0 24 24" class="admin-empty-icon"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/></svg><p>Recherchez un utilisateur</p></div>';
+        return;
+    }
+    c.innerHTML = '<p class="muted text-center p-12">Recherche…</p>';
+    const data = await _adminGet(`/admin/users?q=${encodeURIComponent(query)}`);
+    const found = data || [];
+    if (!found.length) { c.innerHTML = '<div class="admin-empty"><p>Aucun résultat</p></div>'; return; }
+    c.innerHTML = found.map(u => {
+        const name = `${u.prenom||''} ${u.nom||''}`.trim() || u.username || `#${u.id}`;
+        const isOnline = _sessionsData.some(s => s.user_id === u.id);
+        return `<div class="admin-user-card" data-aa="view" data-uid="${u.id}">
+            <div class="admin-user-avatar admin-user-avatar--${u.role}">${(name[0]||'?').toUpperCase()}</div>
+            <div class="admin-rl-info">
+                <span class="admin-rl-name">${_esc(name)}</span>
+                <span class="muted small">${_esc(u.email||u.username||'—')}${u.classe_nom?' · '+u.classe_nom:''}</span>
+                <span class="muted small">${u.nb_inscriptions} inscription${u.nb_inscriptions>1?'s':''}</span>
+            </div>
+            <div class="admin-user-badges">
+                <span class="admin-role-badge admin-role-badge--${u.role}">${u.role}</span>
+                ${isOnline?'<span class="admin-session-dot" title="En ligne"></span>':''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+/* =======================================
+   MODAL UTILISATEUR — tout modifier
+======================================= */
+async function ouvrirModalUser(uid) {
+    const ov = _modal('Profil utilisateur', '<p class="muted text-center p-20">Chargement…</p>');
+    const data = await _adminGet(`/admin/user/${uid}`);
+    if (!data) { ov.querySelector('.modal-body').innerHTML = '<p class="text-error text-center p-12">Erreur de chargement</p>'; return; }
+    _renderUserModal(ov, data);
+}
+
+function _renderUserModal(ov, data) {
+    const u = data.user;
+    const name = `${u.prenom||''} ${u.nom||''}`.trim();
+    const cl = getClassById(u.classe_id);
+    const hasTO = !!data.timeout;
+    const inscrits = data.inscriptions || [];
+    const dispo = data.activites_disponibles || [];
+
+    ov.querySelector('.modal-body').innerHTML = `
+    <div class="admin-user-modal">
+
+      <!-- -- HERO -- -->
+      <div class="admin-user-modal-hero">
+        <div class="admin-user-modal-avatar admin-user-avatar--${u.role}">${(name[0]||'?').toUpperCase()}</div>
+        <div class="flex-1">
+          <h4 class="mb-2">${_esc(name)}</h4>
+          <p class="muted small mb-4">${_esc(u.email||u.username||'—')}${cl?' · '+cl.nom:''}</p>
+          <div class="flex gap-6 flex-wrap">
+            <span class="admin-role-badge admin-role-badge--${u.role}">${u.role}</span>
+            ${data.is_online ? '<span class="admin-session-dot" title="En ligne"></span><span class="muted small">En ligne</span>' : ''}
+            ${hasTO ? `<span class="admin-timeout-badge">⏱ ${_fmtTime(data.timeout.seconds_left)}</span>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <!-- -- TABS -- -->
+      <div class="admin-user-tabs">
+        <button class="admin-user-tab active" data-tab="infos">Infos</button>
+        <button class="admin-user-tab" data-tab="securite">Sécurité</button>
+        <button class="admin-user-tab" data-tab="inscriptions">Inscriptions (${inscrits.length})</button>
+        ${u.role==='eleve'?`<button class="admin-user-tab" data-tab="dispo">Activités (${dispo.length})</button>`:''}
+        <button class="admin-user-tab" data-tab="actions">Actions</button>
+      </div>
+
+      <!-- -- TAB INFOS -- -->
+      <div class="admin-user-tab-content active" data-tab-content="infos">
+        <div class="admin-form-grid">
+          <div class="admin-form-group">
+            <label class="admin-form-label">Prénom</label>
+            <input class="admin-input" id="umod-prenom" value="${_esc(u.prenom||'')}">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label">Nom</label>
+            <input class="admin-input" id="umod-nom" value="${_esc(u.nom||'')}">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label">Email</label>
+            <input class="admin-input" id="umod-email" type="email" value="${_esc(u.email||'')}">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label">Nom d'utilisateur</label>
+            <input class="admin-input" id="umod-username" value="${_esc(u.username||'')}">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label">Rôle</label>
+            <select class="admin-input" id="umod-role">
+              <option value="eleve" ${u.role==='eleve'?'selected':''}>élève</option>
+              <option value="prof"  ${u.role==='prof'?'selected':''}>prof</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+            </select>
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label">Classe</label>
+            <select class="admin-input" id="umod-classe">
+              <option value="">— aucune —</option>
+              ${(classes||[]).map(c => `<option value="${c.id}" ${u.classe_id===c.id?'selected':''}>${_esc(c.nom)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <button class="btn mt-12" id="umod-save-infos" data-uid="${u.id}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
+          Sauvegarder les modifications
+        </button>
+      </div>
+
+      <!-- -- TAB SÉCURITÉ -- -->
+      <div class="admin-user-tab-content" data-tab-content="securite">
+        <div class="admin-section-title mb-8">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
+          Mot de passe
+        </div>
+        <div class="admin-form-grid mb-12">
+          <div class="admin-form-group">
+            <label class="admin-form-label">Nouveau mot de passe (laisser vide = aléatoire)</label>
+            <input class="admin-input" id="umod-pwd" type="text" placeholder="Min. 6 caractères ou vide pour aléatoire" autocomplete="new-password">
+          </div>
+        </div>
+        <button class="btn secondary" id="umod-reset-pwd" data-uid="${u.id}" data-un="${_esc(name)}">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor"/></svg>
+          Réinitialiser le mot de passe
+        </button>
+
+        <div class="admin-section-title mt-16 mb-8">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" fill="currentColor"/></svg>
+          Timeout admin
+        </div>
+        ${hasTO ? `
+        <div class="admin-timeout-info mb-8">
+          <span class="admin-timeout-badge">⏱ ${_fmtTime(data.timeout.seconds_left)} restantes</span>
+          <span class="muted small ml-8">${_esc(data.timeout.reason)}</span>
+        </div>
+        <div class="flex gap-8 flex-wrap">
+          <button class="btn ghost btn-sm" id="umod-lift-to" data-uid="${u.id}">Lever le timeout</button>
+          <button class="btn secondary btn-sm" id="umod-ext-to" data-uid="${u.id}" data-un="${_esc(name)}">Prolonger</button>
+        </div>` : `
+        <button class="btn ghost btn-sm" id="umod-add-to" data-uid="${u.id}" data-un="${_esc(name)}">
+          Ajouter un timeout
+        </button>`}
+
+        ${data.is_online ? `
+        <div class="admin-section-title mt-16 mb-8">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v14a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
+          Session
+        </div>
+        <button class="btn danger btn-sm" id="umod-kick" data-uid="${u.id}" data-un="${_esc(name)}">Déconnecter la session</button>` : ''}
+      </div>
+
+      <!-- -- TAB INSCRIPTIONS -- -->
+      <div class="admin-user-tab-content" data-tab-content="inscriptions">
+        ${inscrits.length ? `
+        <div class="admin-scrollable admin-compact-list">
+          ${inscrits.map(i => `<div class="admin-inscr-item">
+            <svg class="icon admin-inscr-icon" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM19 19H5V8h14v11zM7 10h5v5H7z" fill="currentColor"/></svg>
+            <div class="admin-rl-info">
+              <span class="admin-rl-name">${_esc(i.titre)}</span>
+              <span class="muted small">${i.salle||''} · ${i.nb_presences}/${i.nb_seances} présences</span>
+            </div>
+            <button class="btn danger btn-sm" data-aa="uninscr" data-uid="${u.id}" data-un="${_esc(name)}" data-act-id="${i.id}" data-act-titre="${_esc(i.titre)}" title="Désinscrire">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+            </button>
+          </div>`).join('')}
+        </div>` : '<p class="muted small p-12">Aucune inscription</p>'}
+      </div>
+
+      <!-- -- TAB ACTIVITÉS DISPO -- -->
+      ${u.role==='eleve' ? `
+      <div class="admin-user-tab-content" data-tab-content="dispo">
+        ${dispo.length ? `
+        <div class="admin-scrollable admin-compact-list">
+          ${dispo.map(a => `<div class="admin-inscr-item">
+            <div class="admin-rl-info">
+              <span class="admin-rl-name">${_esc(a.titre)}</span>
+              <span class="muted small">${a.nb_inscrits}/${a.effectif_max} inscrits</span>
+            </div>
+            <button class="btn ghost btn-sm admin-inscr-man" data-eleve-id="${u.id}" data-act-id="${a.id}" data-act-titre="${_esc(a.titre)}">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" fill="currentColor"/></svg>Inscrire
+            </button>
+          </div>`).join('')}
+        </div>` : '<p class="muted small p-12">Aucune activité disponible</p>'}
+      </div>` : ''}
+
+      <!-- -- TAB ACTIONS RAPIDES -- -->
+      <div class="admin-user-tab-content" data-tab-content="actions">
+        <div class="admin-actions-grid">
+          <button class="btn secondary admin-action-tile" id="umod-act-edit">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+            Modifier le profil
+          </button>
+          <button class="btn secondary admin-action-tile" id="umod-act-pwd">
+            <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
+            Réinitialiser MDP
+          </button>
+          <button class="btn secondary admin-action-tile" id="umod-act-timeout">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" fill="currentColor"/></svg>
+            ${hasTO ? 'Lever le timeout' : 'Ajouter un timeout'}
+          </button>
+          ${data.is_online ? `<button class="btn danger admin-action-tile" id="umod-act-kick">
+            <svg viewBox="0 0 24 24"><path d="M16 17l5-5-5-5v3H9v4h7v3zM3 5h8V3H3a2 2 0 00-2 2v14a2 2 0 002 2h8v-2H3V5z" fill="currentColor"/></svg>
+            Déconnecter
+          </button>` : ''}
+        </div>
+      </div>
+
+    </div>`;
+
+    // -- Tab switching --------------------------------------
+    ov.querySelectorAll('.admin-user-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            ov.querySelectorAll('.admin-user-tab').forEach(t => t.classList.remove('active'));
+            ov.querySelectorAll('.admin-user-tab-content').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            ov.querySelector(`[data-tab-content="${tab.dataset.tab}"]`)?.classList.add('active');
+        });
+    });
+
+    // -- Sauvegarder infos ----------------------------------
+    ov.querySelector('#umod-save-infos')?.addEventListener('click', async () => {
+        const payload = {
+            prenom:    ov.querySelector('#umod-prenom')?.value?.trim(),
+            nom:       ov.querySelector('#umod-nom')?.value?.trim(),
+            email:     ov.querySelector('#umod-email')?.value?.trim(),
+            username:  ov.querySelector('#umod-username')?.value?.trim(),
+            role:      ov.querySelector('#umod-role')?.value,
+            classe_id: ov.querySelector('#umod-classe')?.value || null,
+        };
+        try {
+            await apiPatch(`/admin/user/${u.id}`, payload);
+            showToast('Profil mis à jour');
+            await fetchAllData();
+            const refreshed = await _adminGet(`/admin/user/${u.id}`);
+            if (refreshed) _renderUserModal(ov, refreshed);
+        } catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+    });
+
+    // -- Reset password -------------------------------------
+    const doPwd = async () => {
+        const custom = ov.querySelector('#umod-pwd')?.value?.trim() || '';
+        if (custom && custom.length < 6) { showToast('Min. 6 caractères'); return; }
+        try {
+            const r = await apiPost(`/admin/user/${u.id}/reset-password`, { password: custom || null });
+            if (r?.temp_password) {
+                await showAlert(`Mot de passe temporaire :\n${r.temp_password}`, 'Mot de passe réinitialisé');
+            } else {
+                showToast('Mot de passe personnalisé défini');
+            }
+        } catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+    };
+    ov.querySelector('#umod-reset-pwd')?.addEventListener('click', async () => {
+        if (!await showConfirm(`Réinitialiser le mot de passe de ${name} ?`)) return;
+        await doPwd();
+    });
+    ov.querySelector('#umod-act-pwd')?.addEventListener('click', () => {
+        ov.querySelectorAll('.admin-user-tab').forEach(t => t.classList.remove('active'));
+        ov.querySelectorAll('.admin-user-tab-content').forEach(t => t.classList.remove('active'));
+        ov.querySelector('[data-tab="securite"]')?.classList.add('active');
+        ov.querySelector('[data-tab-content="securite"]')?.classList.add('active');
+    });
+    ov.querySelector('#umod-act-edit')?.addEventListener('click', () => {
+        ov.querySelectorAll('.admin-user-tab').forEach(t => t.classList.remove('active'));
+        ov.querySelectorAll('.admin-user-tab-content').forEach(t => t.classList.remove('active'));
+        ov.querySelector('[data-tab="infos"]')?.classList.add('active');
+        ov.querySelector('[data-tab-content="infos"]')?.classList.add('active');
+    });
+
+    // -- Timeout actions ------------------------------------
+    ov.querySelector('#umod-lift-to')?.addEventListener('click', async () => {
+        await _leverTimeout(u.id);
+        const r = await _adminGet(`/admin/user/${u.id}`); if (r) _renderUserModal(ov, r);
+    });
+    ov.querySelector('#umod-ext-to')?.addEventListener('click', () => _prolongerTimeout(u.id, name));
+    ov.querySelector('#umod-add-to')?.addEventListener('click', () => _modalAjoutTimeout(u.id, name));
+    ov.querySelector('#umod-act-timeout')?.addEventListener('click', () => {
+        if (hasTO) _leverTimeout(u.id).then(() => _adminGet(`/admin/user/${u.id}`).then(r => r && _renderUserModal(ov, r)));
+        else _modalAjoutTimeout(u.id, name);
+    });
+
+    // -- Kick session ---------------------------------------
+    const doKick = async () => {
+        if (!await showConfirm(`Déconnecter ${name} ?`)) return;
+        try { await apiPost(`/admin/sessions/${u.id}/kick`, {}); showToast(`${name} déconnecté`); chargerAdminSessions(); }
+        catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+    };
+    ov.querySelector('#umod-kick')?.addEventListener('click', doKick);
+    ov.querySelector('#umod-act-kick')?.addEventListener('click', doKick);
+
+    // -- Désinscription -------------------------------------
+    ov.querySelectorAll('[data-aa="uninscr"]').forEach(btn => {
+        btn.addEventListener('click', async e => {
+            const { uid: euid, actId, actTitre } = e.currentTarget.dataset;
+            if (!await showConfirm(`Désinscrire ${name} de "${actTitre}" ?`)) return;
+            try {
+                await apiDelete(`/admin/user/${euid}/desinscription/${actId}`, {});
+                showToast('Désinscription effectuée');
+                await fetchAllData();
+                const r = await _adminGet(`/admin/user/${u.id}`); if (r) _renderUserModal(ov, r);
+            } catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+        });
+    });
+
+    // -- Inscription manuelle -------------------------------
+    ov.querySelectorAll('.admin-inscr-man').forEach(btn => {
+        btn.addEventListener('click', async e => {
+            const { eleveId, actId, actTitre } = e.currentTarget.dataset;
+            if (!await showConfirm(`Inscrire ${name} à "${actTitre}" ?`)) return;
+            try {
+                await apiPost('/inscriptions/manuel', { eleve_id: +eleveId, activite_id: +actId });
+                showToast('Inscription manuelle effectuée');
+                await fetchAllData();
+                const r = await _adminGet(`/admin/user/${u.id}`); if (r) _renderUserModal(ov, r);
+            } catch(e2) { showToast('Erreur : ' + e2.message, 4000); }
+        });
+    });
+}
+
+// Helper DELETE
+async function apiDelete(url, data) {
+    const res = await fetch(url, {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: {'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify(data)
+    });
+    if (!res.ok) await _handleApiError(res);
+    return res.json();
+}
+// Helper PATCH
+async function apiPatch(url, data) {
+    const res = await fetch(url, {
+        method: 'PATCH', credentials: 'same-origin',
+        headers: {'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify(data)
+    });
+    if (!res.ok) await _handleApiError(res);
+    return res.json();
+}
+
+/* =======================================
+   PANEL 5 — LOGS
+======================================= */
+async function chargerAdminLogs(filter) {
+    const c = document.getElementById('admin-logs-container'); if (!c) return;
+    c.innerHTML = '<p class="muted text-center p-12">Chargement…</p>';
+    const path = `/admin/logs?limit=150${filter&&filter!=='all'?'&type='+filter:''}`;
+    const data = await _adminGet(path);
+    _logsData = data?.logs ?? [];
+    const container = document.getElementById('admin-logs-container');
+    if (!container) return;
+    container.innerHTML = _logsData.length ? _logsData.map(l => `
+        <div class="admin-log-item admin-log-item--${l.type}">
+            <span class="admin-log-type-badge admin-log-type--${l.type}">${l.type}</span>
+            <span class="admin-log-msg">${_esc(l.message)}</span>
+            <span class="muted small admin-log-user">${_esc(l.user)}</span>
+            <span class="admin-log-time muted small">${formatDateLocal(l.timestamp)}</span>
+        </div>`).join('') : '<div class="admin-empty"><p>Aucun log</p></div>';
+}
+function _exportLogs() {
+    if (!_logsData.length) { showToast('Aucun log'); return; }
+    const csv = ['type,message,user,ip,timestamp',
+        ..._logsData.map(l => `${l.type},"${(l.message||'').replace(/"/g,'""')}",${l.user||''},${l.ip||''},${l.timestamp}`)
+    ].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download = `logs_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Logs exportés');
+}
+
+/* =======================================
+   PANEL 6 — MAINTENANCE
+======================================= */
+async function _resetRL() {
+    if (!await showConfirm('Réinitialiser tous les rate limits ?')) return;
+    try { const r = await apiPost('/admin/rate-limits/reset-all',{}); showToast(`${r?.lifted??0} timeout(s) levé(s)`); chargerAdminRateLimits(); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+}
+async function _exportData() {
+    showToast('Préparation…');
+    try {
+        const res = await fetch('/admin/export',{credentials:'same-origin'});
+        if (!res.ok) throw new Error('Indisponible');
+        const a = document.createElement('a'); a.href = URL.createObjectURL(await res.blob());
+        a.download = `export_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(a); a.click(); a.remove(); showToast('Export téléchargé');
+    } catch(e) { showToast('Erreur : ' + e.message, 4000); }
+}
+async function _purgeLogs() {
+    if (!await showConfirm('[WARNING] Supprimer les logs de plus de 30 jours ?')) return;
+    try { const r = await apiPost('/admin/logs/purge',{older_than_days:30}); showToast(`${r?.deleted??0} entrée(s) supprimée(s)`); chargerAdminLogs('all'); }
+    catch(e) { showToast('Erreur : ' + e.message, 4000); }
+}
+
+/* =======================================
+   HELPERS MODAUX + DATA-W
+======================================= */
+function _applyDataW(root) {
+    (root||document).querySelectorAll('[data-w]').forEach(el => {
+        el.style.width = Math.min(100, Math.max(0, +el.dataset.w||0)) + '%';
+    });
+    (root||document).querySelectorAll('[data-color]').forEach(el => {
+        el.style.background = el.dataset.color;
+    });
+}
+// Observer global sur le panel admin
+(function() {
+    const panel = document.getElementById('prof-tab-admin');
+    if (panel && window.MutationObserver) {
+        new MutationObserver(() => _applyDataW(panel)).observe(panel, {childList:true,subtree:true});
+    }
+})();
+
+function _modal(title, body) {
+    document.getElementById('admin-modal-root')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'admin-modal-root';
+    ov.className = 'modal-overlay visible';
+    ov.innerHTML = `<div class="modal-content admin-modal-inner" role="dialog" aria-modal="true">
+        <div class="modal-header">
+            <h3 class="flex-1">${_esc(title)}</h3>
+            <button class="btn ghost btn-sm admin-modal-close" aria-label="Fermer">✕</button>
+        </div>
+        <div class="modal-body admin-modal-body">${body}</div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('.admin-modal-close').addEventListener('click', () => ov.remove());
+    ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+    return ov;
+}
+
+/* ============================================================
+   PARAMÈTRES — Palettes de couleurs
+============================================================ */
+const PALETTES = [
+    {id:'navy',     name:'Navy (défaut)', primary:'#1e3a5f', pRgb:'30,58,95',    accent:'#2a6aba', aRgb:'42,106,186', bg:'#f4f5f7', card:'#ffffff', surface:'#f9fafb', text:'#1f2937', muted:'#6b7280', border:'#d1d5db', bLight:'#e5e7eb'},
+    {id:'forest',   name:'Forêt',         primary:'#1a4731', pRgb:'26,71,49',    accent:'#2e7d52', aRgb:'46,125,82',  bg:'#f3f7f4', card:'#ffffff', surface:'#f0f5f1', text:'#1a2e22', muted:'#5a7265', border:'#c3d6c8', bLight:'#dceade'},
+    {id:'slate',    name:'Ardoise',       primary:'#2d3748', pRgb:'45,55,72',    accent:'#5a6a8a', aRgb:'90,106,138', bg:'#f7f8fa', card:'#ffffff', surface:'#f1f3f6', text:'#1a202c', muted:'#718096', border:'#cbd5e0', bLight:'#e2e8f0'},
+    {id:'burgundy', name:'Bordeaux',      primary:'#6b1a2e', pRgb:'107,26,46',   accent:'#a0304d', aRgb:'160,48,77',  bg:'#faf5f6', card:'#ffffff', surface:'#f9f0f2', text:'#2d0f18', muted:'#7a4e59', border:'#dfc0c7', bLight:'#f0dde1'},
+    {id:'indigo',   name:'Indigo',        primary:'#3730a3', pRgb:'55,48,163',   accent:'#6366f1', aRgb:'99,102,241', bg:'#f5f5ff', card:'#ffffff', surface:'#ededfd', text:'#1e1b4b', muted:'#6b7280', border:'#c7d2fe', bLight:'#e0e7ff'},
+    {id:'custom',   name:'Personnalisé',  primary:null},
+];
+
+function initSettingsModal() {
+    const btn = document.getElementById('settings-btn');
+    const modal = document.getElementById('settings-modal');
+    if (!btn || !modal) return;
+
+    // -- Instancier les 3 InputComp color --------------------------
+    const _icPrimary = new InputComp('#ic-wrap-color-primary', {
+        type: 'color', id: 'settings-color-primary', label: 'Principale',
+        value: '#1e3a5f',
+        onChange: () => _updateCustomSwatches(),
+    });
+    const _icAccent = new InputComp('#ic-wrap-color-accent', {
+        type: 'color', id: 'settings-color-accent', label: 'Accent',
+        value: '#2a6aba',
+        onChange: () => _updateCustomSwatches(),
+    });
+    const _icBg = new InputComp('#ic-wrap-color-bg', {
+        type: 'color', id: 'settings-color-bg', label: 'Fond',
+        value: '#f4f5f7',
+        onChange: () => _updateCustomSwatches(),
+    });
+
+    // -- Fermeture du modal : ferme aussi les pickers color ouverts -
+    const _closeSettingsModal = () => {
+        [_icPrimary, _icAccent, _icBg].forEach(ic => ic._closePortal?.());
+        modal.classList.remove('visible');
+    };
+
+    _loadSavedPrefs();
+    renderPaletteCards();
+    btn.addEventListener('click',  () => { modal.classList.add('visible'); _syncSettingsUI(); });
+    document.getElementById('settings-close')        ?.addEventListener('click',  _closeSettingsModal);
+    document.getElementById('settings-save')         ?.addEventListener('click',  _saveSettings);
+    document.getElementById('settings-reset')        ?.addEventListener('click',  _resetSettings);
+    document.getElementById('settings-apply-custom') ?.addEventListener('click',  _applyCustom);
+    modal.addEventListener('click', e => { if (e.target===modal) _closeSettingsModal(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') _closeSettingsModal(); });
+
+    document.getElementById('settings-palettes')?.addEventListener('click', e => {
+        const card = e.target.closest('.settings-palette-card');
+        if (!card || card.dataset.paletteId==='custom') return;
+        document.querySelectorAll('.settings-palette-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        const p = PALETTES.find(x => x.id===card.dataset.paletteId);
+        if (p) _applyPalette(p);
+    });
+}
+
+function _updateCustomSwatches() {
+    const card = document.querySelector('.settings-palette-card[data-palette-id="custom"]');
+    if (!card) return;
+    const p = icGet('settings-color-primary') || '#888';
+    const a = icGet('settings-color-accent')  || '#aaa';
+    const b = icGet('settings-color-bg')      || '#f4f4f4';
+    const swatches = card.querySelectorAll('.settings-palette-swatch');
+    if (swatches[0]) swatches[0].style.setProperty('--swatch-bg', p);
+    if (swatches[1]) swatches[1].style.setProperty('--swatch-bg', a);
+    if (swatches[2]) swatches[2].style.setProperty('--swatch-bg', b);
+}
+
+function renderPaletteCards() {
+    const c = document.getElementById('settings-palettes'); if (!c) return;
+    const saved = _getSavedPrefs();
+    c.innerHTML = PALETTES.map(p => `
+        <div class="settings-palette-card ${saved?.paletteId===p.id?'active':''}" data-palette-id="${p.id}">
+            <div class="settings-palette-preview">
+                ${p.primary ? `<span class="settings-palette-swatch" data-color="${p.primary}"></span><span class="settings-palette-swatch" data-color="${p.accent}"></span><span class="settings-palette-swatch" data-color="${p.bg}"></span>` : '<span class="settings-palette-swatch" data-color="#888"></span><span class="settings-palette-swatch" data-color="#aaa"></span><span class="settings-palette-swatch" data-color="#f4f4f4"></span>'}
+            </div>
+            <span class="settings-palette-name">${p.name}</span>
+            ${saved?.paletteId===p.id ? '<svg class="settings-palette-check icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>' : ''}
+        </div>`).join('');
+        c.querySelectorAll('.settings-palette-swatch').forEach(el => {
+        const color = el.dataset.color;
+        if (color) {
+            el.style.setProperty('--swatch-bg', color);
+        }
+    });
+}
+
+function _applyPalette(p) {
+    if (!p?.primary) return;
+    const r = document.documentElement;
+    r.style.setProperty('--navy-700',     p.primary);
+    r.style.setProperty('--navy-700-rgb', p.pRgb);
+    r.style.setProperty('--navy-500',     p.accent);
+    r.style.setProperty('--navy-500-rgb', p.aRgb);
+    r.style.setProperty('--bg',           p.bg);
+    r.style.setProperty('--card',         p.card);
+    r.style.setProperty('--surface',      p.surface);
+    r.style.setProperty('--text',         p.text);
+    r.style.setProperty('--text-muted',   p.muted);
+    r.style.setProperty('--border',       p.border);
+    r.style.setProperty('--border-light', p.bLight);
+    r.style.setProperty('--ic-primary',   p.primary);
+    r.style.setProperty('--primary',      p.primary);
+    r.style.setProperty('--accent',       p.accent);
+}
+
+function _applyCustom() {
+    const pri = icGet('settings-color-primary') || '#1e3a5f';
+    const acc = icGet('settings-color-accent')  || '#2a6aba';
+    const bg  = icGet('settings-color-bg')      || '#f4f5f7';
+    const toRgb = h => { const n=parseInt(h.slice(1),16); return `${(n>>16)&255},${(n>>8)&255},${n&255}`; };
+    const r = document.documentElement;
+    r.style.setProperty('--navy-700',     pri); r.style.setProperty('--navy-700-rgb', toRgb(pri));
+    r.style.setProperty('--navy-500',     acc); r.style.setProperty('--navy-500-rgb', toRgb(acc));
+    r.style.setProperty('--bg',           bg);
+    r.style.setProperty('--ic-primary',   pri); r.style.setProperty('--primary', pri);
+    r.style.setProperty('--accent',       acc);
+    document.querySelectorAll('.settings-palette-card').forEach(c => c.classList.remove('active'));
+    document.querySelector('.settings-palette-card[data-palette-id="custom"]')?.classList.add('active');
+    _updateCustomSwatches();
+}
+
+function _saveSettings() {
+    const active = document.querySelector('.settings-palette-card.active');
+    const pid = active?.dataset.paletteId || 'navy';
+    const prefs = { paletteId: pid };
+    if (pid === 'custom') {
+        prefs.custom = {
+            primary: icGet('settings-color-primary'),
+            accent:  icGet('settings-color-accent'),
+            bg:      icGet('settings-color-bg'),
+        };
+    }
+    try { localStorage.setItem('concorde_prefs', JSON.stringify(prefs)); } catch(e) {}
+    // Fermer les pickers color ouverts avant de fermer le modal
+    ['settings-color-primary','settings-color-accent','settings-color-bg']
+        .forEach(id => window._IC_instances?.[id]?._closePortal?.());
+    document.getElementById('settings-modal')?.classList.remove('visible');
+    showToast('Préférences sauvegardées');
+}
+async function _resetSettings() {
+    if (!await showConfirm('Réinitialiser les préférences ?')) return;
+    try { localStorage.removeItem('concorde_prefs'); } catch(e) {}
+    _applyPalette(PALETTES[0]); _syncSettingsUI(); showToast('Réinitialisé');
+}
+function _getSavedPrefs() { try { return JSON.parse(localStorage.getItem('concorde_prefs')||'null'); } catch(e) { return null; } }
+function _loadSavedPrefs() {
+    const p = _getSavedPrefs(); if (!p) return;
+    if (p.paletteId==='custom' && p.custom) {
+        icSet('settings-color-primary', p.custom.primary);
+        icSet('settings-color-accent',  p.custom.accent);
+        icSet('settings-color-bg',      p.custom.bg);
+        _applyCustom();
+    } else {
+        const pal = PALETTES.find(x => x.id===p.paletteId); if (pal) _applyPalette(pal);
+    }
+}
+function _syncSettingsUI() {
+    const p = _getSavedPrefs(); renderPaletteCards();
+    if (!p) return;
+    document.querySelectorAll('.settings-palette-card').forEach(c => c.classList.toggle('active', c.dataset.paletteId===p.paletteId));
+    if (p.paletteId==='custom' && p.custom) {
+        icSet('settings-color-primary', p.custom.primary);
+        icSet('settings-color-accent',  p.custom.accent);
+        icSet('settings-color-bg',      p.custom.bg);
+        _updateCustomSwatches();
     }
 }

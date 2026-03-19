@@ -145,9 +145,16 @@ async function loadInvitationInfo() {
     }
 
     // Pré-remplir le username avec la partie locale de l'email
-    const usernameInput = document.getElementById('username');
-    if (usernameInput) {
-      usernameInput.value = data.email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    const usernameVal = data.email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    const usernameIC  = window._IC_instances?.['username'];
+    if (usernameIC) {
+      usernameIC.setValue(usernameVal);
+    } else {
+      const usernameInput = document.getElementById('username');
+      if (usernameInput) {
+        usernameInput.value = usernameVal;
+        usernameInput.dispatchEvent(new Event('input', { bubbles: true })); // pour que IC détecte le changement si jamais
+      }
     }
 
     welcomeInfo.innerHTML = `
