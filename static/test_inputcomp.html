@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InputComp — Banc de test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="Input_Comp.css">
+  <style>
+/* -- Reset & base -------------------------------------------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body {
+      font-family: var(--ic-font);
+      background: var(--page-bg);
+      color: var(--ic-text);
+      min-height: 100vh;
+      padding: 40px 20px 80px;
+    }
+
+    /* -- Layout -------------------------------------------------- */
+    .page-header {
+      max-width: 900px;
+      margin: 0 auto 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .page-logo {
+      width: 44px; height: 44px;
+      background: var(--ic-primary);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .page-title { font-size: 22px; font-weight: 600; color: var(--heading); }
+    .page-sub   { font-size: 13px; color: var(--ic-text-muted); margin-top: 2px; }
+
+    .sections   { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(15,30,51,.07);
+      overflow: visible;
+    }
+    .card-head {
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-badge {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      background: var(--navy-100);
+      color: var(--navy-700);
+      padding: 3px 9px;
+      border-radius: 20px;
+    }
+    .card-title { font-size: 15px; font-weight: 600; color: var(--heading); flex: 1; }
+    .card-body  { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) {
+      .row-2, .row-3 { grid-template-columns: 1fr; }
+    }
+
+    /* -- Output console ------------------------------------------ */
+    .output-box {
+      background: #0f172a;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: var(--ic-font-mono);
+      font-size: 12px;
+      color: #94a3b8;
+      min-height: 48px;
+      line-height: 1.6;
+    }
+    .output-box .ok   { color: #4ade80; }
+    .output-box .key  { color: #7dd3fc; }
+    .output-box .val  { color: #fde68a; }
+
+    /* -- Boutons test -------------------------------------------- */
+    .test-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .btn-test {
+      padding: 7px 16px;
+      border-radius: 8px;
+      border: 1.5px solid var(--ic-border);
+      background: var(--ic-bg);
+      font-family: var(--ic-font);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all .15s;
+      color: var(--ic-text);
+    }
+    .btn-test:hover { border-color: var(--ic-accent); color: var(--ic-accent); background: var(--ic-bg-active); }
+    .btn-test.primary { background: var(--ic-accent); color: #fff; border-color: var(--ic-accent); }
+    .btn-test.primary:hover { background: var(--navy-700); border-color: var(--navy-700); }
+    .btn-test.danger  { border-color: var(--ic-error); color: var(--ic-error); }
+    .btn-test.danger:hover  { background: var(--ic-error-light); }
+
+    /* -- Séparateur ---------------------------------------------- */
+    .sep { height: 1px; background: #f0f0f0; }
+
+    /* -- Hint texte ---------------------------------------------- */
+    .hint { font-size: 12px; color: var(--ic-text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="page-logo">⚡</div>
+  <div>
+    <div class="page-title">InputComp — Banc de test</div>
+    <div class="page-sub">Tous les types d'input du module universel CONCORDE</div>
+  </div>
+</div>
+
+<div class="sections">
+
+  <!-- ==================================================
+       1. TEXT / PASSWORD / EMAIL / TEL / NUMBER
+  =================================================== -->
+  <div class="card" id="card-text">
+    <div class="card-head">
+      <span class="card-badge">text</span>
+      <span class="card-title">Champs texte standard</span>
+    </div>
+    <div class="card-body">
+      <div class="row-2">
+        <div id="ic-text-basic"></div>
+        <div id="ic-text-icon"></div>
+      </div>
+      <div class="row-2">
+        <div id="ic-text-prefix"></div>
+        <div id="ic-text-counter"></div>
+      </div>
+      <div class="row-2">
+        <div id="ic-email"></div>
+        <div id="ic-tel"></div>
+      </div>
+      <div class="row-2">
+        <div id="ic-number"></div>
+        <div id="ic-text-readonly"></div>
+      </div>
+      <div id="ic-textarea"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-text-get">Lire les valeurs</button>
+        <button class="btn-test" id="btn-text-set">Préremplir</button>
+        <button class="btn-test" id="btn-text-error">Forcer erreur</button>
+        <button class="btn-test" id="btn-text-success">Forcer succès</button>
+        <button class="btn-test danger" id="btn-text-clear">Effacer tout</button>
+      </div>
+      <div class="output-box" id="out-text"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       2. PASSWORD
+  =================================================== -->
+  <div class="card" id="card-pwd">
+    <div class="card-head">
+      <span class="card-badge">password</span>
+      <span class="card-title">Mot de passe</span>
+    </div>
+    <div class="card-body">
+      <div class="row-2">
+        <div id="ic-pwd-basic"></div>
+        <div id="ic-pwd-show"></div>
+      </div>
+      <div class="row-2">
+        <div id="ic-pwd-clear"></div>
+        <div id="ic-pwd-status"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-pwd-get">Lire</button>
+        <button class="btn-test" id="btn-pwd-validate">Valider</button>
+      </div>
+      <div class="output-box" id="out-pwd"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       3. COLOR
+  =================================================== -->
+  <div class="card" id="card-color">
+    <div class="card-head">
+      <span class="card-badge">color</span>
+      <span class="card-title">Sélecteur de couleur custom</span>
+    </div>
+    <div class="card-body">
+      <div class="row-3">
+        <div id="ic-color-1"></div>
+        <div id="ic-color-2"></div>
+        <div id="ic-color-3"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-color-get">Lire les couleurs</button>
+        <button class="btn-test" id="btn-color-set">Injecter #ff6b35</button>
+        <button class="btn-test" id="btn-color-close">Fermer tous les pickers</button>
+      </div>
+      <div class="output-box" id="out-color"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       4. SELECT / MULTISELECT
+  =================================================== -->
+  <div class="card" id="card-select">
+    <div class="card-head">
+      <span class="card-badge">select</span>
+      <span class="card-title">Listes déroulantes</span>
+    </div>
+    <div class="card-body">
+      <div class="row-2">
+        <div id="ic-select-basic"></div>
+        <div id="ic-select-dots"></div>
+      </div>
+      <div id="ic-multiselect"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-select-get">Lire</button>
+        <button class="btn-test" id="btn-select-set">Sélectionner "math"</button>
+      </div>
+      <div class="output-box" id="out-select"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       5. DATE / TIME / DATETIME
+  =================================================== -->
+  <div class="card" id="card-date">
+    <div class="card-head">
+      <span class="card-badge">date</span>
+      <span class="card-title">Sélecteurs de date et heure</span>
+    </div>
+    <div class="card-body">
+      <div class="row-3">
+        <div id="ic-date"></div>
+        <div id="ic-time"></div>
+        <div id="ic-datetime"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-date-get">Lire</button>
+        <button class="btn-test" id="btn-date-today">Injecter aujourd'hui</button>
+      </div>
+      <div class="output-box" id="out-date"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       6. RANGE
+  =================================================== -->
+  <div class="card" id="card-range">
+    <div class="card-head">
+      <span class="card-badge">range</span>
+      <span class="card-title">Sliders</span>
+    </div>
+    <div class="card-body">
+      <div id="ic-range-basic"></div>
+      <div id="ic-range-custom"></div>
+      <div id="ic-range-disabled"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-range-get">Lire</button>
+        <button class="btn-test" id="btn-range-set50">Régler à 50</button>
+        <button class="btn-test" id="btn-range-set0">Régler à 0</button>
+      </div>
+      <div class="output-box" id="out-range"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       7. SWITCH
+  =================================================== -->
+  <div class="card" id="card-switch">
+    <div class="card-head">
+      <span class="card-badge">switch</span>
+      <span class="card-title">Interrupteurs (toggle)</span>
+    </div>
+    <div class="card-body">
+      <div id="ic-switch-1"></div>
+      <div id="ic-switch-2"></div>
+      <div id="ic-switch-disabled"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-switch-get">Lire</button>
+        <button class="btn-test" id="btn-switch-on">Tout activer</button>
+        <button class="btn-test" id="btn-switch-off">Tout désactiver</button>
+      </div>
+      <div class="output-box" id="out-switch"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       8. RADIO
+  =================================================== -->
+  <div class="card" id="card-radio">
+    <div class="card-head">
+      <span class="card-badge">radio</span>
+      <span class="card-title">Boutons radio</span>
+    </div>
+    <div class="card-body">
+      <div id="ic-radio-vertical"></div>
+      <div id="ic-radio-horizontal"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-radio-get">Lire</button>
+        <button class="btn-test" id="btn-radio-set">Sélectionner "moyen"</button>
+      </div>
+      <div class="output-box" id="out-radio"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       9. FILE
+  =================================================== -->
+  <div class="card" id="card-file">
+    <div class="card-head">
+      <span class="card-badge">file</span>
+      <span class="card-title">Upload fichiers</span>
+    </div>
+    <div class="card-body">
+      <div id="ic-file-single"></div>
+      <div id="ic-file-multi"></div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-file-get">Lire</button>
+      </div>
+      <div class="output-box" id="out-file"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+  <!-- ==================================================
+       10. VALIDATION & ÉTATS
+  =================================================== -->
+  <div class="card" id="card-validation">
+    <div class="card-head">
+      <span class="card-badge">states</span>
+      <span class="card-title">Validation, états, sizes</span>
+    </div>
+    <div class="card-body">
+      <div class="row-3">
+        <div id="ic-val-error"></div>
+        <div id="ic-val-success"></div>
+        <div id="ic-val-disabled"></div>
+      </div>
+      <div class="row-3">
+        <div id="ic-size-sm"></div>
+        <div id="ic-size-md"></div>
+        <div id="ic-size-lg"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="test-actions">
+        <button class="btn-test primary" id="btn-val-validate">Valider les champs requis</button>
+        <button class="btn-test" id="btn-val-reset">Réinitialiser</button>
+      </div>
+      <div class="output-box" id="out-val"><span class="ok">// Prêt</span></div>
+    </div>
+  </div>
+
+</div><!-- /sections -->
+
+<script src="Input_Comp.js"></script>
+<script>
+/* ================================================================
+   HELPERS
+=============================================================== */
+const $ = id => document.getElementById(id);
+const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function icGet(id) {
+  return window._IC_instances?.[id]?.getValue() ?? $( id)?.value ?? '';
+}
+function icSet(id, val) {
+  if (window._IC_instances?.[id]) window._IC_instances[id].setValue(val);
+}
+function icErr(id, msg) {
+  if (window._IC_instances?.[id]) window._IC_instances[id].setError(msg);
+}
+
+function showOutput(boxId, pairs) {
+  const lines = pairs.map(([k,v]) =>
+    `<span class="key">${_esc(k)}</span> : <span class="val">${_esc(JSON.stringify(v))}</span>`
+  ).join('\n');
+  $(boxId).innerHTML = lines;
+}
+
+/* ================================================================
+   MATIÈRES / OPTIONS réutilisées
+=============================================================== */
+const MATIERES = [
+  { value:'math',    label:'Mathématiques', color:'#3b82f6' },
+  { value:'fr',      label:'Français',       color:'#10b981' },
+  { value:'hist',    label:'Histoire-Géo',   color:'#f59e0b' },
+  { value:'sci',     label:'Sciences',       color:'#8b5cf6' },
+  { value:'sport',   label:'EPS',            color:'#ef4444' },
+  { value:'music',   label:'Musique',        color:'#ec4899' },
+  { value:'art',     label:'Arts plastiques',color:'#14b8a6' },
+  { value:'lang',    label:'Langues',        color:'#f97316' },
+];
+
+/* ================================================================
+   1. TEXT / EMAIL / TEL / NUMBER / TEXTAREA
+=============================================================== */
+const icTextBasic = new InputComp('#ic-text-basic', {
+  type: 'text', id: 'text-basic', label: 'Nom complet',
+  placeholder: 'ex. Jean Dupont', clearable: true,
+});
+const icTextIcon = new InputComp('#ic-text-icon', {
+  type: 'text', id: 'text-icon', label: 'Recherche',
+  icon: 'search', placeholder: 'Rechercher…', clearable: true,
+});
+const icTextPrefix = new InputComp('#ic-text-prefix', {
+  type: 'text', id: 'text-prefix', label: 'Site web',
+  prefix: 'https://', placeholder: 'example.com',
+});
+const icTextCounter = new InputComp('#ic-text-counter', {
+  type: 'text', id: 'text-counter', label: 'Bio (max 60)',
+  maxlength: 60, showCounter: true, clearable: true,
+  placeholder: 'Quelques mots sur vous…',
+});
+const icEmail = new InputComp('#ic-email', {
+  type: 'email', id: 'text-email', label: 'Email', icon: 'mail',
+  placeholder: 'prenom.nom@ecole.fr', required: true, showStatus: true,
+});
+const icTel = new InputComp('#ic-tel', {
+  type: 'tel', id: 'text-tel', label: 'Téléphone', icon: 'phone',
+  placeholder: '06 00 00 00 00',
+});
+const icNumber = new InputComp('#ic-number', {
+  type: 'number', id: 'text-number', label: 'Âge',
+  min: 0, max: 120, step: 1, placeholder: '—',
+});
+const icReadonly = new InputComp('#ic-text-readonly', {
+  type: 'text', id: 'text-readonly', label: 'Identifiant (lecture seule)',
+  value: 'usr_4821b3c', readonly: true, icon: 'hash',
+});
+const icTextarea = new InputComp('#ic-textarea', {
+  type: 'textarea', id: 'text-area', label: 'Message',
+  rows: 3, maxlength: 300, showCounter: true,
+  placeholder: 'Saisissez votre message ici…',
+  hint: 'Ce message sera envoyé à l\'administration.',
+});
+
+$('btn-text-get').addEventListener('click', () => {
+  showOutput('out-text', [
+    ['text-basic',   icGet('text-basic')],
+    ['text-icon',    icGet('text-icon')],
+    ['text-prefix',  icGet('text-prefix')],
+    ['text-counter', icGet('text-counter')],
+    ['text-email',   icGet('text-email')],
+    ['text-tel',     icGet('text-tel')],
+    ['text-number',  icGet('text-number')],
+    ['text-area',    icGet('text-area')],
+  ]);
+});
+$('btn-text-set').addEventListener('click', () => {
+  icSet('text-basic',   'Marie Curie');
+  icSet('text-icon',    'physique quantique');
+  icSet('text-prefix',  'curie-lab.fr');
+  icSet('text-counter', 'Physicienne et pionnière.');
+  icSet('text-email',   'm.curie@labo.fr');
+  icSet('text-tel',     '01 23 45 67 89');
+  icSet('text-number',  '42');
+  icSet('text-area',    'Découverte de la radioactivité en 1898.');
+});
+$('btn-text-error').addEventListener('click', () => {
+  icErr('text-email', 'Format d\'email invalide');
+  icErr('text-number', 'La valeur doit être entre 0 et 120');
+  $('out-text').innerHTML = '<span class="ok">// Erreurs injectées</span>';
+});
+$('btn-text-success').addEventListener('click', () => {
+  window._IC_instances?.['text-email']?.wrapper.classList.add('ic-has-success');
+  window._IC_instances?.['text-email']?.setError('');
+  $('out-text').innerHTML = '<span class="ok">// Succès injecté</span>';
+});
+$('btn-text-clear').addEventListener('click', () => {
+  ['text-basic','text-icon','text-prefix','text-counter','text-email','text-tel','text-number','text-area']
+    .forEach(id => { icSet(id, ''); icErr(id, ''); });
+  $('out-text').innerHTML = '<span class="ok">// Effacé</span>';
+});
+
+/* ================================================================
+   2. PASSWORD
+=============================================================== */
+const icPwdBasic = new InputComp('#ic-pwd-basic', {
+  type: 'password', id: 'pwd-basic', label: 'Mot de passe',
+  placeholder: '••••••••',
+});
+const icPwdShow = new InputComp('#ic-pwd-show', {
+  type: 'password', id: 'pwd-show', label: 'Mot de passe (toggle visible)',
+  showPassword: true, placeholder: '••••••••',
+});
+const icPwdClear = new InputComp('#ic-pwd-clear', {
+  type: 'password', id: 'pwd-clear', label: 'Avec effacement',
+  showPassword: true, clearable: true, placeholder: '••••••••',
+  hint: 'Minimum 8 caractères.',
+});
+const icPwdStatus = new InputComp('#ic-pwd-status', {
+  type: 'password', id: 'pwd-status', label: 'Avec statut',
+  showPassword: true, showStatus: true, required: true,
+  placeholder: '••••••••',
+});
+
+$('btn-pwd-get').addEventListener('click', () => {
+  showOutput('out-pwd', [
+    ['pwd-basic',  icGet('pwd-basic')],
+    ['pwd-show',   icGet('pwd-show')],
+    ['pwd-clear',  icGet('pwd-clear')],
+    ['pwd-status', icGet('pwd-status')],
+  ]);
+});
+$('btn-pwd-validate').addEventListener('click', () => {
+  const v = icGet('pwd-status');
+  if (!v) { icErr('pwd-status', 'Le mot de passe est requis'); }
+  else if (v.length < 8) { icErr('pwd-status', 'Minimum 8 caractères'); }
+  else {
+    window._IC_instances?.['pwd-status']?.wrapper.classList.add('ic-has-success');
+    window._IC_instances?.['pwd-status']?.setError('');
+    $('out-pwd').innerHTML = '<span class="ok">// Mot de passe valide ✓</span>';
+    return;
+  }
+  $('out-pwd').innerHTML = '<span style="color:#f87171">// Validation échouée</span>';
+});
+
+/* ================================================================
+   3. COLOR
+=============================================================== */
+const icColor1 = new InputComp('#ic-color-1', {
+  type: 'color', id: 'color-primary', label: 'Couleur principale',
+  value: '#1e3a5f',
+  onChange: v => { $('out-color').innerHTML = `<span class="key">color-primary</span> : <span class="val">"${v}"</span>`; },
+});
+const icColor2 = new InputComp('#ic-color-2', {
+  type: 'color', id: 'color-accent', label: 'Accentuation',
+  value: '#ff6b35',
+  onChange: v => { $('out-color').innerHTML = `<span class="key">color-accent</span> : <span class="val">"${v}"</span>`; },
+});
+const icColor3 = new InputComp('#ic-color-3', {
+  type: 'color', id: 'color-bg', label: 'Fond de page',
+  value: '#f0f2f7',
+  onChange: v => { $('out-color').innerHTML = `<span class="key">color-bg</span> : <span class="val">"${v}"</span>`; },
+});
+
+$('btn-color-get').addEventListener('click', () => {
+  showOutput('out-color', [
+    ['color-primary', icGet('color-primary')],
+    ['color-accent',  icGet('color-accent')],
+    ['color-bg',      icGet('color-bg')],
+  ]);
+});
+$('btn-color-set').addEventListener('click', () => {
+  icSet('color-primary', '#ff6b35');
+  icSet('color-accent',  '#1e3a5f');
+  $('out-color').innerHTML = '<span class="ok">// Couleurs injectées</span>';
+});
+$('btn-color-close').addEventListener('click', () => {
+  [icColor1, icColor2, icColor3].forEach(ic => ic._closePortal?.());
+  $('out-color').innerHTML = '<span class="ok">// Pickers fermés</span>';
+});
+
+/* ================================================================
+   4. SELECT / MULTISELECT
+=============================================================== */
+const icSelectBasic = new InputComp('#ic-select-basic', {
+  type: 'select', id: 'select-basic', label: 'Matière principale',
+  searchable: true,
+  options: MATIERES,
+  emptyLabel: '— Choisir —',
+});
+const icSelectDots = new InputComp('#ic-select-dots', {
+  type: 'select', id: 'select-dots', label: 'Niveau',
+  searchable: false,
+  options: [
+    { value:'6',  label:'6ème',  color:'#3b82f6' },
+    { value:'5',  label:'5ème',  color:'#10b981' },
+    { value:'4',  label:'4ème',  color:'#f59e0b' },
+    { value:'3',  label:'3ème',  color:'#ef4444' },
+  ],
+});
+const icMultiselect = new InputComp('#ic-multiselect', {
+  type: 'multiselect', id: 'multi-matieres', label: 'Matières enseignées',
+  searchable: true, selectAll: true, tagRemovable: true,
+  options: MATIERES,
+  hint: 'Sélectionnez une ou plusieurs matières.',
+});
+
+$('btn-select-get').addEventListener('click', () => {
+  showOutput('out-select', [
+    ['select-basic',   icGet('select-basic')],
+    ['select-dots',    icGet('select-dots')],
+    ['multi-matieres', window._IC_instances?.['multi-matieres']?.getValue()],
+  ]);
+});
+$('btn-select-set').addEventListener('click', () => {
+  icSet('select-basic', 'math');
+  $('out-select').innerHTML = '<span class="ok">// "math" sélectionné</span>';
+});
+
+/* ================================================================
+   5. DATE / TIME / DATETIME
+=============================================================== */
+const icDate = new InputComp('#ic-date', {
+  type: 'date', id: 'date-date', label: 'Date de naissance',
+  required: true,
+});
+const icTime = new InputComp('#ic-time', {
+  type: 'time', id: 'date-time', label: 'Heure de début',
+});
+const icDatetime = new InputComp('#ic-datetime', {
+  type: 'datetime', id: 'date-datetime', label: 'Date et heure',
+  hint: 'Format : jj/mm/aaaa hh:mm',
+});
+
+$('btn-date-get').addEventListener('click', () => {
+  showOutput('out-date', [
+    ['date',     icGet('date-date')],
+    ['time',     icGet('date-time')],
+    ['datetime', icGet('date-datetime')],
+  ]);
+});
+$('btn-date-today').addEventListener('click', () => {
+  const now  = new Date();
+  const pad  = n => String(n).padStart(2,'0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  icSet('date-date',     date);
+  icSet('date-time',     time);
+  icSet('date-datetime', `${date}T${time}`);
+  $('out-date').innerHTML = `<span class="ok">// Injecté : ${date} ${time}</span>`;
+});
+
+/* ================================================================
+   6. RANGE
+=============================================================== */
+const icRangeBasic = new InputComp('#ic-range-basic', {
+  type: 'range', id: 'range-basic', label: 'Volume (0–100)',
+  min: 0, max: 100, step: 1, value: 40,
+  onChange: v => { $('out-range').innerHTML = `<span class="key">range-basic</span> : <span class="val">${v}</span>`; },
+});
+const icRangeCustom = new InputComp('#ic-range-custom', {
+  type: 'range', id: 'range-custom', label: 'Température (15–35 °C)',
+  min: 15, max: 35, step: 0.5, value: 21,
+  onChange: v => { $('out-range').innerHTML = `<span class="key">range-custom</span> : <span class="val">${v} °C</span>`; },
+});
+const icRangeDisabled = new InputComp('#ic-range-disabled', {
+  type: 'range', id: 'range-disabled', label: 'Slider désactivé',
+  min: 0, max: 100, step: 5, value: 60, disabled: true,
+});
+
+$('btn-range-get').addEventListener('click', () => {
+  showOutput('out-range', [
+    ['range-basic',  icGet('range-basic')],
+    ['range-custom', icGet('range-custom')],
+  ]);
+});
+$('btn-range-set50').addEventListener('click', () => { icSet('range-basic', 50); });
+$('btn-range-set0').addEventListener('click',  () => { icSet('range-basic', 0);  });
+
+/* ================================================================
+   7. SWITCH
+=============================================================== */
+const icSwitch1 = new InputComp('#ic-switch-1', {
+  type: 'switch', id: 'sw-notifs', label: 'Notifications par email',
+  hint: 'Recevoir les résumés quotidiens.',
+  value: true,
+  onChange: v => { $('out-switch').innerHTML = `<span class="key">sw-notifs</span> : <span class="val">${v}</span>`; },
+});
+const icSwitch2 = new InputComp('#ic-switch-2', {
+  type: 'switch', id: 'sw-dark', label: 'Mode sombre',
+  hint: 'Interface adaptée à la lecture nocturne.',
+  value: false,
+  onChange: v => { $('out-switch').innerHTML = `<span class="key">sw-dark</span> : <span class="val">${v}</span>`; },
+});
+const icSwitchDisabled = new InputComp('#ic-switch-disabled', {
+  type: 'switch', id: 'sw-disabled', label: 'Option verrouillée (admin)',
+  hint: 'Réservé aux administrateurs.',
+  value: true, disabled: true,
+});
+
+$('btn-switch-get').addEventListener('click', () => {
+  showOutput('out-switch', [
+    ['sw-notifs',   icGet('sw-notifs')],
+    ['sw-dark',     icGet('sw-dark')],
+    ['sw-disabled', icGet('sw-disabled')],
+  ]);
+});
+$('btn-switch-on').addEventListener('click',  () => { icSet('sw-notifs', true);  icSet('sw-dark', true);  });
+$('btn-switch-off').addEventListener('click', () => { icSet('sw-notifs', false); icSet('sw-dark', false); });
+
+/* ================================================================
+   8. RADIO
+=============================================================== */
+const icRadioVertical = new InputComp('#ic-radio-vertical', {
+  type: 'radio', id: 'radio-role', label: 'Rôle dans l\'établissement',
+  name: 'radio-role', value: 'prof',
+  options: [
+    { value: 'eleve',   label: 'Élève — accès activités et planning' },
+    { value: 'prof',    label: 'Professeur — gestion des activités' },
+    { value: 'admin',   label: 'Administrateur — accès complet' },
+  ],
+  onChange: v => { $('out-radio').innerHTML = `<span class="key">radio-role</span> : <span class="val">"${v}"</span>`; },
+});
+const icRadioHorizontal = new InputComp('#ic-radio-horizontal', {
+  type: 'radio', id: 'radio-level', label: 'Difficulté',
+  name: 'radio-level', value: 'moyen', layout: 'horizontal',
+  options: [
+    { value: 'facile', label: 'Facile', color: '#10b981' },
+    { value: 'moyen',  label: 'Moyen',  color: '#f59e0b' },
+    { value: 'difficile', label: 'Difficile', color: '#ef4444' },
+  ],
+  onChange: v => { $('out-radio').innerHTML = `<span class="key">radio-level</span> : <span class="val">"${v}"</span>`; },
+});
+
+$('btn-radio-get').addEventListener('click', () => {
+  showOutput('out-radio', [
+    ['radio-role',  icGet('radio-role')],
+    ['radio-level', icGet('radio-level')],
+  ]);
+});
+$('btn-radio-set').addEventListener('click', () => {
+  icSet('radio-level', 'moyen');
+  $('out-radio').innerHTML = '<span class="ok">// "moyen" sélectionné</span>';
+});
+
+/* ================================================================
+   9. FILE
+=============================================================== */
+const icFileSingle = new InputComp('#ic-file-single', {
+  type: 'file', id: 'file-single', label: 'Photo de profil',
+  accept: '.jpg,.jpeg,.png,.webp',
+  hint: 'JPG, PNG ou WebP — max 2 Mo',
+  onChange: v => {
+    const name = v?.name ?? '—';
+    $('out-file').innerHTML = `<span class="key">file-single</span> : <span class="val">"${name}"</span>`;
+  },
+});
+const icFileMulti = new InputComp('#ic-file-multi', {
+  type: 'file', id: 'file-multi', label: 'Documents joints',
+  accept: '.pdf,.doc,.docx', multiple: true,
+  hint: 'PDF ou Word — plusieurs fichiers acceptés',
+  onChange: files => {
+    const names = Array.isArray(files) ? files.map(f=>f.name).join(', ') : (files?.name ?? '—');
+    $('out-file').innerHTML = `<span class="key">file-multi</span> : <span class="val">[${_esc(names)}]</span>`;
+  },
+});
+
+$('btn-file-get').addEventListener('click', () => {
+  const s = icGet('file-single');
+  const m = icGet('file-multi');
+  const sName = s?.name ?? 'aucun';
+  const mNames = Array.isArray(m) ? m.map(f=>f.name).join(', ') || 'aucun' : (m?.name ?? 'aucun');
+  showOutput('out-file', [
+    ['file-single', sName],
+    ['file-multi',  mNames],
+  ]);
+});
+
+/* ================================================================
+   10. VALIDATION & TAILLES
+=============================================================== */
+const icValError = new InputComp('#ic-val-error', {
+  type: 'text', id: 'val-error', label: 'Champ en erreur',
+  value: 'valeur incorrecte',
+  error: 'Ce champ contient une erreur.',
+});
+const icValSuccess = new InputComp('#ic-val-success', {
+  type: 'text', id: 'val-success', label: 'Champ valide',
+  value: 'bonne valeur', showStatus: true,
+});
+const icValDisabled = new InputComp('#ic-val-disabled', {
+  type: 'text', id: 'val-disabled', label: 'Champ désactivé',
+  value: 'non modifiable', disabled: true,
+});
+const icSizeSm = new InputComp('#ic-size-sm', {
+  type: 'text', id: 'size-sm', label: 'Petit (sm)',
+  size: 'sm', placeholder: 'Taille sm',
+});
+const icSizeMd = new InputComp('#ic-size-md', {
+  type: 'text', id: 'size-md', label: 'Normal (md)',
+  size: 'md', placeholder: 'Taille md',
+});
+const icSizeLg = new InputComp('#ic-size-lg', {
+  type: 'text', id: 'size-lg', label: 'Grand (lg)',
+  size: 'lg', placeholder: 'Taille lg',
+});
+
+// Forcer icValSuccess en état succès après construction
+window._IC_instances?.['val-success']?.wrapper.classList.add('ic-has-success');
+
+$('btn-val-validate').addEventListener('click', () => {
+  const ids = ['val-error','val-success','val-disabled'];
+  let errs = 0;
+  ids.forEach(id => {
+    const v = icGet(id);
+    if (!v) { icErr(id, 'Ce champ est requis'); errs++; }
+  });
+  $('out-val').innerHTML = errs
+    ? `<span style="color:#f87171">// ${errs} erreur(s)</span>`
+    : `<span class="ok">// Tous les champs sont remplis ✓</span>`;
+});
+$('btn-val-reset').addEventListener('click', () => {
+  ['val-error','val-success','val-disabled','size-sm','size-md','size-lg']
+    .forEach(id => { icSet(id,''); icErr(id,''); });
+  $('out-val').innerHTML = '<span class="ok">// Réinitialisé</span>';
+});
+</script>
+</body>
+</html>
