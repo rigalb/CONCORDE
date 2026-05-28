@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-real_data.py — Import des élèves depuis un fichier .ODS
+real_data.py - Import des élèves depuis un fichier .ODS
 CONCORDE
 
 Usage :
@@ -19,10 +19,12 @@ Ce script :
 
 import sqlite3
 import argparse
+import hashlib
 import os
+import secrets
 import sys
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
 
 try:
@@ -38,15 +40,15 @@ except ImportError:
 
 # Clé interne -> liste des variantes acceptées (insensible casse/accents/espaces)
 COLONNES_REQUISES = {
-  "nom":         ["nom", "name", "lastname", "last name"],
-  "prenom":      ["prénom", "prenom", "firstname", "first name", "given name"],
-  "sexe":        ["sexe", "genre", "sex", "gender", "civilite", "civilité"],
-  "date":        ["date", "date de naissance", "datenaissance", "birthdate", "birth date", "naissance"],
-  "classe":      ["classe", "class", "group", "groupe", "division"],
-  "site":        ["site", "localisation", "location", "etablissement", "établissement", "lieu"],
-  "login":       ["login", "identifiant", "username", "user name", "user"],
-  "mot_de_passe":["mot de passe", "motdepasse", "password", "mdp", "pwd", "pass"],
-  "email":       ["email", "e-mail", "mail", "courriel", "adresse mail", "adresse email"],
+  "nom":          ["nom", "name", "lastname", "last name"],
+  "prenom":       ["prénom", "prenom", "firstname", "first name", "given name"],
+  "sexe":         ["sexe", "genre", "sex", "gender", "civilite", "civilité"],
+  "date":         ["date", "date de naissance", "datenaissance", "birthdate", "birth date", "naissance"],
+  "classe":       ["classe", "class", "group", "groupe", "division"],
+  "site":         ["site", "localisation", "location", "etablissement", "établissement", "lieu"],
+  "login":        ["login", "identifiant", "username", "user name", "user"],
+  "mot_de_passe": ["mot de passe", "motdepasse", "password", "mdp", "pwd", "pass"],
+  "email":        ["email", "e-mail", "mail", "courriel", "adresse mail", "adresse email"],
 }
 
 
@@ -56,12 +58,6 @@ def _normaliser(s: str) -> str:
   s = "".join(c for c in s if unicodedata.category(c) != "Mn")
   return " ".join(s.lower().split())
 
-
-def _detecter_colonne(col_norm: str, variantes: list[str]) -> bool:
-  """Retourne True si col_norm correspond à l'une des variantes."""
-  return any(col_norm == _normaliser(v) for v in variantes)
-
-
 def _mapper_colonnes(df_columns: list[str]) -> dict[str, str]:
   """
   Construit le mapping {clé_interne -> nom_colonne_réel}.
@@ -69,28 +65,26 @@ def _mapper_colonnes(df_columns: list[str]) -> dict[str, str]:
   """
   colonnes_norm = {col: _normaliser(col) for col in df_columns}
   mapping = {}
-
   for cle, variantes in COLONNES_REQUISES.items():
     trouve = None
     for col, col_norm in colonnes_norm.items():
-      if _detecter_colonne(col_norm, variantes):
+      if any(col_norm == _normaliser(v) for v in variantes):
         trouve = col
         break
     if trouve is None:
       raise ValueError(
         f"Colonne obligatoire introuvable : '{cle}'\n"
         f"  Variantes acceptées : {variantes}\n"
-        f"  Colonnes détectées dans le fichier : {list(df_columns)}"
+        f"  Colonnes présentes  : {list(df_columns)}"
       )
     mapping[cle] = trouve
-
   return mapping
 
 
 # ==============================================================================
 # LECTURE DU FICHIER ODS
 # ==============================================================================
-def lire_ods(chemin: str) -> tuple[pd.DataFrame, dict[str, str]]:
+def lire_ods(chemin: str):
   """
   Lit le fichier ODS et retourne (DataFrame normalisée, mapping colonnes).
   La détection des colonnes est résiliente : casse, accents et espaces ignorés.
@@ -111,7 +105,7 @@ def lire_ods(chemin: str) -> tuple[pd.DataFrame, dict[str, str]]:
     print(f"\n[KO] Validation des colonnes échouée :\n{e}")
     sys.exit(1)
 
-  print(f"[OK] Colonnes détectées :")
+  print("[OK] Colonnes détectées :")
   for cle, col in mapping.items():
     print(f"     {cle:15s} → « {col} »")
 
@@ -133,10 +127,13 @@ def lire_ods(chemin: str) -> tuple[pd.DataFrame, dict[str, str]]:
 
   # Supprimer les lignes sans login (colonnes pivot)
   avant = len(df)
-  df = df[df["login"].notna() & (df["login"] != "") & (df["login"].str.lower() != "nan")]
-  apres = len(df)
-  if avant != apres:
-    print(f"[!] {avant - apres} ligne(s) ignorée(s) (login vide ou absent)")
+  df = df[
+    df["login"].notna()
+    & (df["login"] != "")
+    & (df["login"].str.lower() != "nan")
+  ]
+  if len(df) != avant:
+    print(f"[!] {avant - len(df)} ligne(s) ignorée(s) (login vide ou absent)")
 
   # Parser la date de naissance
   def parse_date(d):
@@ -183,6 +180,9 @@ def vider_donnees_eleves(conn: sqlite3.Connection) -> None:
     ("groupes_exclusivite", "DELETE FROM groupes_exclusivite"),
     ("classes",             "DELETE FROM classes"),
     # Élèves uniquement
+    ("password_reset_tokens (eleves)",
+      "DELETE FROM password_reset_tokens "
+      "WHERE user_id IN (SELECT id FROM users WHERE role='eleve')"),
     ("users (eleves)",      "DELETE FROM users WHERE role = 'eleve'"),
     # Tokens d'invitation
     ("invitation_tokens",   "DELETE FROM invitation_tokens"),
@@ -191,27 +191,27 @@ def vider_donnees_eleves(conn: sqlite3.Connection) -> None:
 
   for label, sql in etapes:
     cur.execute(sql)
-    n = cur.rowcount
-    print(f"  [vide] {label:<30} → {n} ligne(s) supprimée(s)")
+    print(f"  [vide] {label:<38} -> {cur.rowcount} ligne(s) supprimée(s)")
 
   # Réinitialiser les séquences auto-increment pour les tables vidées complètement
   tables_full = [
     "procedures_echange", "voeux_echange", "rappels_inscription",
     "inscriptions", "activite_classes", "seances", "activites",
-    "groupe_classes", "groupes_exclusivite", "classes", "invitation_tokens",
+    "groupe_classes", "groupes_exclusivite", "classes",
+    "invitation_tokens", "password_reset_tokens",
   ]
   for t in tables_full:
     cur.execute(f"DELETE FROM sqlite_sequence WHERE name='{t}';")
 
   conn.commit()
   cur.execute("PRAGMA foreign_keys = ON;")
-  print("[OK] Nettoyage ciblé terminé (admin et prof préservés).")
+  print("[OK] Nettoyage total terminé (admin et prof préservés).")
 
 
 # ==============================================================================
 # INSERTION DES DONNÉES
 # ==============================================================================
-def inserer_donnees(conn: sqlite3.Connection, df: pd.DataFrame, site: str = "tous") -> None:
+def inserer_donnees(conn: sqlite3.Connection, df, site: str = "tous") -> list:
   """
   Insère les élèves dans la base depuis le DataFrame.
   - Filtre par site si demandé
@@ -220,14 +220,13 @@ def inserer_donnees(conn: sqlite3.Connection, df: pd.DataFrame, site: str = "tou
   """
   cur = conn.cursor()
 
-  # Filtre par site
   if site != "tous" and "site" in df.columns:
     df_filtree = df[df["site"].str.lower() == site.lower()].copy()
     print(f"[OK] Filtre site='{site}' : {len(df_filtree)}/{len(df)} élèves retenus")
     if len(df_filtree) == 0:
-      print(f"[!] Aucun élève pour le site '{site}'. Sites disponibles : "
-            f"{sorted(df['site'].str.lower().unique().tolist())}")
-      return
+      dispo = sorted(df["site"].str.lower().unique().tolist())
+      print(f"[!] Aucun élève pour ce site '{site}'. Sites disponibles : {dispo}")
+      return []
   else:
     df_filtree = df.copy()
 
@@ -235,14 +234,15 @@ def inserer_donnees(conn: sqlite3.Connection, df: pd.DataFrame, site: str = "tou
   classes_cache: dict[str, int] = {}
   nb_inseres = 0
   nb_erreurs = 0
+  ids = []
 
   for i, (_, row) in enumerate(df_filtree.iterrows(), start=1):
+    login  = str(row.get("login", "")).strip()
+    nom    = str(row.get("nom", "")).strip()
+    prenom = str(row.get("prenom", "")).strip()
+    email  = str(row.get("email", "")).strip()
+    mdp    = str(row.get("mot_de_passe", "")).strip()
     classe_nom = str(row.get("classe", "")).strip()
-    login      = str(row.get("login", "")).strip()
-    nom        = str(row.get("nom", "")).strip()
-    prenom     = str(row.get("prenom", "")).strip()
-    email      = str(row.get("email", "")).strip()
-    mdp        = str(row.get("mot_de_passe", "")).strip()
 
     # Vérifications minimales
     if not login or login.lower() in ("nan", "none", ""):
@@ -270,22 +270,76 @@ def inserer_donnees(conn: sqlite3.Connection, df: pd.DataFrame, site: str = "tou
     else:
       classe_id = None
 
-    password_hash = generate_password_hash(mdp)
-
     try:
-      cur.execute("""
-        INSERT INTO users
-          (username, password_hash, role, nom, prenom, email, classe_id)
-        VALUES (?, ?, 'eleve', ?, ?, ?, ?)
-      """, (login, password_hash, nom, prenom, email, classe_id))
+      cur.execute(
+        "INSERT INTO users "
+        "(username, password_hash, role, nom, prenom, email, classe_id) "
+        "VALUES (?, ?, 'eleve', ?, ?, ?, ?)",
+        (login, generate_password_hash(mdp), nom, prenom, email, classe_id)
+      )
+      ids.append(cur.lastrowid)
       nb_inseres += 1
     except sqlite3.IntegrityError as e:
       print(f"  [!] Ligne {i} ({login}) : doublon ignoré ({e})")
       nb_erreurs += 1
 
   conn.commit()
-  print(f"\n[OK] Import terminé : {nb_inseres} élève(s) inséré(s), {nb_erreurs} ignoré(s)")
-  print(f"     {len(classes_cache)} classe(s) dans la base")
+  print(f"[OK] Élèves : {nb_inseres} insérés, {nb_erreurs} ignorés - "
+      f"{len(classes_cache)} classe(s) créée(s)")
+  return ids
+
+
+# ==============================================================================
+# TOKENS PREMIÈRE CONNEXION
+# ==============================================================================
+def _hash_code(code: str) -> str:
+  return hashlib.sha256(code.encode()).hexdigest()
+
+def creer_tokens_first_login(conn: sqlite3.Connection, user_ids: list) -> None:
+  """
+  Crée un token 'first_login' pour chaque élève de la liste.
+
+  Ce token est un MARQUEUR stocké en base.  À la première connexion,
+  Flask le détecte via is_first_login(), redirige l'élève vers /first-login,
+  génère un vrai OTP 6 chiffres et l'envoie par email.
+  Le placeholder stocké ici est un hash aléatoire : il n'est jamais comparé
+  à une saisie utilisateur.
+
+  Peut aussi être appelé seul sur une base existante :
+    from real_data import creer_tokens_first_login
+    conn = sqlite3.connect("essaie.db")
+    conn.row_factory = sqlite3.Row
+    ids = [r["id"] for r in conn.execute(
+      "SELECT id FROM users WHERE role='eleve' "
+      "AND NOT EXISTS (SELECT 1 FROM password_reset_tokens "
+      "WHERE user_id=users.id AND token_type='first_login' AND used=0)"
+    ).fetchall()]
+    creer_tokens_first_login(conn, ids)
+    conn.close()
+  """
+  if not user_ids:
+    print("[!] Aucun token first_login à créer (liste vide).")
+    return
+
+  cur = conn.cursor()
+  expires_at = (datetime.now() + timedelta(days=90)).isoformat()
+  nb = 0
+
+  for uid in user_ids:
+    placeholder = _hash_code(secrets.token_hex(32))
+    try:
+      cur.execute(
+        "INSERT INTO password_reset_tokens "
+        "(user_id, token, token_type, expires_at) "
+        "VALUES (?, ?, 'first_login', ?)",
+        (uid, placeholder, expires_at)
+      )
+      nb += 1
+    except sqlite3.IntegrityError:
+      pass  # token déjà présent
+
+  conn.commit()
+  print(f"[OK] {nb} token(s) 'first_login' créés (expiration : 90 jours).")
 
 
 # ==============================================================================
@@ -297,18 +351,17 @@ def main():
     formatter_class=argparse.RawDescriptionHelpFormatter,
     epilog="""
 Exemples :
-  python3 real_data.py --ods eleves_col_lyc.ods --db essaie.db
+  python3 real_data.py --ods eleves.ods --db essaie.db
   python3 real_data.py --ods eleves.ods --db essaie.db --site rennes
   python3 real_data.py --ods eleves.ods --db essaie.db --site tous
+
+Ce script SUPPRIME les élèves existants et les données associées.
+Les comptes admin et prof sont PRÉSERVÉS.
     """
   )
-  parser.add_argument("--ods", required=True,
-                      help="Chemin vers le fichier .ODS à importer")
-  parser.add_argument("--db",  required=True,
-                      help="Chemin vers la base SQLite CONCORDE")
-  parser.add_argument("--site", default="tous",
-                      help="Filtrer par site (valeur de la colonne Site). "
-                            "Défaut : 'tous' (pas de filtre)")
+  parser.add_argument("--ods", required=True, help="Chemin vers le fichier .ODS à importer")
+  parser.add_argument("--db",  required=True, help="Chemin vers la base SQLite CONCORDE")
+  parser.add_argument("--site", default="tous", help="Filtrer par site (colonne Site du fichier). Défaut : 'tous' (pas de filtre)")
   args = parser.parse_args()
 
   # Vérifications préliminaires
@@ -320,14 +373,14 @@ Exemples :
     sys.exit(1)
 
   print(f"\n{'='*60}")
-  print(f"  CONCORDE — Import élèves")
+  print(f"  CONCORDE - Import élèves")
   print(f"  ODS : {args.ods}")
   print(f"  DB  : {args.db}")
   print(f"  Site : {args.site}")
   print(f"{'='*60}\n")
 
   # Lecture et validation du fichier ODS
-  print(">> Étape 1 : Lecture du fichier ODS…")
+  print(">> Étape 1 : Lecture du fichier ODS...")
   df, _ = lire_ods(args.ods)
 
   # Connexion base
@@ -335,15 +388,21 @@ Exemples :
   conn.row_factory = sqlite3.Row
 
   # Nettoyage ciblé
-  print("\n>> Étape 2 : Nettoyage des données élèves…")
+  print("\n>> Étape 2 : Nettoyage de la base de données...")
   vider_donnees_eleves(conn)
 
   # Insertion
-  print("\n>> Étape 3 : Insertion des élèves…")
-  inserer_donnees(conn, df, site=args.site)
+  print("\n>> Étape 3 : Insertion des élèves...")
+  ids = inserer_donnees(conn, df, site=args.site)
+
+  print("\n>> Étape 4 : Tokens première connexion...")
+  creer_tokens_first_login(conn, ids)
 
   conn.close()
-  print(f"\n[OK] Import terminé avec succès. La base '{args.db}' est prête.")
+
+  print(f"\n{'='*60}")
+  print(f"  Import terminé - {len(ids)} élève(s) prêt(s).")
+  print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":
